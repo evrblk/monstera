@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-option go_package = "github.com/spiridonov/yellowstone/monstera/x;monsterax";
+option go_package = "github.com/evrblk/monstera/x;monsterax";
 
-package pro.spiridonov.monstera.monsterax;
+package com.evrblk.monstera.monsterax;
 
 message Error {
   ErrorCode code = 1;

@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-option go_package = "github.com/spiridonov/yellowstone/monstera";
+option go_package = "github.com/evrblk/monstera";
 
-package pro.spiridonov.monstera;
+package com.evrblk.monstera;
 
-import "monstera/raft.proto";
-import "monstera/config.proto";
+import "raft.proto";
+import "config.proto";
 
 service MonsteraApi {
   rpc Update(UpdateRequest) returns (UpdateResponse) {}
@@ -30,7 +30,8 @@ service MonsteraApi {
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {}
 
   rpc AddVoter(AddVoterRequest) returns (AddVoterResponse) {}
-  rpc UpdateClusterConfig(UpdateClusterConfigRequest) returns (UpdateClusterConfigResponse) {}
+  rpc UpdateClusterConfig(UpdateClusterConfigRequest)
+      returns (UpdateClusterConfigResponse) {}
 }
 
 message UpdateRequest {

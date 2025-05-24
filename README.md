@@ -1,1 +1,32 @@
-# monstera
+# Monstera
+
+Monstera is a framework that allows you to write stateful application logic in pure Go with all data in memory or on 
+disk without worrying about scalability and availability. Monstera takes care of replication, sharding, snapshotting, 
+and rebalancing.
+
+Monstera is a half-technical and half-mental framework. The tech part of it has a pretty small surface. It leaves a 
+lot up to you to implement. But sticking to the framework principles will ensure:
+
+* Applications are insanely fast and efficient
+* Cluster is horizontally scalable
+* Business logic is easily testable
+* Local development is enjoyable
+
+Data and compute are brought together into a single process. You are free to use any in-memory data structure or 
+embedded database. By eliminating network calls and limited query languages for communication with external databases, 
+you are able to solve problems which are known to be hard in distributed systems with just a few lines of your 
+favorite programming language as you would do it on a whiteboard.
+
+Go to [official documentation](https://everblack.dev/docs/monstera) to learn more.
+
+## Installing
+
+Use go get to install the latest version of the library.
+
+```
+go get -u github.com/evrblk/monstera@latest
+```
+
+## License
+
+Monstera is released under the [MIT License](https://opensource.org/licenses/MIT).

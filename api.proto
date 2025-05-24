@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+option go_package = "github.com/spiridonov/yellowstone/monstera";
+
+package pro.spiridonov.monstera;
+
+import "monstera/raft.proto";
+import "monstera/config.proto";
+
+service MonsteraApi {
+  rpc Update(UpdateRequest) returns (UpdateResponse) {}
+  rpc Read(ReadRequest) returns (ReadResponse) {}
+
+  // AppendEntriesPipeline opens an AppendEntries message stream.
+  rpc AppendEntriesPipeline(stream AppendEntriesRequest)
+      returns (stream AppendEntriesResponse) {}
+
+  // AppendEntries performs a single append entries request / response.
+  rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse) {}
+  // RequestVote is the command used by a candidate to ask a Raft peer for a
+  // vote in an election.
+  rpc RequestVote(RequestVoteRequest) returns (RequestVoteResponse) {}
+  // TimeoutNow is used to start a leadership transfer to the target node.
+  rpc TimeoutNow(TimeoutNowRequest) returns (TimeoutNowResponse) {}
+  // InstallSnapshot is the command sent to a Raft peer to bootstrap its log
+  // (and state machine) from a snapshot on another peer.
+  rpc InstallSnapshot(stream InstallSnapshotRequest)
+      returns (InstallSnapshotResponse) {}
+
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {}
+
+  rpc AddVoter(AddVoterRequest) returns (AddVoterResponse) {}
+  rpc UpdateClusterConfig(UpdateClusterConfigRequest) returns (UpdateClusterConfigResponse) {}
+}
+
+message UpdateRequest {
+  bytes payload = 1;
+  bytes shard_key = 2;
+  string application_name = 3;
+  string keyspace_name = 4;
+  string shard_id = 5;
+  string replica_id = 6;
+}
+
+message UpdateResponse {
+  bytes payload = 1;
+}
+
+message ReadRequest {
+  bytes payload = 1;
+  bool allow_read_from_followers = 2;
+  bytes shard_key = 3;
+  string application_name = 4;
+  string keyspace_name = 5;
+  string shard_id = 6;
+  string replica_id = 7;
+}
+
+message ReadResponse {
+  bytes payload = 1;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  repeated ReplicaState replicas = 1;
+}
+
+message AddVoterRequest {
+  string replica_id = 1;
+  string voter_replica_id = 2;
+  string voter_address = 3;
+}
+
+message AddVoterResponse {}
+
+message ReplicaState {
+  string replica_id = 1;
+  RaftState raft_state = 2;
+  map<string, string> raft_stats = 3;
+}
+
+enum RaftState {
+  RAFT_STATE_INVALID = 0;
+  RAFT_STATE_FOLLOWER = 1;
+  RAFT_STATE_LEADER = 2;
+  RAFT_STATE_CANDIDATE = 3;
+  RAFT_STATE_SHUTDOWN = 4;
+}
+
+message UpdateClusterConfigRequest {
+  ClusterConfig config = 1;
+}
+
+message UpdateClusterConfigResponse {}

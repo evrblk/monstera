@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+option go_package = "github.com/spiridonov/yellowstone/monstera";
+
+package pro.spiridonov.monstera;
+
+message Node {
+  string id = 1;
+  string address = 2;
+}
+
+message Application {
+  string name = 1;
+  string implementation = 2;
+  repeated Shard shards = 3;
+  int32 replication_factor = 4;
+}
+
+message Shard {
+  string id = 1;
+  bytes lower_bound = 2;
+  bytes upper_bound = 3;
+  bytes global_index_prefix = 4;
+  string parent_id = 5;
+  repeated Replica replicas = 6;
+}
+
+message Replica {
+  string id = 1;
+  string node_id = 2;
+}
+
+message ClusterConfig {
+  repeated Application applications = 1;
+  repeated Node nodes = 2;
+  int64 updated_at = 3;
+}

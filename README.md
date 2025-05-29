@@ -19,6 +19,11 @@ favorite programming language as you would do it on a whiteboard.
 
 Go to [official documentation](https://everblack.dev/docs/monstera) to learn more.
 
+## Example
+
+[evrblk/monstera-example](https://github.com/evrblk/monstera-example) repository is an example of an application built
+entirely on Monstera. It might be easier to understand how it works from that example rather than from the documentation.
+
 ## Installing
 
 Use go get to install the latest version of the library.

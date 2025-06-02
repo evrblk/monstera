@@ -37,7 +37,7 @@ func GenerateCoreApis(monsteraYaml *MonsteraYaml) string {
 func generateCoreApi(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 	apiName := core.Name + "CoreApi"
 	f.Type().Id(apiName).InterfaceFunc(func(g *Group) {
-		g.Id("Snapshot").Params().Qual("github.com/spiridonov/yellowstone/monstera", "ApplicationCoreSnapshot")
+		g.Id("Snapshot").Params().Qual("github.com/evrblk/monstera", "ApplicationCoreSnapshot")
 		g.Id("Restore").Params(Id("reader").Qual("io", "ReadCloser")).Error()
 		g.Id("Close").Params()
 

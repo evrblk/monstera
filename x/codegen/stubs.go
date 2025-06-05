@@ -126,7 +126,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 				g.If(
 					Id("ok"),
 				).Block(
-					Return(Id("response").Dot(read.Name+"Response"), Id("nil")),
+					Return(Id("response").Dot(read.Name+"Response"), Id("readResponse").Dot("Error")),
 				).Else().Block(
 					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
 						Qual("github.com/evrblk/monstera/x", "Internal"),
@@ -200,7 +200,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 				g.If(
 					Id("ok"),
 				).Block(
-					Return(Id("response").Dot(update.Name+"Response"), Id("nil")),
+					Return(Id("response").Dot(update.Name+"Response"), Id("updateResponse").Dot("Error")),
 				).Else().Block(
 					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
 						Qual("github.com/evrblk/monstera/x", "Internal"),

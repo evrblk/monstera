@@ -41,7 +41,7 @@ type ApplicationCore interface {
 
 	// Update is used to update the application core state.
 	// All updates are applied to the application core sequentially,
-	// in the order they are commited to the Raft log. This method is called
+	// in the order they are committed to the Raft log. This method is called
 	// by the Raft thread. Update should panic on internal errors.
 	Update(request []byte) []byte
 

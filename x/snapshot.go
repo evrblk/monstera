@@ -138,6 +138,9 @@ func Restore(s *monstera.BadgerStore, ranges []monstera.KeyRange, reader io.Read
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
 
 	err = s.Flatten()
 	if err != nil {

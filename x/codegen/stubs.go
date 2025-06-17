@@ -126,7 +126,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 				g.If(
 					Id("ok"),
 				).Block(
-					Return(Id("response").Dot(read.Name+"Response"), Id("readResponse").Dot("Error")),
+					Return(Id("response").Dot(read.Name+"Response"), Id("nilifyIfEmpty").Call(Id("readResponse").Dot("Error"))),
 				).Else().Block(
 					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
 						Qual("github.com/evrblk/monstera/x", "Internal"),
@@ -200,7 +200,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 				g.If(
 					Id("ok"),
 				).Block(
-					Return(Id("response").Dot(update.Name+"Response"), Id("updateResponse").Dot("Error")),
+					Return(Id("response").Dot(update.Name+"Response"), Id("nilifyIfEmpty").Call(Id("updateResponse").Dot("Error"))),
 				).Else().Block(
 					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
 						Qual("github.com/evrblk/monstera/x", "Internal"),
@@ -226,6 +226,21 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 				Id("monsteraClient").Op(":").Id("monsteraClient"),
 				Id("shardKeyCalculator").Op(":").Id("shardKeyCalculator"),
 			)),
+	)
+	f.Line()
+
+	f.Func().Id("nilifyIfEmpty").Params(
+		Id("err").Op("*").Qual("github.com/evrblk/monstera/x", "Error"),
+	).Params(
+		Error(),
+	).Block(
+		If(
+			Id("err").Op("==").Nil().Op("||").Id("err.Code").Op("==").Qual("github.com/evrblk/monstera/x", "ErrorCode_INVALID").Op("||").Id("err.Code").Op("==").Qual("github.com/evrblk/monstera/x", "ErrorCode_OK"),
+		).Block(
+			Return(Nil()),
+		).Else().Block(
+			Return(Id("err")),
+		),
 	)
 }
 

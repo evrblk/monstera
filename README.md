@@ -26,8 +26,8 @@ Go to [official documentation](https://everblack.dev/docs/monstera) to learn mor
 
 ## Example
 
-[evrblk/monstera-example](https://github.com/evrblk/monstera-example) repository is an example of an application built
-entirely on Monstera. It might be easier to understand how it works from that example rather than from the documentation.
+[evrblk/monstera-example](https://github.com/evrblk/monstera-example) repository has examples of applications built entirely on Monstera. It might be easier to
+understand how it works from those examples rather than from the documentation.
 
 ## Installing
 
@@ -36,6 +36,17 @@ Use go get to install the latest version of the library.
 ```
 go get -u github.com/evrblk/monstera@latest
 ```
+
+There are also few CLI tools (such as codegen), so it also should be added as a tool:
+
+```
+go get -tool github.com/evrblk/monstera/cmd/monstera@latest
+```
+
+## Status
+
+Monstera is being actively developed. There will be no version tagging before `v0.1`, just development in `master` 
+branch. After it is tagged `v0.1` it will be more or less stable and follow semver.
 
 ## License
 

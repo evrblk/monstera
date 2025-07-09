@@ -57,13 +57,13 @@ type ApplicationCoreDescriptor struct {
 	CoreFactoryFunc func(application *Application, shard *Shard, replica *Replica) ApplicationCore
 
 	// RestoreSnapshotOnStart is a flag that indicates if the application core should restore its
-	// state from a snapshot on start (via ApplicationCore.Restore). For fully in-memory applications
+	// state from a snapshot on start (via ApplicationCore.Restore). For fully in-memory applications,
 	// this flag should be true. For applications that are backed by an on-disk embedded storage this
 	// might or might not be necessary, depending on implementation.
 	RestoreSnapshotOnStart bool
 }
 
-// RegisterApplicationCore registers an application core with Monstera framework.
+// RegisterApplicationCore registers an application core with the Monstera framework.
 // It should be called before MonsteraNode.Start.
 func (n *MonsteraNode) RegisterApplicationCore(descriptor *ApplicationCoreDescriptor) {
 	n.mu.Lock()

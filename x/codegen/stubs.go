@@ -62,6 +62,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 	)
 	apiName := stub.Name + "CoreApi"
 	f.Var().Id("_").Qual(monsteraYaml.GoCode.OutputPackage, apiName).Op("=").Op("&").Id(stubName).Values()
+	f.Line()
 
 	for _, core := range cores {
 		for _, read := range core.Reads {
@@ -255,15 +256,21 @@ func generateStandaloneStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, 
 
 		g.Id("mu").Qual("sync", "RWMutex")
 	})
+	apiName := stub.Name + "CoreApi"
+	f.Var().Id("_").Qual(monsteraYaml.GoCode.OutputPackage, apiName).Op("=").Op("&").Id(stubName).Values()
+	f.Line()
 
 	for _, core := range cores {
 		for _, read := range core.Reads {
 			f.Func().Params(
 				Id("s").Op("*").Qual(monsteraYaml.GoCode.OutputPackage, stubName),
-			).Id(read.Name).Params(
-				Id("ctx").Qual("context", "Context"),
-				Id("request").Op("*").Qual(monsteraYaml.GoCode.CorePbPackage, read.Name+"Request"),
-			).Params(
+			).Id(read.Name).ParamsFunc(func(g *Group) {
+				g.Id("ctx").Qual("context", "Context")
+				g.Id("request").Op("*").Qual(monsteraYaml.GoCode.CorePbPackage, read.Name+"Request")
+				if !read.Sharded {
+					g.Id("shardId").String()
+				}
+			}).Params(
 				List(
 					Op("*").Qual(monsteraYaml.GoCode.CorePbPackage, read.Name+"Response"),
 					Error(),
@@ -282,10 +289,13 @@ func generateStandaloneStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, 
 		for _, update := range core.Updates {
 			f.Func().Params(
 				Id("s").Op("*").Qual(monsteraYaml.GoCode.OutputPackage, stubName),
-			).Id(update.Name).Params(
-				Id("ctx").Qual("context", "Context"),
-				Id("request").Op("*").Qual(monsteraYaml.GoCode.CorePbPackage, update.Name+"Request"),
-			).Params(
+			).Id(update.Name).ParamsFunc(func(g *Group) {
+				g.Id("ctx").Qual("context", "Context")
+				g.Id("request").Op("*").Qual(monsteraYaml.GoCode.CorePbPackage, update.Name+"Request")
+				if !update.Sharded {
+					g.Id("shardId").String()
+				}
+			}).Params(
 				List(
 					Op("*").Qual(monsteraYaml.GoCode.CorePbPackage, update.Name+"Response"),
 					Error(),

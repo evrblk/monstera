@@ -84,8 +84,11 @@ func NewBadgerStore(dir string) *BadgerStore {
 }
 
 func (s *BadgerStore) Close() {
-	s.done <- true
-	s.ticker.Stop()
+	if s.ticker != nil {
+		s.done <- true
+		s.ticker.Stop()
+	}
+
 	err := s.db.Close()
 	if err != nil {
 		log.Printf("Error while closing BadgerStore %v", err)
@@ -161,7 +164,7 @@ func (t *Txn) Commit() error {
 }
 
 func (t *Txn) PrefixExists(prefix []byte) (bool, error) {
-	iter := t.btxn.NewIterator(badger.DefaultIteratorOptions)
+	iter := t.btxn.NewIterator(badgerIteratorOptions())
 	defer iter.Close()
 
 	for iter.Seek(prefix); iter.ValidForPrefix(prefix); iter.Next() {
@@ -172,10 +175,7 @@ func (t *Txn) PrefixExists(prefix []byte) (bool, error) {
 }
 
 func (t *Txn) EachPrefix(prefix []byte, fn func(key []byte, value []byte) (bool, error)) error {
-	iterOpt := badger.DefaultIteratorOptions
-	iterOpt.PrefetchValues = true
-	iterOpt.Reverse = false
-	iterOpt.AllVersions = false
+	iterOpt := badgerIteratorOptions()
 	iterOpt.Prefix = prefix
 
 	iter := t.btxn.NewIterator(iterOpt)
@@ -201,10 +201,7 @@ func (t *Txn) EachPrefix(prefix []byte, fn func(key []byte, value []byte) (bool,
 }
 
 func (t *Txn) EachPrefixKeys(prefix []byte, fn func(key []byte) (bool, error)) error {
-	iterOpt := badger.DefaultIteratorOptions
-	iterOpt.PrefetchValues = false
-	iterOpt.Reverse = false
-	iterOpt.AllVersions = false
+	iterOpt := badgerIteratorOptions()
 	iterOpt.Prefix = prefix
 
 	iter := t.btxn.NewIterator(iterOpt)
@@ -224,13 +221,7 @@ func (t *Txn) EachPrefixKeys(prefix []byte, fn func(key []byte) (bool, error)) e
 }
 
 func (t *Txn) EachRange(lowerBound []byte, upperBound []byte, fn func(key []byte, value []byte) (bool, error)) error {
-	iterOpt := badger.DefaultIteratorOptions
-	iterOpt.PrefetchValues = true
-	iterOpt.PrefetchSize = 100
-	iterOpt.Reverse = false
-	iterOpt.AllVersions = false
-
-	iter := t.btxn.NewIterator(iterOpt)
+	iter := t.btxn.NewIterator(badgerIteratorOptions())
 	defer iter.Close()
 
 	for iter.Seek(lowerBound); iter.Valid(); iter.Next() {
@@ -286,4 +277,14 @@ func (t *Txn) Delete(key []byte) error {
 	} else {
 		return err
 	}
+}
+
+func badgerIteratorOptions() badger.IteratorOptions {
+	iterOpt := badger.DefaultIteratorOptions
+	iterOpt.PrefetchValues = true
+	iterOpt.PrefetchSize = 100
+	iterOpt.Reverse = false
+	iterOpt.AllVersions = false
+
+	return iterOpt
 }

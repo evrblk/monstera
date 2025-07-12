@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestClusterConfig(t *testing.T) {
+func TestClusterConfigFindShard(t *testing.T) {
 	require := require.New(t)
 
 	applications := []*Application{
@@ -252,4 +252,656 @@ func TestClusterConfig(t *testing.T) {
 	p, err = clusterConfig.FindShard("test.app_01", []byte{0x75, 0x80, 0xff, 0xff})
 	require.NoError(err)
 	require.Equal("shrd_10", p.Id)
+}
+
+func TestClusterConfigValidate(t *testing.T) {
+	require := require.New(t)
+
+	// Test valid configuration
+	t.Run("valid configuration", func(t *testing.T) {
+		validConfig := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "test.app",
+					Implementation:    "test.impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+						{
+							Id:                "shrd_02",
+							LowerBound:        []byte{0x80, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
+							Replicas: []*Replica{
+								{Id: "rpl_04", NodeId: "nd_01"},
+								{Id: "rpl_05", NodeId: "nd_02"},
+								{Id: "rpl_06", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
+		}
+
+		err := validConfig.Validate()
+		require.NoError(err)
+	})
+
+	// Test node validations
+	t.Run("empty node address", func(t *testing.T) {
+		config := &ClusterConfig{
+			Nodes: []*Node{
+				{Id: "nd_01", Address: ""},
+			},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "empty node address")
+	})
+
+	t.Run("empty node id", func(t *testing.T) {
+		config := &ClusterConfig{
+			Nodes: []*Node{
+				{Id: "", Address: "localhost:9001"},
+			},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "empty node id")
+	})
+
+	t.Run("duplicate node id", func(t *testing.T) {
+		config := &ClusterConfig{
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_01", Address: "localhost:9002"},
+			},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "duplicate node id")
+	})
+
+	// Test application validations
+	t.Run("empty application name", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{Name: "", Implementation: "test.impl", ReplicationFactor: 3},
+			},
+			Nodes: []*Node{{Id: "nd_01", Address: "localhost:9001"}},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "empty application name")
+	})
+
+	t.Run("empty application implementation", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{Name: "test.app", Implementation: "", ReplicationFactor: 3},
+			},
+			Nodes: []*Node{{Id: "nd_01", Address: "localhost:9001"}},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "empty application implementation")
+	})
+
+	t.Run("duplicate application name", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{Name: "test.app", Implementation: "test.impl", ReplicationFactor: 3},
+				{Name: "test.app", Implementation: "test.impl2", ReplicationFactor: 3},
+			},
+			Nodes: []*Node{{Id: "nd_01", Address: "localhost:9001"}},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "duplicate application name")
+	})
+
+	t.Run("invalid replication factor", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{Name: "test.app", Implementation: "test.impl", ReplicationFactor: 2},
+			},
+			Nodes: []*Node{{Id: "nd_01", Address: "localhost:9001"}},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "invalid replication factor")
+	})
+
+	// Test shard validations
+	t.Run("empty shard id", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "test.app",
+					Implementation:    "test.impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "empty shard id")
+	})
+
+	t.Run("duplicate shard id", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "test.app",
+					Implementation:    "test.impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x80, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
+							Replicas: []*Replica{
+								{Id: "rpl_04", NodeId: "nd_01"},
+								{Id: "rpl_05", NodeId: "nd_02"},
+								{Id: "rpl_06", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "duplicate shard id")
+	})
+
+	t.Run("duplicate global index prefix", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "test.app",
+					Implementation:    "test.impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+						{
+							Id:                "shrd_02",
+							LowerBound:        []byte{0x80, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_04", NodeId: "nd_01"},
+								{Id: "rpl_05", NodeId: "nd_02"},
+								{Id: "rpl_06", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "duplicate global index prefix")
+	})
+
+	t.Run("not enough replicas", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "test.app",
+					Implementation:    "test.impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "not enough replicas")
+	})
+
+	t.Run("invalid bounds length", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "test.app",
+					Implementation:    "test.impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "invalid lower bound/upper bounds")
+	})
+
+	t.Run("invalid bounds order", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "test.app",
+					Implementation:    "test.impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							UpperBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "invalid lower bound/upper bounds")
+	})
+
+	// Test replica validations
+	t.Run("empty replica id", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "test.app",
+					Implementation:    "test.impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "empty replica id")
+	})
+
+	t.Run("duplicate replica id", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "test.app",
+					Implementation:    "test.impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_01", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "duplicate replica id")
+	})
+
+	t.Run("replica assigned to non-existent node", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "test.app",
+					Implementation:    "test.impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_04"},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "node nd_04 for replica rpl_03 not found")
+	})
+
+	t.Run("replicas assigned to same node", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "test.app",
+					Implementation:    "test.impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_01"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "replicas are not assigned to different nodes")
+	})
+
+	// Test multiple applications with shards
+	t.Run("multiple applications with valid shards", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "app1",
+					Implementation:    "impl1",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+				{
+					Name:              "app2",
+					Implementation:    "impl2",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_02",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
+							Replicas: []*Replica{
+								{Id: "rpl_04", NodeId: "nd_01"},
+								{Id: "rpl_05", NodeId: "nd_02"},
+								{Id: "rpl_06", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
+		}
+
+		err := config.Validate()
+		require.NoError(err)
+	})
+
+	// Test edge cases
+	t.Run("minimum valid replication factor", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "test.app",
+					Implementation:    "test.impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
+		}
+
+		err := config.Validate()
+		require.NoError(err)
+	})
+
+	t.Run("exact replica count", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "test.app",
+					Implementation:    "test.impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
+		}
+
+		err := config.Validate()
+		require.NoError(err)
+	})
+
+	t.Run("empty applications and nodes", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{},
+			Nodes:        []*Node{},
+		}
+
+		err := config.Validate()
+		require.NoError(err)
+	})
+
+	t.Run("application with no shards", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "test.app",
+					Implementation:    "test.impl",
+					ReplicationFactor: 3,
+					Shards:            []*Shard{},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+			},
+		}
+
+		err := config.Validate()
+		require.NoError(err)
+	})
 }

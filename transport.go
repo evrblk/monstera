@@ -3,7 +3,6 @@ package monstera
 import (
 	"context"
 	"io"
-	"log"
 	"sync"
 	"time"
 
@@ -12,55 +11,8 @@ import (
 	hraft "github.com/hashicorp/raft"
 )
 
-type MonsteraConnectionPool struct {
-	mu          sync.Mutex
-	connections map[string]*conn
-}
-
-type conn struct {
-	clientConn *grpc.ClientConn
-	client     MonsteraApiClient
-}
-
-func (p *MonsteraConnectionPool) GetPeer(replicaId string, nodeAddress string) (MonsteraApiClient, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	c, ok := p.connections[nodeAddress]
-	if !ok {
-		clientConn, err := grpc.Dial(nodeAddress, grpc.WithInsecure())
-		if err != nil {
-			return nil, err
-		}
-		c = &conn{
-			clientConn: clientConn,
-			client:     NewMonsteraApiClient(clientConn),
-		}
-		p.connections[nodeAddress] = c
-	}
-	return c.client, nil
-}
-
-func (p *MonsteraConnectionPool) Close() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	for _, c := range p.connections {
-		err := c.clientConn.Close()
-		if err != nil {
-			log.Printf("error while closing connection %v", err)
-		}
-	}
-}
-
-func NewMonsteraConnectionPool() *MonsteraConnectionPool {
-	return &MonsteraConnectionPool{
-		connections: make(map[string]*conn),
-	}
-}
-
 // These are calls from the Raft engine that we need to send out over gRPC.
-type RaftAPI struct {
+type RaftGrpcTransport struct {
 	rpcChan         chan hraft.RPC
 	localAddress    hraft.ServerAddress
 	heartbeatFunc   func(hraft.RPC)
@@ -69,32 +21,32 @@ type RaftAPI struct {
 	pool *MonsteraConnectionPool
 }
 
-var _ hraft.Transport = &RaftAPI{}
+var _ hraft.Transport = &RaftGrpcTransport{}
 
-func (r *RaftAPI) Producer() chan hraft.RPC {
+func (r *RaftGrpcTransport) Producer() chan hraft.RPC {
 	return r.rpcChan
 }
 
 // Consumer returns a channel that can be used to consume and respond to RPC requests.
-func (r *RaftAPI) Consumer() <-chan hraft.RPC {
+func (r *RaftGrpcTransport) Consumer() <-chan hraft.RPC {
 	return r.rpcChan
 }
 
 // LocalAddr is used to return our local address to distinguish from our peers.
-func (r *RaftAPI) LocalAddr() hraft.ServerAddress {
+func (r *RaftGrpcTransport) LocalAddr() hraft.ServerAddress {
 	return r.localAddress
 }
 
 // AppendEntries sends the appropriate RPC to the target node.
-func (r *RaftAPI) AppendEntries(id hraft.ServerID, target hraft.ServerAddress, args *hraft.AppendEntriesRequest, resp *hraft.AppendEntriesResponse) error {
+func (r *RaftGrpcTransport) AppendEntries(id hraft.ServerID, target hraft.ServerAddress, args *hraft.AppendEntriesRequest, resp *hraft.AppendEntriesResponse) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	c, err := r.pool.GetPeer(string(id), string(target))
+	conn, err := r.pool.GetConnection(string(target))
 	if err != nil {
 		return err
 	}
-	ret, err := c.AppendEntries(ctx, encodeAppendEntriesRequest(args, string(id)), grpc.WaitForReady(true))
+	ret, err := conn.AppendEntries(ctx, encodeAppendEntriesRequest(args, string(id)), grpc.WaitForReady(true))
 	if err != nil {
 		return err
 	}
@@ -103,15 +55,15 @@ func (r *RaftAPI) AppendEntries(id hraft.ServerID, target hraft.ServerAddress, a
 }
 
 // RequestVote sends the appropriate RPC to the target node.
-func (r *RaftAPI) RequestVote(id hraft.ServerID, target hraft.ServerAddress, args *hraft.RequestVoteRequest, resp *hraft.RequestVoteResponse) error {
+func (r *RaftGrpcTransport) RequestVote(id hraft.ServerID, target hraft.ServerAddress, args *hraft.RequestVoteRequest, resp *hraft.RequestVoteResponse) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	c, err := r.pool.GetPeer(string(id), string(target))
+	conn, err := r.pool.GetConnection(string(target))
 	if err != nil {
 		return err
 	}
-	ret, err := c.RequestVote(ctx, encodeRequestVoteRequest(args, string(id)), grpc.WaitForReady(true))
+	ret, err := conn.RequestVote(ctx, encodeRequestVoteRequest(args, string(id)), grpc.WaitForReady(true))
 	if err != nil {
 		return err
 	}
@@ -120,15 +72,15 @@ func (r *RaftAPI) RequestVote(id hraft.ServerID, target hraft.ServerAddress, arg
 }
 
 // TimeoutNow is used to start a leadership transfer to the target node.
-func (r *RaftAPI) TimeoutNow(id hraft.ServerID, target hraft.ServerAddress, args *hraft.TimeoutNowRequest, resp *hraft.TimeoutNowResponse) error {
+func (r *RaftGrpcTransport) TimeoutNow(id hraft.ServerID, target hraft.ServerAddress, args *hraft.TimeoutNowRequest, resp *hraft.TimeoutNowResponse) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	c, err := r.pool.GetPeer(string(id), string(target))
+	conn, err := r.pool.GetConnection(string(target))
 	if err != nil {
 		return err
 	}
-	ret, err := c.TimeoutNow(ctx, encodeTimeoutNowRequest(args, string(id)), grpc.WaitForReady(true))
+	ret, err := conn.TimeoutNow(ctx, encodeTimeoutNowRequest(args, string(id)), grpc.WaitForReady(true))
 	if err != nil {
 		return err
 	}
@@ -138,12 +90,12 @@ func (r *RaftAPI) TimeoutNow(id hraft.ServerID, target hraft.ServerAddress, args
 
 // InstallSnapshot is used to push a snapshot down to a follower. The data is read from
 // the ReadCloser and streamed to the client.
-func (r *RaftAPI) InstallSnapshot(id hraft.ServerID, target hraft.ServerAddress, req *hraft.InstallSnapshotRequest, resp *hraft.InstallSnapshotResponse, data io.Reader) error {
-	c, err := r.pool.GetPeer(string(id), string(target))
+func (r *RaftGrpcTransport) InstallSnapshot(id hraft.ServerID, target hraft.ServerAddress, req *hraft.InstallSnapshotRequest, resp *hraft.InstallSnapshotResponse, data io.Reader) error {
+	conn, err := r.pool.GetConnection(string(target))
 	if err != nil {
 		return err
 	}
-	stream, err := c.InstallSnapshot(context.TODO(), grpc.WaitForReady(true))
+	stream, err := conn.InstallSnapshot(context.TODO(), grpc.WaitForReady(true))
 	if err != nil {
 		return err
 	}
@@ -175,14 +127,14 @@ func (r *RaftAPI) InstallSnapshot(id hraft.ServerID, target hraft.ServerAddress,
 
 // AppendEntriesPipeline returns an interface that can be used to pipeline
 // AppendEntries requests.
-func (r *RaftAPI) AppendEntriesPipeline(id hraft.ServerID, target hraft.ServerAddress) (hraft.AppendPipeline, error) {
-	c, err := r.pool.GetPeer(string(id), string(target))
+func (r *RaftGrpcTransport) AppendEntriesPipeline(id hraft.ServerID, target hraft.ServerAddress) (hraft.AppendPipeline, error) {
+	conn, err := r.pool.GetConnection(string(target))
 	if err != nil {
 		return nil, err
 	}
 	ctx := context.TODO()
 	ctx, cancel := context.WithCancel(ctx)
-	stream, err := c.AppendEntriesPipeline(ctx, grpc.WaitForReady(true))
+	stream, err := conn.AppendEntriesPipeline(ctx, grpc.WaitForReady(true))
 	if err != nil {
 		cancel()
 		return nil, err
@@ -297,12 +249,12 @@ func (f *appendFuture) Response() *hraft.AppendEntriesResponse {
 }
 
 // EncodePeer is used to serialize a peer's address.
-func (r *RaftAPI) EncodePeer(id hraft.ServerID, addr hraft.ServerAddress) []byte {
+func (r *RaftGrpcTransport) EncodePeer(id hraft.ServerID, addr hraft.ServerAddress) []byte {
 	return []byte(addr)
 }
 
 // DecodePeer is used to deserialize a peer's address.
-func (r *RaftAPI) DecodePeer(p []byte) hraft.ServerAddress {
+func (r *RaftGrpcTransport) DecodePeer(p []byte) hraft.ServerAddress {
 	return hraft.ServerAddress(p)
 }
 
@@ -310,13 +262,13 @@ func (r *RaftAPI) DecodePeer(p []byte) hraft.ServerAddress {
 // as a fast-pass. This is to avoid head-of-line blocking from
 // disk IO. If a Transport does not support this, it can simply
 // ignore the call, and push the heartbeat onto the Consumer channel.
-func (r *RaftAPI) SetHeartbeatHandler(cb func(rpc hraft.RPC)) {
+func (r *RaftGrpcTransport) SetHeartbeatHandler(cb func(rpc hraft.RPC)) {
 	r.heartbeatFuncMu.Lock()
 	r.heartbeatFunc = cb
 	r.heartbeatFuncMu.Unlock()
 }
 
-func (r *RaftAPI) Heartbeat(rpc hraft.RPC) {
+func (r *RaftGrpcTransport) Heartbeat(rpc hraft.RPC) {
 	r.heartbeatFuncMu.Lock()
 	defer r.heartbeatFuncMu.Unlock()
 
@@ -325,8 +277,8 @@ func (r *RaftAPI) Heartbeat(rpc hraft.RPC) {
 	}
 }
 
-func NewTransport(localAddress string, pool *MonsteraConnectionPool) *RaftAPI {
-	return &RaftAPI{
+func NewTransport(localAddress string, pool *MonsteraConnectionPool) *RaftGrpcTransport {
+	return &RaftGrpcTransport{
 		rpcChan:      make(chan hraft.RPC),
 		localAddress: hraft.ServerAddress(localAddress),
 		pool:         pool,

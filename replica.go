@@ -26,7 +26,7 @@ type MonsteraReplica struct {
 
 	applicationCore ApplicationCore
 	hraft           *hraft.Raft
-	transport       *RaftAPI
+	transport       *RaftGrpcTransport
 	hstore          *HraftBadgerStore
 	hfss            *hraft.FileSnapshotStore
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"errors"
+
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -82,6 +83,7 @@ func CreateEmptyConfig() *ClusterConfig {
 	}
 }
 
+// - there are at least 3 nodes
 // - nodes have non-empty id
 // - nodes have non-empty address
 // - nodes have unique ids
@@ -102,6 +104,10 @@ func CreateEmptyConfig() *ClusterConfig {
 // - replicas are assigned to different nodes
 func (c *ClusterConfig) Validate() error {
 	nodesByIds := make(map[string]*Node)
+
+	if len(c.Nodes) < 3 {
+		return fmt.Errorf("at least 3 nodes are required")
+	}
 
 	for _, n := range c.Nodes {
 		if n.Address == "" {

@@ -35,6 +35,8 @@ type MonsteraNode struct {
 
 	pool      *MonsteraConnectionPool
 	raftStore *BadgerStore
+
+	monsteraNodeConfig MonsteraNodeConfig
 }
 
 type MonsteraNodeState = int
@@ -61,6 +63,18 @@ type ApplicationCoreDescriptor struct {
 	// this flag should be true. For applications that are backed by an on-disk embedded storage this
 	// might or might not be necessary, depending on implementation.
 	RestoreSnapshotOnStart bool
+}
+
+type MonsteraNodeConfig struct {
+	MaxHops          int
+	MaxReadTimeout   time.Duration
+	MaxUpdateTimeout time.Duration
+}
+
+var DefaultMonsteraNodeConfig = MonsteraNodeConfig{
+	MaxHops:          10,
+	MaxReadTimeout:   10 * time.Second,
+	MaxUpdateTimeout: 30 * time.Second,
 }
 
 // RegisterApplicationCore registers an application core with the Monstera framework.
@@ -132,12 +146,12 @@ func (n *MonsteraNode) AddVoter(replicaId string, voterReplicaId string, voterAd
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	b, ok := n.replicas[replicaId]
+	r, ok := n.replicas[replicaId]
 	if !ok {
 		return fmt.Errorf("no replica %s found on this node %s", replicaId, n.node.Id)
 	}
 
-	err := b.AddVoter(voterReplicaId, voterAddress)
+	err := r.AddVoter(voterReplicaId, voterAddress)
 	if err != nil {
 		return err
 	}
@@ -153,36 +167,36 @@ func (n *MonsteraNode) Read(request *ReadRequest) ([]byte, error) {
 		return nil, errNodeNotReady
 	}
 
-	b, ok := n.replicas[request.ReplicaId]
+	r, ok := n.replicas[request.ReplicaId]
 	if !ok {
 		return nil, fmt.Errorf("no replica %s found on this node %s", request.ReplicaId, n.node.Id)
 	}
 
 	if request.AllowReadFromFollowers {
-		return b.Read(request.Payload)
+		return r.Read(request.Payload)
 	} else {
-		if b.GetRaftState() == hraft.Leader {
-			return b.Read(request.Payload)
+		if r.GetRaftState() == hraft.Leader {
+			return r.Read(request.Payload)
 		} else {
-			address, id := b.GetRaftLeader()
+			address, id := r.GetRaftLeader()
 			if address == "" || id == "" {
 				// TODO wait?
 				return nil, errLeaderUnknown
 			}
-			c, err := n.pool.GetPeer(string(id), string(address))
+			conn, err := n.pool.GetConnection(string(address))
 			if err != nil {
 				log.Print(err)
 				return nil, err
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), n.monsteraNodeConfig.MaxReadTimeout)
 			defer cancel()
 
 			redirectedRequest := proto.Clone(request).(*ReadRequest)
 			redirectedRequest.ReplicaId = string(id)
 			// TODO increment hops
 
-			resp, err := c.Read(ctx, redirectedRequest, grpc.WaitForReady(true))
+			resp, err := conn.Read(ctx, redirectedRequest, grpc.WaitForReady(true))
 			if err != nil {
 				return nil, err
 			} else {
@@ -200,33 +214,33 @@ func (n *MonsteraNode) Update(request *UpdateRequest) ([]byte, error) {
 		return nil, errNodeNotReady
 	}
 
-	b, ok := n.replicas[request.ReplicaId]
+	r, ok := n.replicas[request.ReplicaId]
 	if !ok {
 		return nil, fmt.Errorf("no replica %s found on this node %s", request.ReplicaId, n.node.Id)
 	}
 
-	if b.GetRaftState() == hraft.Leader {
-		return b.Update(request.Payload)
+	if r.GetRaftState() == hraft.Leader {
+		return r.Update(request.Payload)
 	} else {
-		address, id := b.GetRaftLeader()
+		address, id := r.GetRaftLeader()
 		if address == "" || id == "" {
 			// TODO wait?
 			return nil, errLeaderUnknown
 		}
-		c, err := n.pool.GetPeer(string(id), string(address))
+		conn, err := n.pool.GetConnection(string(address))
 		if err != nil {
 			log.Print(err)
 			return nil, err
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), n.monsteraNodeConfig.MaxUpdateTimeout)
 		defer cancel()
 
 		redirectedRequest := proto.Clone(request).(*UpdateRequest)
 		redirectedRequest.ReplicaId = string(id)
 		// TODO increment hops
 
-		resp, err := c.Update(ctx, redirectedRequest, grpc.WaitForReady(true))
+		resp, err := conn.Update(ctx, redirectedRequest, grpc.WaitForReady(true))
 		if err != nil {
 			return nil, err
 		} else {
@@ -243,12 +257,12 @@ func (n *MonsteraNode) AppendEntries(replicaId string, request *hraft.AppendEntr
 		return nil, errNodeNotReady
 	}
 
-	b, ok := n.replicas[replicaId]
+	r, ok := n.replicas[replicaId]
 	if !ok {
 		return nil, fmt.Errorf("no replica %s found on this node %s", replicaId, n.node.Id)
 	}
 
-	return b.AppendEntries(request)
+	return r.AppendEntries(request)
 }
 
 func (n *MonsteraNode) RequestVote(replicaId string, request *hraft.RequestVoteRequest) (*hraft.RequestVoteResponse, error) {
@@ -259,12 +273,12 @@ func (n *MonsteraNode) RequestVote(replicaId string, request *hraft.RequestVoteR
 		return nil, errNodeNotReady
 	}
 
-	b, ok := n.replicas[replicaId]
+	r, ok := n.replicas[replicaId]
 	if !ok {
 		return nil, fmt.Errorf("no replica %s found on this node %s", replicaId, n.node.Id)
 	}
 
-	return b.RequestVote(request)
+	return r.RequestVote(request)
 }
 
 func (n *MonsteraNode) TimeoutNow(replicaId string, request *hraft.TimeoutNowRequest) (*hraft.TimeoutNowResponse, error) {
@@ -275,12 +289,12 @@ func (n *MonsteraNode) TimeoutNow(replicaId string, request *hraft.TimeoutNowReq
 		return nil, errNodeNotReady
 	}
 
-	b, ok := n.replicas[replicaId]
+	r, ok := n.replicas[replicaId]
 	if !ok {
 		return nil, fmt.Errorf("no replica %s found on this node %s", replicaId, n.node.Id)
 	}
 
-	return b.TimeoutNow(request)
+	return r.TimeoutNow(request)
 }
 
 func (n *MonsteraNode) InstallSnapshot(replicaId string, request *hraft.InstallSnapshotRequest, data io.Reader) (*hraft.InstallSnapshotResponse, error) {
@@ -291,12 +305,12 @@ func (n *MonsteraNode) InstallSnapshot(replicaId string, request *hraft.InstallS
 		return nil, errNodeNotReady
 	}
 
-	b, ok := n.replicas[replicaId]
+	r, ok := n.replicas[replicaId]
 	if !ok {
 		return nil, fmt.Errorf("no replica %s found on this node %s", replicaId, n.node.Id)
 	}
 
-	return b.InstallSnapshot(request, data)
+	return r.InstallSnapshot(request, data)
 }
 
 func (n *MonsteraNode) ListCores() []*MonsteraReplica {
@@ -410,16 +424,17 @@ func (n *MonsteraNode) bootstrapShards() error {
 	return nil
 }
 
-func NewNode(baseDir string, nodeId string, clusterConfig *ClusterConfig, raftStore *BadgerStore) *MonsteraNode {
+func NewNode(baseDir string, nodeId string, clusterConfig *ClusterConfig, raftStore *BadgerStore, monsteraNodeConfig MonsteraNodeConfig) *MonsteraNode {
 	monsteraNode := &MonsteraNode{
-		baseDir:         baseDir,
-		nodeId:          nodeId,
-		coreDescriptors: make(map[string]*ApplicationCoreDescriptor),
-		clusterConfig:   clusterConfig,
-		nodeState:       INITIAL,
-		replicas:        make(map[string]*MonsteraReplica),
-		pool:            NewMonsteraConnectionPool(),
-		raftStore:       raftStore,
+		baseDir:            baseDir,
+		nodeId:             nodeId,
+		coreDescriptors:    make(map[string]*ApplicationCoreDescriptor),
+		clusterConfig:      clusterConfig,
+		nodeState:          INITIAL,
+		replicas:           make(map[string]*MonsteraReplica),
+		pool:               NewMonsteraConnectionPool(),
+		raftStore:          raftStore,
+		monsteraNodeConfig: monsteraNodeConfig,
 	}
 
 	return monsteraNode

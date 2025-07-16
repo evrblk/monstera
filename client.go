@@ -10,23 +10,16 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/proto"
 )
 
 type MonsteraClient struct {
 	mu            sync.RWMutex
 	clusterConfig *ClusterConfig
-	grpcClients   map[string]monsteraGrpcClient
+	pool          *MonsteraConnectionPool
 
 	ReplicaStates map[string]*ReplicaState
 
 	refresherCancel context.CancelFunc
-}
-
-type monsteraGrpcClient struct {
-	client MonsteraApiClient
-	conn   *grpc.ClientConn
 }
 
 func (c *MonsteraClient) Stop() {
@@ -36,12 +29,7 @@ func (c *MonsteraClient) Stop() {
 		c.refresherCancel()
 	}
 
-	for _, grpcClient := range c.grpcClients {
-		err := grpcClient.conn.Close()
-		if err != nil {
-			log.Printf("Error closing grpc client: %v", err)
-		}
-	}
+	c.pool.Close()
 }
 
 func (c *MonsteraClient) Start() {
@@ -51,12 +39,16 @@ func (c *MonsteraClient) Start() {
 	go func(monstera *MonsteraClient, ctx context.Context) {
 		for {
 			for _, n := range c.clusterConfig.ListNodes() {
-				grpcClient := c.getClient(n.Id)
+				conn, err := c.pool.GetConnection(n.Address)
+				if err != nil {
+					//log.Println(err)
+					continue
+				}
 
 				tctx, tcancel := context.WithTimeout(ctx, time.Millisecond*500)
 				defer tcancel()
 
-				resp, err := grpcClient.client.HealthCheck(tctx, &HealthCheckRequest{})
+				resp, err := conn.HealthCheck(tctx, &HealthCheckRequest{})
 				if err != nil {
 					continue
 				}
@@ -80,30 +72,25 @@ func (c *MonsteraClient) Start() {
 	}(c, ctx)
 }
 
-func (c *MonsteraClient) Read(ctx context.Context, applicationName string, shardKey []byte, allowReadFromFollowers bool, request proto.Message, response proto.Message) error {
+func (c *MonsteraClient) Read(ctx context.Context, applicationName string, shardKey []byte, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
 	shard, err := c.clusterConfig.FindShard(applicationName, shardKey)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return c.readShard(ctx, applicationName, shard, shardKey, allowReadFromFollowers, request, response)
+	return c.readShard(ctx, applicationName, shard, shardKey, allowReadFromFollowers, payload)
 }
 
-func (c *MonsteraClient) ReadShard(ctx context.Context, applicationName string, shardId string, allowReadFromFollowers bool, request proto.Message, response proto.Message) error {
+func (c *MonsteraClient) ReadShard(ctx context.Context, applicationName string, shardId string, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
 	shard, err := c.clusterConfig.GetShard(shardId)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return c.readShard(ctx, applicationName, shard, []byte{}, allowReadFromFollowers, request, response)
+	return c.readShard(ctx, applicationName, shard, []byte{}, allowReadFromFollowers, payload)
 }
 
-func (c *MonsteraClient) readShard(ctx context.Context, applicationName string, shard *Shard, shardKey []byte, allowReadFromFollowers bool, request proto.Message, response proto.Message) error {
-	payload, err := proto.Marshal(request)
-	if err != nil {
-		return fmt.Errorf("proto.Marshal: %v", err)
-	}
-
+func (c *MonsteraClient) readShard(ctx context.Context, applicationName string, shard *Shard, shardKey []byte, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
 	var r *Replica
 	if allowReadFromFollowers {
 		r = c.getAny(shard.Replicas)
@@ -123,39 +110,43 @@ func (c *MonsteraClient) readShard(ctx context.Context, applicationName string, 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	api := c.getClient(r.NodeId)
-	resp, err := api.client.Read(ctx, &readRequest)
+	n, err := c.clusterConfig.GetNode(r.NodeId)
 	if err != nil {
-		return fmt.Errorf("monsteraClient.Read: %v", err)
+		return nil, fmt.Errorf("clusterConfig.GetNode: %v", err)
 	}
 
-	return proto.Unmarshal(resp.Payload, response)
+	conn, err := c.pool.GetConnection(n.Address)
+	if err != nil {
+		return nil, fmt.Errorf("pool.GetConnection: %v", err)
+	}
+
+	resp, err := conn.Read(ctx, &readRequest)
+	if err != nil {
+		return nil, fmt.Errorf("monsteraClient.Read: %v", err)
+	}
+
+	return resp.Payload, nil
 }
 
-func (c *MonsteraClient) Update(ctx context.Context, applicationName string, shardKey []byte, request proto.Message, response proto.Message) error {
+func (c *MonsteraClient) Update(ctx context.Context, applicationName string, shardKey []byte, payload []byte) ([]byte, error) {
 	shard, err := c.clusterConfig.FindShard(applicationName, shardKey)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return c.updateShard(ctx, applicationName, shard, shardKey, request, response)
+	return c.updateShard(ctx, applicationName, shard, shardKey, payload)
 }
 
-func (c *MonsteraClient) UpdateShard(ctx context.Context, applicationName string, shardId string, request proto.Message, response proto.Message) error {
+func (c *MonsteraClient) UpdateShard(ctx context.Context, applicationName string, shardId string, payload []byte) ([]byte, error) {
 	shard, err := c.clusterConfig.GetShard(shardId)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return c.updateShard(ctx, applicationName, shard, []byte{}, request, response)
+	return c.updateShard(ctx, applicationName, shard, []byte{}, payload)
 }
 
-func (c *MonsteraClient) updateShard(ctx context.Context, applicationName string, shard *Shard, shardKey []byte, request proto.Message, response proto.Message) error {
-	payload, err := proto.Marshal(request)
-	if err != nil {
-		return fmt.Errorf("proto.Marshal: %v", err)
-	}
-
+func (c *MonsteraClient) updateShard(ctx context.Context, applicationName string, shard *Shard, shardKey []byte, payload []byte) ([]byte, error) {
 	replicas := shard.Replicas
 
 	r := c.getLeader(replicas)
@@ -171,13 +162,34 @@ func (c *MonsteraClient) updateShard(ctx context.Context, applicationName string
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	api := c.getClient(r.NodeId)
-	resp, err := api.client.Update(ctx, &updateRequest)
+	n, err := c.clusterConfig.GetNode(r.NodeId)
 	if err != nil {
-		return fmt.Errorf("monsteraClient.Update: %v", err)
+		return nil, fmt.Errorf("clusterConfig.GetNode: %v", err)
 	}
 
-	return proto.Unmarshal(resp.Payload, response)
+	conn, err := c.pool.GetConnection(n.Address)
+	if err != nil {
+		return nil, fmt.Errorf("pool.GetConnection: %v", err)
+	}
+
+	resp, err := conn.Update(ctx, &updateRequest)
+	if err != nil {
+		return nil, fmt.Errorf("monsteraClient.Update: %v", err)
+	}
+
+	return resp.Payload, nil
+}
+
+func (c *MonsteraClient) ListShards(applicationName string) ([]*Shard, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	shards, err := c.clusterConfig.ListShards(applicationName)
+	if err != nil {
+		return nil, err
+	}
+
+	return shards, nil
 }
 
 func (c *MonsteraClient) getLeader(replicas []*Replica) *Replica {
@@ -197,52 +209,10 @@ func (c *MonsteraClient) getAny(replicas []*Replica) *Replica {
 	return lo.Sample(replicas)
 }
 
-func (c *MonsteraClient) getClient(nodeId string) monsteraGrpcClient {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	client, ok := c.grpcClients[nodeId]
-	if ok {
-		return client
-	}
-
-	node, err := c.clusterConfig.GetNode(nodeId)
-	if err != nil {
-		panic("Node not found")
-	}
-
-	conn, err := grpc.Dial(node.Address, grpc.WithInsecure())
-	if err != nil {
-		panic(err)
-	}
-	client = monsteraGrpcClient{client: NewMonsteraApiClient(conn), conn: conn}
-	c.grpcClients[node.Id] = client
-	return client
-}
-
-func (c *MonsteraClient) ListApplications() []*Application {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	return c.clusterConfig.ListApplications()
-}
-
-func (c *MonsteraClient) ListShards(applicationName string) ([]*Shard, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	shards, err := c.clusterConfig.ListShards(applicationName)
-	if err != nil {
-		return nil, err
-	}
-
-	return shards, nil
-}
-
 func NewMonsteraClient(clusterConfig *ClusterConfig) *MonsteraClient {
 	return &MonsteraClient{
 		clusterConfig: clusterConfig,
-		grpcClients:   make(map[string]monsteraGrpcClient),
+		pool:          NewMonsteraConnectionPool(),
 		ReplicaStates: make(map[string]*ReplicaState),
 	}
 }

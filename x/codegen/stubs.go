@@ -85,7 +85,19 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 						Id(read.Name + "Request").Op(":").Id("request"),
 					),
 				)
-				g.Id("readResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadResponseProto).Values()
+				g.List(Id("requestBytes"), Id("err")).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(Id("readRequest"))
+				g.If(
+					Id("err").Op("!=").Nil(),
+				).Block(
+					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
+						Qual("github.com/evrblk/monstera/x", "Internal"),
+						Lit("failed to marshal request"),
+						Map(String()).String().Values(
+							Lit("error").Op(":").Id("err").Dot("Error()"),
+						),
+					)),
+				)
+				g.Line()
 
 				if read.Sharded {
 					g.Id("shardKey").Op(":=").Id("s.shardKeyCalculator." + read.Name + "ShardKey").Call(
@@ -93,24 +105,22 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 					)
 					g.Line()
 
-					g.Id("err").Op(":=").Id("s.monsteraClient.Read").Call(
+					g.List(Id("responseBytes"), Id("err")).Op(":=").Id("s.monsteraClient.Read").Call(
 						Id("ctx"),
 						Lit(core.Name),
 						Id("shardKey"),
 						Lit(read.AllowReadFromFollowers),
-						Id("readRequest"),
-						Id("readResponse"),
+						Id("requestBytes"),
 					)
 				} else {
 					g.Line()
 
-					g.Id("err").Op(":=").Id("s.monsteraClient.ReadShard").Call(
+					g.List(Id("responseBytes"), Id("err")).Op(":=").Id("s.monsteraClient.ReadShard").Call(
 						Id("ctx"),
 						Lit(core.Name),
 						Id("shardId"),
 						Lit(read.AllowReadFromFollowers),
-						Id("readRequest"),
-						Id("readResponse"),
+						Id("requestBytes"),
 					)
 				}
 
@@ -118,6 +128,21 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 					Id("err").Op("!=").Nil(),
 				).Block(
 					Return(Id("nil"), Id("err")),
+				)
+				g.Line()
+
+				g.Id("readResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadResponseProto).Values()
+				Id("err").Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("readResponse"))
+				g.If(
+					Id("err").Op("!=").Nil(),
+				).Block(
+					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
+						Qual("github.com/evrblk/monstera/x", "Internal"),
+						Lit("failed to unmarshal response"),
+						Map(String()).String().Values(
+							Lit("error").Op(":").Id("err").Dot("Error()"),
+						),
+					)),
 				)
 				g.Line()
 
@@ -161,7 +186,19 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 						Id(update.Name + "Request").Op(":").Id("request"),
 					),
 				)
-				g.Id("updateResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateResponseProto).Values()
+				g.List(Id("requestBytes"), Id("err")).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(Id("updateRequest"))
+				g.If(
+					Id("err").Op("!=").Nil(),
+				).Block(
+					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
+						Qual("github.com/evrblk/monstera/x", "Internal"),
+						Lit("failed to marshal request"),
+						Map(String()).String().Values(
+							Lit("error").Op(":").Id("err").Dot("Error()"),
+						),
+					)),
+				)
+				g.Line()
 
 				if update.Sharded {
 					g.Id("shardKey").Op(":=").Id("s.shardKeyCalculator." + update.Name + "ShardKey").Call(
@@ -169,22 +206,20 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 					)
 					g.Line()
 
-					g.Id("err").Op(":=").Id("s.monsteraClient.Update").Call(
+					g.List(Id("responseBytes"), Id("err")).Op(":=").Id("s.monsteraClient.Update").Call(
 						Id("ctx"),
 						Lit(core.Name),
 						Id("shardKey"),
-						Id("updateRequest"),
-						Id("updateResponse"),
+						Id("requestBytes"),
 					)
 				} else {
 					g.Line()
 
-					g.Id("err").Op(":=").Id("s.monsteraClient.UpdateShard").Call(
+					g.List(Id("responseBytes"), Id("err")).Op(":=").Id("s.monsteraClient.UpdateShard").Call(
 						Id("ctx"),
 						Lit(core.Name),
 						Id("shardId"),
-						Id("updateRequest"),
-						Id("updateResponse"),
+						Id("requestBytes"),
 					)
 				}
 
@@ -192,6 +227,21 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 					Id("err").Op("!=").Nil(),
 				).Block(
 					Return(Id("nil"), Id("err")),
+				)
+				g.Line()
+
+				g.Id("updateResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateResponseProto).Values()
+				Id("err").Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("updateResponse"))
+				g.If(
+					Id("err").Op("!=").Nil(),
+				).Block(
+					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
+						Qual("github.com/evrblk/monstera/x", "Internal"),
+						Lit("failed to unmarshal response"),
+						Map(String()).String().Values(
+							Lit("error").Op(":").Id("err").Dot("Error()"),
+						),
+					)),
 				)
 				g.Line()
 

@@ -40,7 +40,7 @@ func TestClusterConfigFindShard(t *testing.T) {
 					Id:                "shrd_05",
 					LowerBound:        []byte{0x40, 0x00, 0x00, 0x00},
 					UpperBound:        []byte{0x4f, 0xff, 0xff, 0xff},
-					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x025},
+					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x05},
 					Replicas: []*Replica{
 						{
 							Id:     "rplc_13",
@@ -306,7 +306,9 @@ func TestClusterConfigValidate(t *testing.T) {
 	t.Run("empty node address", func(t *testing.T) {
 		config := &ClusterConfig{
 			Nodes: []*Node{
-				{Id: "nd_01", Address: ""},
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: ""},
 			},
 		}
 
@@ -318,7 +320,9 @@ func TestClusterConfigValidate(t *testing.T) {
 	t.Run("empty node id", func(t *testing.T) {
 		config := &ClusterConfig{
 			Nodes: []*Node{
-				{Id: "", Address: "localhost:9001"},
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "", Address: "localhost:9003"},
 			},
 		}
 
@@ -332,6 +336,7 @@ func TestClusterConfigValidate(t *testing.T) {
 			Nodes: []*Node{
 				{Id: "nd_01", Address: "localhost:9001"},
 				{Id: "nd_01", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
 			},
 		}
 
@@ -346,7 +351,11 @@ func TestClusterConfigValidate(t *testing.T) {
 			Applications: []*Application{
 				{Name: "", Implementation: "test.impl", ReplicationFactor: 3},
 			},
-			Nodes: []*Node{{Id: "nd_01", Address: "localhost:9001"}},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
 		}
 
 		err := config.Validate()
@@ -359,7 +368,11 @@ func TestClusterConfigValidate(t *testing.T) {
 			Applications: []*Application{
 				{Name: "test.app", Implementation: "", ReplicationFactor: 3},
 			},
-			Nodes: []*Node{{Id: "nd_01", Address: "localhost:9001"}},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
 		}
 
 		err := config.Validate()
@@ -373,7 +386,11 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Name: "test.app", Implementation: "test.impl", ReplicationFactor: 3},
 				{Name: "test.app", Implementation: "test.impl2", ReplicationFactor: 3},
 			},
-			Nodes: []*Node{{Id: "nd_01", Address: "localhost:9001"}},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
 		}
 
 		err := config.Validate()
@@ -386,7 +403,11 @@ func TestClusterConfigValidate(t *testing.T) {
 			Applications: []*Application{
 				{Name: "test.app", Implementation: "test.impl", ReplicationFactor: 2},
 			},
-			Nodes: []*Node{{Id: "nd_01", Address: "localhost:9001"}},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
 		}
 
 		err := config.Validate()
@@ -883,6 +904,63 @@ func TestClusterConfigValidate(t *testing.T) {
 		}
 
 		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "at least 3 nodes are required")
+	})
+
+	// Test minimum node requirement
+	t.Run("insufficient nodes - 0 nodes", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{},
+			Nodes:        []*Node{},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "at least 3 nodes are required")
+	})
+
+	t.Run("insufficient nodes - 2 nodes", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+			},
+		}
+
+		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "at least 3 nodes are required")
+	})
+
+	t.Run("sufficient nodes - 3 nodes", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+			},
+		}
+
+		err := config.Validate()
+		require.NoError(err)
+	})
+
+	t.Run("sufficient nodes - more than 3 nodes", func(t *testing.T) {
+		config := &ClusterConfig{
+			Applications: []*Application{},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
+				{Id: "nd_04", Address: "localhost:9004"},
+				{Id: "nd_05", Address: "localhost:9005"},
+			},
+		}
+
+		err := config.Validate()
 		require.NoError(err)
 	})
 
@@ -898,6 +976,8 @@ func TestClusterConfigValidate(t *testing.T) {
 			},
 			Nodes: []*Node{
 				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_03", Address: "localhost:9003"},
 			},
 		}
 

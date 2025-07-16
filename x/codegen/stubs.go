@@ -132,7 +132,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 				g.Line()
 
 				g.Id("readResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadResponseProto).Values()
-				Id("err").Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("readResponse"))
+				g.Id("err").Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("readResponse"))
 				g.If(
 					Id("err").Op("!=").Nil(),
 				).Block(
@@ -231,7 +231,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 				g.Line()
 
 				g.Id("updateResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateResponseProto).Values()
-				Id("err").Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("updateResponse"))
+				g.Id("err").Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("updateResponse"))
 				g.If(
 					Id("err").Op("!=").Nil(),
 				).Block(

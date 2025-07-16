@@ -80,7 +80,7 @@ func ErrorToGRPC(err error) error {
 			case Unimplemented:
 				return status.Errorf(codes.Unimplemented, "%v", err)
 			case Internal:
-				return status.Errorf(codes.Internal, "%v", err)
+				return status.Errorf(codes.Internal, "%v", err) // TODO do not return internal error details
 			default:
 				return status.Errorf(codes.Internal, "%v", err)
 			}

@@ -316,7 +316,7 @@ func (c *ClusterConfig) CreateShard(applicationName string, lowerBound []byte, u
 	for {
 		binary.BigEndian.PutUint64(globalIndexPrefix[0:8], rand.Uint64())
 		_, ok := lo.Find(application.Shards, func(s *Shard) bool {
-			return bytes.Compare(s.GlobalIndexPrefix, globalIndexPrefix) == 0
+			return bytes.Equal(s.GlobalIndexPrefix, globalIndexPrefix)
 		})
 		if !ok {
 			break

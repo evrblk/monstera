@@ -122,7 +122,7 @@ func TestBadgerStoreUpdate(t *testing.T) {
 	require.NoError(err)
 
 	// Verify key2 is deleted
-	value, err = txn.Get([]byte("key2"))
+	_, err = txn.Get([]byte("key2"))
 	require.Error(err)
 	require.ErrorIs(err, ErrNotFound)
 
@@ -138,7 +138,7 @@ func TestBadgerStoreUpdate(t *testing.T) {
 	require.NoError(err)
 	require.Equal([]byte("value1"), value)
 
-	value, err = viewTxn.Get([]byte("key2"))
+	_, err = viewTxn.Get([]byte("key2"))
 	require.Error(err)
 	require.ErrorIs(err, ErrNotFound)
 }
@@ -223,7 +223,7 @@ func TestBadgerStoreBatchUpdate(t *testing.T) {
 	require.Equal([]byte("batch:value2"), value)
 
 	// Verify deleted key doesn't exist
-	value, err = viewTxn.Get([]byte("batch:key3"))
+	_, err = viewTxn.Get([]byte("batch:key3"))
 	require.Error(err)
 	require.ErrorIs(err, ErrNotFound)
 }
@@ -299,11 +299,11 @@ func TestBadgerStoreDropPrefix(t *testing.T) {
 	require.NoError(err)
 
 	// Verify prefix1 keys are deleted
-	value, err = viewTxn.Get([]byte("prefix1:key1"))
+	_, err = viewTxn.Get([]byte("prefix1:key1"))
 	require.Error(err)
 	require.ErrorIs(err, ErrNotFound)
 
-	value, err = viewTxn.Get([]byte("prefix1:key2"))
+	_, err = viewTxn.Get([]byte("prefix1:key2"))
 	require.Error(err)
 	require.ErrorIs(err, ErrNotFound)
 
@@ -321,11 +321,11 @@ func TestBadgerStoreDropPrefix(t *testing.T) {
 	require.NoError(err)
 
 	// Verify prefix2 keys are deleted
-	value, err = viewTxn.Get([]byte("prefix2:key1"))
+	_, err = viewTxn.Get([]byte("prefix2:key1"))
 	require.Error(err)
 	require.ErrorIs(err, ErrNotFound)
 
-	value, err = viewTxn.Get([]byte("prefix2:key2"))
+	_, err = viewTxn.Get([]byte("prefix2:key2"))
 	require.Error(err)
 	require.ErrorIs(err, ErrNotFound)
 

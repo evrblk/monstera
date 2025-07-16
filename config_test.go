@@ -226,7 +226,7 @@ func TestClusterConfigFindShard(t *testing.T) {
 	require.NoError(err)
 	require.Equal("shrd_01", p.Id)
 
-	p, err = clusterConfig.FindShard("test.app_02", []byte{0x14, 0x90, 0x2f, 0x1e})
+	_, err = clusterConfig.FindShard("test.app_02", []byte{0x14, 0x90, 0x2f, 0x1e})
 	require.Error(err)
 
 	p, err = clusterConfig.FindShard("test.app_01", []byte{0x80, 0x90, 0x2f, 0x1e})

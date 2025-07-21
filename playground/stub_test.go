@@ -21,22 +21,56 @@ func TestPlaygroundApiMonsteraStub_ReadAndUpdate(t *testing.T) {
 	nodes := NewCluster(clusterConfig)
 	defer func() {
 		for _, n := range nodes {
-			n.grpcServer.Stop()
 			n.monsteraNode.Stop()
-			n.lis.Close()
+			n.grpcServer.Stop()
 		}
 	}()
 
-	// TODO replace with nodes state check
-	time.Sleep(2 * time.Second)
+	t1 := time.Now()
+	allReady := true
+	for time.Now().Before(t1.Add(2 * time.Second)) {
+		allReady = true
+		for _, n := range nodes {
+			if n.monsteraNode.NodeState() != monstera.READY {
+				allReady = false
+				break
+			}
+		}
+		if allReady {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
-	for i := 0; i < 1_000; i++ {
+	if !allReady {
+		t.Fatalf("Nodes not ready after 2 seconds")
+	}
+
+	for i := 0; i < 100; i++ {
 		// Test reading non-existent key
 		key := rand.Uint64()
 
 		resp1, err := stub.Read(context.Background(), key)
 		require.NoError(err)
 		require.Empty(resp1, "Expected empty result for non-existent key")
+
+		// Update key
+		value := "test value"
+		resp2, err := stub.Update(context.Background(), key, value)
+		require.NoError(err)
+		require.Equal(value, resp2)
+
+		// Test reading existing key
+		resp3, err := stub.Read(context.Background(), key)
+		require.NoError(err)
+		require.Equal(value, resp3)
+	}
+
+	nodes[0].monsteraNode.Stop()
+	nodes[0].grpcServer.Stop()
+
+	for i := 0; i < 100; i++ {
+		key := rand.Uint64()
 
 		// Update key
 		value := "test value"
@@ -58,11 +92,11 @@ type localNode struct {
 }
 
 func NewCluster(clusterConfig *monstera.ClusterConfig) []localNode {
-	badgerStore := monstera.NewBadgerInMemoryStore()
-
 	nodes := make([]localNode, 0)
 
 	for _, n := range clusterConfig.Nodes {
+		badgerStore := monstera.NewBadgerInMemoryStore()
+
 		baseDir := fmt.Sprintf("/tmp/monstera/%d/%s", rand.Uint64(), n.Id)
 		monsteraNode := monstera.NewNode(baseDir, n.Id, clusterConfig, badgerStore, monstera.DefaultMonsteraNodeConfig)
 
@@ -74,8 +108,6 @@ func NewCluster(clusterConfig *monstera.ClusterConfig) []localNode {
 			RestoreSnapshotOnStart: false,
 		})
 
-		monsteraNode.Start()
-
 		lis, err := net.Listen("tcp", n.Address)
 		if err != nil {
 			panic(err)
@@ -86,15 +118,17 @@ func NewCluster(clusterConfig *monstera.ClusterConfig) []localNode {
 		grpcServer := grpc.NewServer()
 		monstera.RegisterMonsteraApiServer(grpcServer, monsteraServer)
 
-		go func() {
-			grpcServer.Serve(lis)
-		}()
-
 		nodes = append(nodes, localNode{
 			monsteraNode: monsteraNode,
 			lis:          lis,
 			grpcServer:   grpcServer,
 		})
+
+		monsteraNode.Start()
+
+		go func() {
+			grpcServer.Serve(lis)
+		}()
 	}
 
 	return nodes

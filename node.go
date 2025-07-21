@@ -21,17 +21,17 @@ var (
 )
 
 type MonsteraNode struct {
-	mu sync.RWMutex
-
 	baseDir         string
 	nodeId          string
 	node            *Node
 	coreDescriptors map[string]*ApplicationCoreDescriptor
-	replicas        map[string]*MonsteraReplica
 
+	mu            sync.RWMutex
+	replicas      map[string]*MonsteraReplica
 	clusterConfig *ClusterConfig
-	nodeState     MonsteraNodeState
-	cancel        context.CancelFunc
+
+	smu       sync.Mutex
+	nodeState MonsteraNodeState
 
 	pool      *MonsteraConnectionPool
 	raftStore *BadgerStore
@@ -80,8 +80,8 @@ var DefaultMonsteraNodeConfig = MonsteraNodeConfig{
 // RegisterApplicationCore registers an application core with the Monstera framework.
 // It should be called before MonsteraNode.Start.
 func (n *MonsteraNode) RegisterApplicationCore(descriptor *ApplicationCoreDescriptor) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
+	n.smu.Lock()
+	defer n.smu.Unlock()
 
 	if n.nodeState != INITIAL {
 		panic("cannot register application core after node has started")
@@ -95,28 +95,32 @@ func (n *MonsteraNode) RegisterApplicationCore(descriptor *ApplicationCoreDescri
 }
 
 func (n *MonsteraNode) Stop() {
-	log.Printf("Stopping Monstera Node")
+	n.smu.Lock()
+	defer n.smu.Unlock()
+
+	if n.nodeState == STOPPED {
+		log.Printf("[%s] Monstera Node already stopped", n.nodeId)
+		return
+	}
+
+	log.Printf("[%s] Stopping Monstera Node", n.nodeId)
 
 	n.nodeState = STOPPED
 
 	n.pool.Close()
 
-	//n.mu.Lock()
-	//defer n.mu.Unlock()
-
-	if n.cancel != nil {
-		n.cancel()
-	}
-
 	for _, b := range n.replicas {
 		b.Close()
 	}
 
-	log.Printf("Stopped Monstera Node")
+	log.Printf("[%s] Monstera Node stopped", n.nodeId)
 }
 
 func (n *MonsteraNode) Start() {
-	log.Printf("[%s] Starting Monstera Node", n.nodeId)
+	n.smu.Lock()
+	defer n.smu.Unlock()
+
+	log.Printf("[%s] Starting Monstera Node. Config version: %d", n.nodeId, n.clusterConfig.UpdatedAt)
 
 	mn, err := n.clusterConfig.GetNode(n.nodeId)
 	if err != nil {
@@ -125,7 +129,7 @@ func (n *MonsteraNode) Start() {
 
 	n.node = mn
 
-	log.Printf("[%s] Loading replicas...", n.nodeId)
+	log.Printf("[%s] Loading cores...", n.nodeId)
 	err = n.loadCores()
 	if err != nil {
 		panic(err)
@@ -143,15 +147,12 @@ func (n *MonsteraNode) Start() {
 }
 
 func (n *MonsteraNode) AddVoter(replicaId string, voterReplicaId string, voterAddress string) error {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-
-	r, ok := n.replicas[replicaId]
-	if !ok {
-		return fmt.Errorf("no replica %s found on this node %s", replicaId, n.node.Id)
+	r, err := n.getReplica(replicaId)
+	if err != nil {
+		return err
 	}
 
-	err := r.AddVoter(voterReplicaId, voterAddress)
+	err = r.AddVoter(voterReplicaId, voterAddress)
 	if err != nil {
 		return err
 	}
@@ -160,16 +161,13 @@ func (n *MonsteraNode) AddVoter(replicaId string, voterReplicaId string, voterAd
 }
 
 func (n *MonsteraNode) Read(request *ReadRequest) ([]byte, error) {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-
-	if n.nodeState != READY {
+	if n.NodeState() != READY {
 		return nil, errNodeNotReady
 	}
 
-	r, ok := n.replicas[request.ReplicaId]
-	if !ok {
-		return nil, fmt.Errorf("no replica %s found on this node %s", request.ReplicaId, n.node.Id)
+	r, err := n.getReplica(request.ReplicaId)
+	if err != nil {
+		return nil, err
 	}
 
 	if request.AllowReadFromFollowers {
@@ -207,16 +205,13 @@ func (n *MonsteraNode) Read(request *ReadRequest) ([]byte, error) {
 }
 
 func (n *MonsteraNode) Update(request *UpdateRequest) ([]byte, error) {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-
-	if n.nodeState != READY {
+	if n.NodeState() != READY {
 		return nil, errNodeNotReady
 	}
 
-	r, ok := n.replicas[request.ReplicaId]
-	if !ok {
-		return nil, fmt.Errorf("no replica %s found on this node %s", request.ReplicaId, n.node.Id)
+	r, err := n.getReplica(request.ReplicaId)
+	if err != nil {
+		return nil, err
 	}
 
 	if r.GetRaftState() == hraft.Leader {
@@ -250,64 +245,52 @@ func (n *MonsteraNode) Update(request *UpdateRequest) ([]byte, error) {
 }
 
 func (n *MonsteraNode) AppendEntries(replicaId string, request *hraft.AppendEntriesRequest) (*hraft.AppendEntriesResponse, error) {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-
-	if n.nodeState != READY {
+	if n.NodeState() != READY {
 		return nil, errNodeNotReady
 	}
 
-	r, ok := n.replicas[replicaId]
-	if !ok {
-		return nil, fmt.Errorf("no replica %s found on this node %s", replicaId, n.node.Id)
+	r, err := n.getReplica(replicaId)
+	if err != nil {
+		return nil, err
 	}
 
 	return r.AppendEntries(request)
 }
 
 func (n *MonsteraNode) RequestVote(replicaId string, request *hraft.RequestVoteRequest) (*hraft.RequestVoteResponse, error) {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-
-	if n.nodeState != READY {
+	if n.NodeState() != READY {
 		return nil, errNodeNotReady
 	}
 
-	r, ok := n.replicas[replicaId]
-	if !ok {
-		return nil, fmt.Errorf("no replica %s found on this node %s", replicaId, n.node.Id)
+	r, err := n.getReplica(replicaId)
+	if err != nil {
+		return nil, err
 	}
 
 	return r.RequestVote(request)
 }
 
 func (n *MonsteraNode) TimeoutNow(replicaId string, request *hraft.TimeoutNowRequest) (*hraft.TimeoutNowResponse, error) {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-
-	if n.nodeState != READY {
+	if n.NodeState() != READY {
 		return nil, errNodeNotReady
 	}
 
-	r, ok := n.replicas[replicaId]
-	if !ok {
-		return nil, fmt.Errorf("no replica %s found on this node %s", replicaId, n.node.Id)
+	r, err := n.getReplica(replicaId)
+	if err != nil {
+		return nil, err
 	}
 
 	return r.TimeoutNow(request)
 }
 
 func (n *MonsteraNode) InstallSnapshot(replicaId string, request *hraft.InstallSnapshotRequest, data io.Reader) (*hraft.InstallSnapshotResponse, error) {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-
-	if n.nodeState != READY {
+	if n.NodeState() != READY {
 		return nil, errNodeNotReady
 	}
 
-	r, ok := n.replicas[replicaId]
-	if !ok {
-		return nil, fmt.Errorf("no replica %s found on this node %s", replicaId, n.node.Id)
+	r, err := n.getReplica(replicaId)
+	if err != nil {
+		return nil, err
 	}
 
 	return r.InstallSnapshot(request, data)
@@ -321,8 +304,8 @@ func (n *MonsteraNode) ListCores() []*MonsteraReplica {
 }
 
 func (n *MonsteraNode) NodeState() MonsteraNodeState {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
+	n.smu.Lock()
+	defer n.smu.Unlock()
 
 	return n.nodeState
 }
@@ -366,6 +349,17 @@ func (n *MonsteraNode) UpdateClusterConfig(newConfig *ClusterConfig) error {
 	// TODO implement config loading
 
 	return nil
+}
+
+func (n *MonsteraNode) getReplica(replicaId string) (*MonsteraReplica, error) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	r, ok := n.replicas[replicaId]
+	if !ok {
+		return nil, fmt.Errorf("no replica %s found on this node %s", replicaId, n.node.Id)
+	}
+	return r, nil
 }
 
 func (n *MonsteraNode) loadCores() error {

@@ -1,10 +1,11 @@
 package monstera
 
 import (
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"log"
 	"sync"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type MonsteraConnectionPool struct {
@@ -34,6 +35,19 @@ func (p *MonsteraConnectionPool) GetConnection(nodeAddress string) (MonsteraApiC
 		p.conns[nodeAddress] = conn
 	}
 	return conn.grpcClient, nil
+}
+
+func (p *MonsteraConnectionPool) DeleteConnection(nodeAddress string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	conn, ok := p.conns[nodeAddress]
+	if !ok {
+		return
+	}
+
+	conn.clientConn.Close()
+	delete(p.conns, nodeAddress)
 }
 
 func (p *MonsteraConnectionPool) Close() {

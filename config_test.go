@@ -1,6 +1,9 @@
 package monstera
 
 import (
+	"encoding/binary"
+	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -296,6 +299,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := validConfig.Validate()
@@ -310,6 +314,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: ""},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -324,6 +329,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -338,6 +344,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_01", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -356,6 +363,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -373,6 +381,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -391,6 +400,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -408,6 +418,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -443,6 +454,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -488,6 +500,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -533,6 +546,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -566,6 +580,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -600,6 +615,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -634,6 +650,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -669,6 +686,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -703,6 +721,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -737,6 +756,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -771,6 +791,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -824,6 +845,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -858,6 +880,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -891,6 +914,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -901,6 +925,7 @@ func TestClusterConfigValidate(t *testing.T) {
 		config := &ClusterConfig{
 			Applications: []*Application{},
 			Nodes:        []*Node{},
+			UpdatedAt:    time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -913,6 +938,7 @@ func TestClusterConfigValidate(t *testing.T) {
 		config := &ClusterConfig{
 			Applications: []*Application{},
 			Nodes:        []*Node{},
+			UpdatedAt:    time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -927,6 +953,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_01", Address: "localhost:9001"},
 				{Id: "nd_02", Address: "localhost:9002"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -942,6 +969,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -958,6 +986,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_04", Address: "localhost:9004"},
 				{Id: "nd_05", Address: "localhost:9005"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -979,9 +1008,94 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
 		require.NoError(err)
 	})
+}
+
+func BenchmarkClusterConfigFindShard(b *testing.B) {
+	const (
+		numNodes       = 1000
+		numApps        = 50
+		shardsPerApp   = 1024
+		replication    = 3
+		keyspacePerApp = 1 << 32 // 4 bytes
+	)
+
+	nodes := make([]*Node, numNodes)
+	for i := 0; i < numNodes; i++ {
+		nodes[i] = &Node{
+			Id:      fmt.Sprintf("nd_%04d", i),
+			Address: fmt.Sprintf("localhost:%d", 9000+i),
+		}
+	}
+
+	applications := make([]*Application, numApps)
+	for appIdx := 0; appIdx < numApps; appIdx++ {
+		appName := fmt.Sprintf("app_%02d", appIdx)
+		shards := make([]*Shard, shardsPerApp)
+		shardSize := keyspacePerApp / shardsPerApp
+		for shardIdx := 0; shardIdx < shardsPerApp; shardIdx++ {
+			lower := uint32(shardIdx * shardSize)
+			upper := uint32((shardIdx+1)*shardSize - 1)
+			lowerBound := make([]byte, 4)
+			upperBound := make([]byte, 4)
+			binary.BigEndian.PutUint32(lowerBound, lower)
+			binary.BigEndian.PutUint32(upperBound, upper)
+			// Assign replicas to 3 different nodes in round-robin
+			replicas := make([]*Replica, replication)
+			for r := 0; r < replication; r++ {
+				nodeIdx := (shardIdx*replication + r) % numNodes
+				replicas[r] = &Replica{
+					Id:     fmt.Sprintf("rpl_%02d_%04d_%d", appIdx, shardIdx, r),
+					NodeId: nodes[nodeIdx].Id,
+				}
+			}
+			shards[shardIdx] = &Shard{
+				Id:                fmt.Sprintf("shrd_%02d_%04d", appIdx, shardIdx),
+				LowerBound:        lowerBound,
+				UpperBound:        upperBound,
+				GlobalIndexPrefix: []byte{byte(appIdx), byte(shardIdx >> 8), byte(shardIdx)},
+				Replicas:          replicas,
+			}
+		}
+		applications[appIdx] = &Application{
+			Name:              appName,
+			Implementation:    "impl",
+			ReplicationFactor: replication,
+			Shards:            shards,
+		}
+	}
+
+	clusterConfig, err := LoadConfig(applications, nodes, time.Now().UnixMilli())
+	if err != nil {
+		b.Fatalf("failed to create config: %v", err)
+	}
+
+	rng := rand.New(rand.NewSource(42))
+	lookupKeys := make([]struct {
+		appIdx int
+		key    []byte
+	}, b.N)
+	for i := 0; i < b.N; i++ {
+		appIdx := rng.Intn(numApps)
+		key := make([]byte, 4)
+		binary.BigEndian.PutUint32(key, rng.Uint32())
+		lookupKeys[i] = struct {
+			appIdx int
+			key    []byte
+		}{appIdx, key}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		app := applications[lookupKeys[i].appIdx]
+		_, err := clusterConfig.FindShard(app.Name, lookupKeys[i].key)
+		if err != nil {
+			b.Fatalf("FindShard failed: %v", err)
+		}
+	}
 }

@@ -83,6 +83,7 @@ func CreateEmptyConfig() *ClusterConfig {
 	}
 }
 
+// - updatedAt is not 0
 // - there are at least 3 nodes
 // - nodes have non-empty id
 // - nodes have non-empty address
@@ -104,6 +105,10 @@ func CreateEmptyConfig() *ClusterConfig {
 // - replicas are assigned to different nodes
 func (c *ClusterConfig) Validate() error {
 	nodesByIds := make(map[string]*Node)
+
+	if c.UpdatedAt == 0 {
+		return fmt.Errorf("updated at is required")
+	}
 
 	if len(c.Nodes) < 3 {
 		return fmt.Errorf("at least 3 nodes are required")

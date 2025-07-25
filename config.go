@@ -33,9 +33,9 @@ func LoadConfigFromFile(path string) (*ClusterConfig, error) {
 	}
 
 	ext := filepath.Ext(path)
-	if ext == "pb" {
+	if ext == ".pb" {
 		return LoadConfigFromProto(data)
-	} else if ext == "json" {
+	} else if ext == ".json" {
 		return LoadConfigFromJson(data)
 	} else {
 		return nil, fmt.Errorf("unsupported file extension: %s", ext)
@@ -83,13 +83,13 @@ func LoadConfig(applications []*Application, nodes []*Node, updatedAt int64) (*C
 // WriteConfigToFile writes monstera cluster config into either a binary Protobuf `.pb` or a ProtoJSON `.json` file.
 func WriteConfigToFile(config *ClusterConfig, path string) error {
 	ext := filepath.Ext(path)
-	if ext == "pb" {
+	if ext == ".pb" {
 		data, err := WriteConfigToProto(config)
 		if err != nil {
 			return err
 		}
 		return os.WriteFile(path, data, 0666)
-	} else if ext == "json" {
+	} else if ext == ".json" {
 		data, err := WriteConfigToJson(config)
 		if err != nil {
 			return err

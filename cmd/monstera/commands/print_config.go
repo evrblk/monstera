@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/evrblk/monstera"
 	"github.com/spf13/cobra"
@@ -20,7 +19,7 @@ var printConfigCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 
-		data, err = monstera.WriteConfigToJson(clusterConfig)
+		data, err := monstera.WriteConfigToJson(clusterConfig)
 		if err != nil {
 			log.Fatal(err)
 		}

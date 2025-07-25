@@ -1,10 +1,14 @@
 package monstera
 
 import (
+	"encoding/binary"
+	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestClusterConfigFindShard(t *testing.T) {
@@ -296,6 +300,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := validConfig.Validate()
@@ -310,6 +315,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: ""},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -324,6 +330,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -338,6 +345,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_01", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -356,6 +364,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -373,6 +382,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -383,14 +393,38 @@ func TestClusterConfigValidate(t *testing.T) {
 	t.Run("duplicate application name", func(t *testing.T) {
 		config := &ClusterConfig{
 			Applications: []*Application{
-				{Name: "test.app", Implementation: "test.impl", ReplicationFactor: 3},
-				{Name: "test.app", Implementation: "test.impl2", ReplicationFactor: 3},
+				{Name: "test.app", Implementation: "test.impl", ReplicationFactor: 3, Shards: []*Shard{
+					{
+						Id:                "shrd_01",
+						LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+						UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+						GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+						Replicas: []*Replica{
+							{Id: "rpl_01", NodeId: "nd_01"},
+							{Id: "rpl_02", NodeId: "nd_02"},
+							{Id: "rpl_03", NodeId: "nd_03"},
+						}},
+				}},
+				{Name: "test.app", Implementation: "test.impl2", ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							}},
+					}},
 			},
 			Nodes: []*Node{
 				{Id: "nd_01", Address: "localhost:9001"},
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -408,6 +442,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -443,6 +478,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -488,6 +524,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -533,6 +570,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -566,6 +604,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -583,9 +622,20 @@ func TestClusterConfigValidate(t *testing.T) {
 					Shards: []*Shard{
 						{
 							Id:                "shrd_01",
-							LowerBound:        []byte{0x00, 0x00, 0x00},
-							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+						{
+							Id:                "shrd_02",
+							LowerBound:        []byte{0x80, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "nd_01"},
 								{Id: "rpl_02", NodeId: "nd_02"},
@@ -600,6 +650,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -634,6 +685,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -669,6 +721,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -703,6 +756,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -737,6 +791,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -771,6 +826,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -790,7 +846,7 @@ func TestClusterConfigValidate(t *testing.T) {
 						{
 							Id:                "shrd_01",
 							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
-							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "nd_01"},
@@ -824,6 +880,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -858,6 +915,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -891,6 +949,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -901,6 +960,7 @@ func TestClusterConfigValidate(t *testing.T) {
 		config := &ClusterConfig{
 			Applications: []*Application{},
 			Nodes:        []*Node{},
+			UpdatedAt:    time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -913,6 +973,7 @@ func TestClusterConfigValidate(t *testing.T) {
 		config := &ClusterConfig{
 			Applications: []*Application{},
 			Nodes:        []*Node{},
+			UpdatedAt:    time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -927,6 +988,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_01", Address: "localhost:9001"},
 				{Id: "nd_02", Address: "localhost:9002"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -942,6 +1004,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -958,6 +1021,7 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_04", Address: "localhost:9004"},
 				{Id: "nd_05", Address: "localhost:9005"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
@@ -979,9 +1043,575 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Id: "nd_02", Address: "localhost:9002"},
 				{Id: "nd_03", Address: "localhost:9003"},
 			},
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "no shards for test.app")
+	})
+}
+
+func TestClusterConfigValidate_ShardCoverage(t *testing.T) {
+	require := require.New(t)
+	baseNodes := []*Node{
+		{Id: "nd_01", Address: "localhost:9001"},
+		{Id: "nd_02", Address: "localhost:9002"},
+		{Id: "nd_03", Address: "localhost:9003"},
+	}
+
+	t.Run("valid contiguous full coverage", func(t *testing.T) {
+		cfg := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "app",
+					Implementation:    "impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+						{
+							Id:                "shrd_02",
+							LowerBound:        []byte{0x80, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
+							Replicas: []*Replica{
+								{Id: "rpl_04", NodeId: "nd_01"},
+								{Id: "rpl_05", NodeId: "nd_02"},
+								{Id: "rpl_06", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes:     baseNodes,
+			UpdatedAt: time.Now().UnixMilli(),
+		}
+		err := cfg.Validate()
 		require.NoError(err)
 	})
+
+	t.Run("gap between shards", func(t *testing.T) {
+		cfg := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "app",
+					Implementation:    "impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xfe}, // gap after this
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+						{
+							Id:                "shrd_02",
+							LowerBound:        []byte{0x80, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
+							Replicas: []*Replica{
+								{Id: "rpl_04", NodeId: "nd_01"},
+								{Id: "rpl_05", NodeId: "nd_02"},
+								{Id: "rpl_06", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes:     baseNodes,
+			UpdatedAt: time.Now().UnixMilli(),
+		}
+		err := cfg.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "shards are not contiguous")
+	})
+
+	t.Run("overlap between shards", func(t *testing.T) {
+		cfg := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "app",
+					Implementation:    "impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0x80, 0x00, 0x00, 0x00}, // overlaps next
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+						{
+							Id:                "shrd_02",
+							LowerBound:        []byte{0x7f, 0xff, 0xff, 0xff},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
+							Replicas: []*Replica{
+								{Id: "rpl_04", NodeId: "nd_01"},
+								{Id: "rpl_05", NodeId: "nd_02"},
+								{Id: "rpl_06", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes:     baseNodes,
+			UpdatedAt: time.Now().UnixMilli(),
+		}
+		err := cfg.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "shards are not contiguous")
+	})
+
+	t.Run("does not start at 0x00000000", func(t *testing.T) {
+		cfg := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "app",
+					Implementation:    "impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x01, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+						{
+							Id:                "shrd_02",
+							LowerBound:        []byte{0x80, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
+							Replicas: []*Replica{
+								{Id: "rpl_04", NodeId: "nd_01"},
+								{Id: "rpl_05", NodeId: "nd_02"},
+								{Id: "rpl_06", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes:     baseNodes,
+			UpdatedAt: time.Now().UnixMilli(),
+		}
+		err := cfg.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "shards do not start at 0x00000000")
+	})
+
+	t.Run("does not end at 0xFFFFFFFF", func(t *testing.T) {
+		cfg := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "app",
+					Implementation:    "impl",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_03"},
+							},
+						},
+						{
+							Id:                "shrd_02",
+							LowerBound:        []byte{0x80, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xfe, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
+							Replicas: []*Replica{
+								{Id: "rpl_04", NodeId: "nd_01"},
+								{Id: "rpl_05", NodeId: "nd_02"},
+								{Id: "rpl_06", NodeId: "nd_03"},
+							},
+						},
+					},
+				},
+			},
+			Nodes:     baseNodes,
+			UpdatedAt: time.Now().UnixMilli(),
+		}
+		err := cfg.Validate()
+		require.Error(err)
+		require.Contains(err.Error(), "shards do not end at 0xffffffff")
+	})
+}
+
+func TestValidateTransition(t *testing.T) {
+	require := require.New(t)
+
+	baseConfig := &ClusterConfig{
+		Applications: []*Application{
+			{
+				Name:              "app1",
+				Implementation:    "impl1",
+				ReplicationFactor: 3,
+				Shards: []*Shard{
+					{
+						Id:                "shrd_01",
+						LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+						UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
+						GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+						Replicas: []*Replica{
+							{Id: "rpl_01", NodeId: "nd_01"},
+							{Id: "rpl_02", NodeId: "nd_02"},
+							{Id: "rpl_03", NodeId: "nd_03"},
+						},
+					},
+					{
+						Id:                "shrd_02",
+						LowerBound:        []byte{0x80, 0x00, 0x00, 0x00},
+						UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+						GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
+						Replicas: []*Replica{
+							{Id: "rpl_04", NodeId: "nd_01"},
+							{Id: "rpl_05", NodeId: "nd_02"},
+							{Id: "rpl_06", NodeId: "nd_03"},
+						},
+					},
+				},
+			},
+		},
+		Nodes: []*Node{
+			{Id: "nd_01", Address: "localhost:9001"},
+			{Id: "nd_02", Address: "localhost:9002"},
+			{Id: "nd_03", Address: "localhost:9003"},
+		},
+		UpdatedAt: time.Now().UnixMilli(),
+	}
+
+	t.Run("validate base config", func(t *testing.T) {
+		err := baseConfig.Validate()
+		require.NoError(err)
+	})
+
+	t.Run("allow adding a new node", func(t *testing.T) {
+		newConfig := cloneConfig(baseConfig)
+		newConfig.Nodes = append(newConfig.Nodes, &Node{Id: "nd_04", Address: "localhost:9004"})
+
+		err := newConfig.Validate()
+		require.NoError(err)
+
+		err = ValidateTransition(baseConfig, newConfig)
+		require.NoError(err)
+	})
+
+	t.Run("forbid removing node with assigned replica", func(t *testing.T) {
+		oldConfig := cloneConfig(baseConfig)
+		oldConfig.Nodes = append(oldConfig.Nodes, &Node{Id: "nd_04", Address: "localhost:9004"})
+
+		newConfig := &ClusterConfig{
+			Applications: []*Application{
+				{
+					Name:              "app1",
+					Implementation:    "impl1",
+					ReplicationFactor: 3,
+					Shards: []*Shard{
+						{
+							Id:                "shrd_01",
+							LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+							Replicas: []*Replica{
+								{Id: "rpl_01", NodeId: "nd_01"},
+								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_03", NodeId: "nd_04"},
+							},
+						},
+						{
+							Id:                "shrd_02",
+							LowerBound:        []byte{0x80, 0x00, 0x00, 0x00},
+							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
+							Replicas: []*Replica{
+								{Id: "rpl_04", NodeId: "nd_01"},
+								{Id: "rpl_05", NodeId: "nd_02"},
+								{Id: "rpl_06", NodeId: "nd_04"},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*Node{
+				{Id: "nd_01", Address: "localhost:9001"},
+				{Id: "nd_02", Address: "localhost:9002"},
+				{Id: "nd_04", Address: "localhost:9004"},
+			},
+			UpdatedAt: oldConfig.UpdatedAt + 1,
+		}
+		err := newConfig.Validate()
+		require.NoError(err)
+
+		err = ValidateTransition(oldConfig, newConfig)
+		require.Error(err)
+		require.Contains(err.Error(), "cannot remove node")
+	})
+
+	t.Run("allow removing node with no assigned replica", func(t *testing.T) {
+		oldConfig := cloneConfig(baseConfig)
+		oldConfig.Nodes = append(oldConfig.Nodes, &Node{Id: "nd_04", Address: "localhost:9004"})
+		newConfig := cloneConfig(oldConfig)
+		newConfig.Nodes = newConfig.Nodes[:3] // remove nd_04, which has no replica
+		err := newConfig.Validate()
+		require.NoError(err)
+
+		err = ValidateTransition(oldConfig, newConfig)
+		require.NoError(err)
+	})
+
+	t.Run("allow adding a new application", func(t *testing.T) {
+		newConfig := cloneConfig(baseConfig)
+		newConfig.Applications = append(newConfig.Applications, &Application{
+			Name:              "app2",
+			Implementation:    "impl2",
+			ReplicationFactor: 3,
+			Shards: []*Shard{
+				{
+					Id:                "shrd_03",
+					LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
+					UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
+					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x03},
+					Replicas: []*Replica{
+						{Id: "rpl_07", NodeId: "nd_01"},
+						{Id: "rpl_08", NodeId: "nd_02"},
+						{Id: "rpl_09", NodeId: "nd_03"},
+					},
+				},
+			},
+		})
+		err := newConfig.Validate()
+		require.NoError(err)
+
+		err = ValidateTransition(baseConfig, newConfig)
+		require.NoError(err)
+	})
+
+	t.Run("forbid removing an application", func(t *testing.T) {
+		newConfig := cloneConfig(baseConfig)
+		newConfig.Applications = []*Application{} // remove all
+		err := newConfig.Validate()
+		require.NoError(err)
+
+		err = ValidateTransition(baseConfig, newConfig)
+		require.Error(err)
+		require.Contains(err.Error(), "cannot remove application")
+	})
+
+	t.Run("forbid changing shard bounds", func(t *testing.T) {
+		newConfig := cloneConfig(baseConfig)
+		newConfig.Applications[0].Shards[0].UpperBound = []byte{0x01, 0xff, 0xff, 0xff}
+		newConfig.Applications[0].Shards[1].LowerBound = []byte{0x02, 0x00, 0x00, 0x00}
+		err := newConfig.Validate()
+		require.NoError(err)
+
+		err = ValidateTransition(baseConfig, newConfig)
+		require.Error(err)
+		require.Contains(err.Error(), "cannot change bounds")
+	})
+
+	t.Run("forbid changing shard global index prefix", func(t *testing.T) {
+		newConfig := cloneConfig(baseConfig)
+		newConfig.Applications[0].Shards[0].GlobalIndexPrefix = []byte{0x00, 0x00, 0x00, 0x08}
+		err := newConfig.Validate()
+		require.NoError(err)
+
+		err = ValidateTransition(baseConfig, newConfig)
+		require.Error(err)
+		require.Contains(err.Error(), "cannot change bounds or global index prefix")
+	})
+
+	t.Run("allow adding a new replica only", func(t *testing.T) {
+		newConfig := cloneConfig(baseConfig)
+		newConfig.Nodes = append(newConfig.Nodes, &Node{Id: "nd_04", Address: "localhost:9004"})
+		newConfig.Applications[0].Shards[1].Replicas = append(newConfig.Applications[0].Shards[1].Replicas, &Replica{Id: "rpl_07", NodeId: "nd_04"})
+		err := newConfig.Validate()
+		require.NoError(err)
+
+		err = ValidateTransition(baseConfig, newConfig)
+		require.NoError(err)
+	})
+
+	t.Run("allow removing a replica only", func(t *testing.T) {
+		oldConfig := cloneConfig(baseConfig)
+		oldConfig.Nodes = append(oldConfig.Nodes, &Node{Id: "nd_04", Address: "localhost:9004"})
+		oldConfig.Applications[0].Shards[0].Replicas = []*Replica{
+			{Id: "rpl_01", NodeId: "nd_01"},
+			{Id: "rpl_02", NodeId: "nd_02"},
+			{Id: "rpl_03", NodeId: "nd_03"},
+			{Id: "rpl_09", NodeId: "nd_04"},
+		}
+
+		newConfig := cloneConfig(oldConfig)
+		newConfig.Applications[0].Shards[0].Replicas = []*Replica{
+			{Id: "rpl_01", NodeId: "nd_01"},
+			{Id: "rpl_02", NodeId: "nd_02"},
+			{Id: "rpl_03", NodeId: "nd_03"},
+		}
+		err := newConfig.Validate()
+		require.NoError(err)
+
+		err = ValidateTransition(oldConfig, newConfig)
+		require.NoError(err)
+	})
+
+	t.Run("forbid adding and removing replicas in same transition", func(t *testing.T) {
+		newConfig := cloneConfig(baseConfig)
+		// Remove one, add one
+		newConfig.Applications[0].Shards[0].Replicas = []*Replica{
+			{Id: "rpl_01", NodeId: "nd_01"},
+			{Id: "rpl_02", NodeId: "nd_02"},
+			{Id: "rpl_07", NodeId: "nd_03"}, // new
+		}
+		err := newConfig.Validate()
+		require.NoError(err)
+
+		err = ValidateTransition(baseConfig, newConfig)
+		require.Error(err)
+		require.Contains(err.Error(), "cannot add and remove replicas")
+	})
+
+	t.Run("forbid reassigning existing replica to another node", func(t *testing.T) {
+		newConfig := cloneConfig(baseConfig)
+		newConfig.Applications[0].Shards[0].Replicas[0].NodeId = "nd_02"
+
+		err := ValidateTransition(baseConfig, newConfig)
+		require.Error(err)
+		require.Contains(err.Error(), "changed node assignment")
+	})
+}
+
+// cloneConfig creates a deep copy of a ClusterConfig for test mutation
+func cloneConfig(cfg *ClusterConfig) *ClusterConfig {
+	newCfg := proto.Clone(cfg).(*ClusterConfig)
+	newCfg.Applications = make([]*Application, len(cfg.Applications))
+	for i, a := range cfg.Applications {
+		newCfg.Applications[i] = proto.Clone(a).(*Application)
+		newCfg.Applications[i].Shards = make([]*Shard, len(a.Shards))
+		for j, s := range a.Shards {
+			shard := proto.Clone(s).(*Shard)
+			shard.Replicas = make([]*Replica, len(s.Replicas))
+			for k, r := range s.Replicas {
+				shard.Replicas[k] = proto.Clone(r).(*Replica)
+			}
+			newCfg.Applications[i].Shards[j] = shard
+		}
+	}
+	newCfg.Nodes = make([]*Node, len(cfg.Nodes))
+	for i, n := range cfg.Nodes {
+		newCfg.Nodes[i] = proto.Clone(n).(*Node)
+	}
+	newCfg.UpdatedAt = cfg.UpdatedAt + 1
+	return newCfg
+}
+
+func BenchmarkClusterConfigFindShard(b *testing.B) {
+	const (
+		numNodes       = 1000
+		numApps        = 50
+		shardsPerApp   = 1024
+		replication    = 3
+		keyspacePerApp = 1 << 32 // 4 bytes
+	)
+
+	nodes := make([]*Node, numNodes)
+	for i := 0; i < numNodes; i++ {
+		nodes[i] = &Node{
+			Id:      fmt.Sprintf("nd_%04d", i),
+			Address: fmt.Sprintf("localhost:%d", 9000+i),
+		}
+	}
+
+	applications := make([]*Application, numApps)
+	for appIdx := 0; appIdx < numApps; appIdx++ {
+		appName := fmt.Sprintf("app_%02d", appIdx)
+		shards := make([]*Shard, shardsPerApp)
+		shardSize := keyspacePerApp / shardsPerApp
+		for shardIdx := 0; shardIdx < shardsPerApp; shardIdx++ {
+			lower := uint32(shardIdx * shardSize)
+			upper := uint32((shardIdx+1)*shardSize - 1)
+			lowerBound := make([]byte, 4)
+			upperBound := make([]byte, 4)
+			binary.BigEndian.PutUint32(lowerBound, lower)
+			binary.BigEndian.PutUint32(upperBound, upper)
+			// Assign replicas to 3 different nodes in round-robin
+			replicas := make([]*Replica, replication)
+			for r := 0; r < replication; r++ {
+				nodeIdx := (shardIdx*replication + r) % numNodes
+				replicas[r] = &Replica{
+					Id:     fmt.Sprintf("rpl_%02d_%04d_%d", appIdx, shardIdx, r),
+					NodeId: nodes[nodeIdx].Id,
+				}
+			}
+			shards[shardIdx] = &Shard{
+				Id:                fmt.Sprintf("shrd_%02d_%04d", appIdx, shardIdx),
+				LowerBound:        lowerBound,
+				UpperBound:        upperBound,
+				GlobalIndexPrefix: []byte{byte(appIdx), byte(shardIdx >> 8), byte(shardIdx)},
+				Replicas:          replicas,
+			}
+		}
+		applications[appIdx] = &Application{
+			Name:              appName,
+			Implementation:    "impl",
+			ReplicationFactor: replication,
+			Shards:            shards,
+		}
+	}
+
+	clusterConfig, err := LoadConfig(applications, nodes, time.Now().UnixMilli())
+	if err != nil {
+		b.Fatalf("failed to create config: %v", err)
+	}
+
+	rng := rand.New(rand.NewSource(42))
+	lookupKeys := make([]struct {
+		appIdx int
+		key    []byte
+	}, b.N)
+	for i := 0; i < b.N; i++ {
+		appIdx := rng.Intn(numApps)
+		key := make([]byte, 4)
+		binary.BigEndian.PutUint32(key, rng.Uint32())
+		lookupKeys[i] = struct {
+			appIdx int
+			key    []byte
+		}{appIdx, key}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		app := applications[lookupKeys[i].appIdx]
+		_, err := clusterConfig.FindShard(app.Name, lookupKeys[i].key)
+		if err != nil {
+			b.Fatalf("FindShard failed: %v", err)
+		}
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"errors"
@@ -126,27 +127,36 @@ func CreateEmptyConfig() *ClusterConfig {
 	}
 }
 
-// - there are at least 3 nodes
-// - nodes have non-empty id
-// - nodes have non-empty address
-// - nodes have unique ids
-// - applications have non-empty names
-// - applications have globally unique names
-// - applications have non-empty implementation
-// - applications have replication factor of at least 3
-// - shards have non-empty id
-// - shards have globally unique ids
-// - shards have globally unique global index prefixes
-// - shards have no overlap in range
-// - shards have 4 bytes ranges
-// - all shards together cover the full range of keys
-// - number of replicas is greater or equal to replication factor
-// - replicas have non-empty id
-// - replicas have globally unique ids
-// - replicas are assigned to existing nodes
-// - replicas are assigned to different nodes
+// Validate checks if the config is valid according to the following invariants:
+//
+// - UpdatedAt is not 0
+// - There are at least 3 nodes
+// - Nodes have non-empty id
+// - Nodes have non-empty address
+// - Nodes have unique ids
+// - Applications have non-empty names
+// - Applications have globally unique names
+// - Applications have non-empty implementation
+// - Applications have replication factor of at least 3
+// - Shards have non-empty id
+// - Shards have globally unique ids
+// - Shards have globally unique global index prefixes
+// - Shards have no overlap in range
+// - Shards have 4 bytes ranges
+// - All shards together cover the full range of keys
+// - Number of replicas is greater or equal to replication factor
+// - Replicas have non-empty id
+// - Replicas have globally unique ids
+// - Replicas are assigned to existing nodes
+// - Replicas are assigned to different nodes
+//
+// Returns an error if any invariant is violated.
 func (c *ClusterConfig) Validate() error {
 	nodesByIds := make(map[string]*Node)
+
+	if c.UpdatedAt == 0 {
+		return fmt.Errorf("updated at is required")
+	}
 
 	if len(c.Nodes) < 3 {
 		return fmt.Errorf("at least 3 nodes are required")
@@ -191,6 +201,10 @@ func (c *ClusterConfig) Validate() error {
 
 		if a.ReplicationFactor < 3 {
 			return fmt.Errorf("invalid replication factor for application %s", a.Name)
+		}
+
+		if len(a.Shards) == 0 {
+			return fmt.Errorf("no shards for %s", a.Name)
 		}
 
 		for _, s := range a.Shards {
@@ -244,6 +258,33 @@ func (c *ClusterConfig) Validate() error {
 			})
 			if len(uniqueNodes) < len(s.Replicas) {
 				return fmt.Errorf("replicas are not assigned to different nodes for shard %s", s.Id)
+			}
+		}
+
+		// Sort shards by LowerBound
+		sortedShards := make([]*Shard, len(a.Shards))
+		copy(sortedShards, a.Shards)
+		sort.Slice(sortedShards, func(i, j int) bool {
+			return bytes.Compare(sortedShards[i].LowerBound, sortedShards[j].LowerBound) < 0
+		})
+
+		// Check first LowerBound == 0x00000000
+		if !bytes.Equal(sortedShards[0].LowerBound, []byte{0x00, 0x00, 0x00, 0x00}) {
+			return fmt.Errorf("shards do not start at 0x00000000 for application %s", a.Name)
+		}
+		// Check last UpperBound == 0xffffffff
+		if !bytes.Equal(sortedShards[len(sortedShards)-1].UpperBound, []byte{0xff, 0xff, 0xff, 0xff}) {
+			return fmt.Errorf("shards do not end at 0xffffffff for application %s", a.Name)
+		}
+		// Check contiguous coverage
+		for i := 1; i < len(sortedShards); i++ {
+			prev := sortedShards[i-1]
+			curr := sortedShards[i]
+			// prev.UpperBound + 1 == curr.LowerBound
+			prevUpper := binary.BigEndian.Uint32(prev.UpperBound)
+			currLower := binary.BigEndian.Uint32(curr.LowerBound)
+			if prevUpper+1 != currLower {
+				return fmt.Errorf("shards are not contiguous between %x and %x for application %s", prev.UpperBound, curr.LowerBound, a.Name)
 			}
 		}
 	}
@@ -449,6 +490,161 @@ func (c *ClusterConfig) GetShard(shardId string) (*Shard, error) {
 	}
 
 	return nil, errShardNotFound
+}
+
+// ValidateTransition checks if the transition from old to new config is valid according to the following invariants:
+//
+//   - New nodes can be added, but existing nodes cannot be removed if they have at least one assigned replica in the
+//     old config.
+//   - New applications can be added, but existing applications cannot be removed.
+//   - Shards cannot be removed or have their IDs, bounds, or unique global index prefixes changed.
+//   - New replicas can be added (even exceeding the replication factor), but replicas cannot be both added and removed
+//     in the same transition.
+//   - All existing replicas must remain assigned to the same nodes (no reassignment of existing replicas).
+//   - New config has newer UpdatedAt timestamp
+//
+// Returns an error if any invariant is violated.
+func ValidateTransition(old, new *ClusterConfig) error {
+	if new.UpdatedAt <= old.UpdatedAt {
+		return fmt.Errorf("the new config must have newer UpdatedAt than the old config")
+	}
+
+	// New nodes can be added, but existing nodes cannot be removed
+	// if they have at least one assigned replica in the old config
+	oldNodes := make(map[string]*Node)
+	for _, n := range old.Nodes {
+		oldNodes[n.Id] = n
+	}
+	newNodes := make(map[string]*Node)
+	for _, n := range new.Nodes {
+		newNodes[n.Id] = n
+	}
+
+	// Find removed nodes
+	for oldNodeId := range oldNodes {
+		if _, exists := newNodes[oldNodeId]; !exists {
+			// Check if this node had any replicas in the old config
+			hadReplica := false
+			for _, a := range old.Applications {
+				for _, s := range a.Shards {
+					for _, r := range s.Replicas {
+						if r.NodeId == oldNodeId {
+							hadReplica = true
+							break
+						}
+					}
+					if hadReplica {
+						break
+					}
+				}
+				if hadReplica {
+					break
+				}
+			}
+			if hadReplica {
+				return fmt.Errorf("cannot remove node %s: it has assigned replicas in the old config", oldNodeId)
+			}
+		}
+	}
+
+	// New applications can be added, but existing cannot be removed
+	oldApps := make(map[string]*Application)
+	for _, a := range old.Applications {
+		oldApps[a.Name] = a
+	}
+	newApps := make(map[string]*Application)
+	for _, a := range new.Applications {
+		newApps[a.Name] = a
+	}
+	for oldAppName := range oldApps {
+		if _, exists := newApps[oldAppName]; !exists {
+			return fmt.Errorf("cannot remove application %s", oldAppName)
+		}
+	}
+
+	// Shards cannot be removed or have their IDs, bounds, or unique prefixes changed
+	for appName, oldApp := range oldApps {
+		newApp := newApps[appName]
+		if newApp == nil {
+			continue // already checked above
+		}
+		oldShards := make(map[string]*Shard)
+		for _, s := range oldApp.Shards {
+			oldShards[s.Id] = s
+		}
+		newShards := make(map[string]*Shard)
+		for _, s := range newApp.Shards {
+			newShards[s.Id] = s
+		}
+		for shardId, oldShard := range oldShards {
+			newShard, exists := newShards[shardId]
+			if !exists {
+				return fmt.Errorf("cannot remove shard %s from application %s", shardId, appName)
+			}
+			if !bytes.Equal(oldShard.LowerBound, newShard.LowerBound) ||
+				!bytes.Equal(oldShard.UpperBound, newShard.UpperBound) ||
+				!bytes.Equal(oldShard.GlobalIndexPrefix, newShard.GlobalIndexPrefix) {
+				return fmt.Errorf("cannot change bounds or global index prefix for shard %s in application %s", shardId, appName)
+			}
+		}
+	}
+
+	// New replicas can be added, but cannot add and remove in the same transition;
+	// all existing replicas must remain assigned to the same nodes
+	addedReplicas := 0
+	removedReplicas := 0
+	oldReplicaMap := make(map[string]*Replica) // key: app|shard|replica
+	newReplicaMap := make(map[string]*Replica)
+	for appName, oldApp := range oldApps {
+		newApp := newApps[appName]
+		if newApp == nil {
+			continue
+		}
+		oldShards := make(map[string]*Shard)
+		for _, s := range oldApp.Shards {
+			oldShards[s.Id] = s
+		}
+		newShards := make(map[string]*Shard)
+		for _, s := range newApp.Shards {
+			newShards[s.Id] = s
+		}
+		for shardId, oldShard := range oldShards {
+			newShard := newShards[shardId]
+			if newShard == nil {
+				continue
+			}
+			for _, oldReplica := range oldShard.Replicas {
+				key := appName + "|" + shardId + "|" + oldReplica.Id
+				oldReplicaMap[key] = oldReplica
+			}
+			for _, newReplica := range newShard.Replicas {
+				key := appName + "|" + shardId + "|" + newReplica.Id
+				newReplicaMap[key] = newReplica
+			}
+		}
+	}
+	// Check for removed and added replicas
+	for key, oldReplica := range oldReplicaMap {
+		newReplica, exists := newReplicaMap[key]
+		if !exists {
+			removedReplicas++
+		} else {
+			// Must be assigned to the same node
+			if oldReplica.NodeId != newReplica.NodeId {
+				return fmt.Errorf("replica %s changed node assignment: %s -> %s", key, oldReplica.NodeId, newReplica.NodeId)
+			}
+		}
+	}
+	for key := range newReplicaMap {
+		if _, exists := oldReplicaMap[key]; !exists {
+			addedReplicas++
+		}
+	}
+	if addedReplicas > 0 && removedReplicas > 0 {
+		return fmt.Errorf("cannot add and remove replicas in the same transition (added: %d, removed: %d)", addedReplicas, removedReplicas)
+	}
+
+	return nil
 }
 
 // generateId generates a random hex id

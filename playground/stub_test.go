@@ -21,8 +21,8 @@ func TestPlaygroundApiMonsteraStub_ReadAndUpdate(t *testing.T) {
 	nodes := NewCluster(clusterConfig)
 	defer func() {
 		for _, n := range nodes {
-			n.monsteraNode.Stop()
 			n.grpcServer.Stop()
+			n.monsteraNode.Stop()
 		}
 	}()
 
@@ -66,8 +66,8 @@ func TestPlaygroundApiMonsteraStub_ReadAndUpdate(t *testing.T) {
 		require.Equal(value, resp3)
 	}
 
-	nodes[0].monsteraNode.Stop()
 	nodes[0].grpcServer.Stop()
+	nodes[0].monsteraNode.Stop()
 
 	for i := 0; i < 100; i++ {
 		key := rand.Uint64()
@@ -95,18 +95,24 @@ func NewCluster(clusterConfig *monstera.ClusterConfig) []localNode {
 	nodes := make([]localNode, 0)
 
 	for _, n := range clusterConfig.Nodes {
-		badgerStore := monstera.NewBadgerInMemoryStore()
-
 		baseDir := fmt.Sprintf("/tmp/monstera/%d/%s", rand.Uint64(), n.Id)
-		monsteraNode := monstera.NewNode(baseDir, n.Id, clusterConfig, badgerStore, monstera.DefaultMonsteraNodeConfig)
 
-		monsteraNode.RegisterApplicationCore(&monstera.ApplicationCoreDescriptor{
-			Name: "Core",
-			CoreFactoryFunc: func(application *monstera.Application, shard *monstera.Shard, replica *monstera.Replica) monstera.ApplicationCore {
-				return NewPlaygroundCore()
+		coreDescriptors := monstera.ApplicationCoreDescriptors{
+			"Core": {
+				CoreFactoryFunc: func(shard *monstera.Shard, replica *monstera.Replica) monstera.ApplicationCore {
+					return NewPlaygroundCore()
+				},
+				RestoreSnapshotOnStart: false,
 			},
-			RestoreSnapshotOnStart: false,
-		})
+		}
+
+		nodeConfig := monstera.DefaultMonsteraNodeConfig
+		nodeConfig.UseInMemoryRaftStore = true
+
+		monsteraNode, err := monstera.NewNode(baseDir, n.Id, clusterConfig, coreDescriptors, nodeConfig)
+		if err != nil {
+			panic(err)
+		}
 
 		lis, err := net.Listen("tcp", n.Address)
 		if err != nil {

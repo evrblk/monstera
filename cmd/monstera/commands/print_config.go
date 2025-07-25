@@ -15,12 +15,7 @@ var printConfigCmd = &cobra.Command{
 	Use:   "print-config",
 	Short: "Print Monstera cluster config",
 	Run: func(cmd *cobra.Command, args []string) {
-		data, err := os.ReadFile(monsteraConfigPath)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		clusterConfig, err := monstera.LoadConfigFromProto(data)
+		clusterConfig, err := monstera.LoadConfigFromFile(monsteraConfigPath)
 		if err != nil {
 			log.Fatal(err)
 		}

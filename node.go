@@ -99,7 +99,7 @@ func (n *MonsteraNode) Stop() {
 	n.nodeState = STOPPED
 
 	n.pool.Close()
-	
+
 	for _, b := range n.replicas {
 		b.Close()
 	}
@@ -248,6 +248,26 @@ func (n *MonsteraNode) AppendEntries(replicaId string, request *hraft.AppendEntr
 	}
 
 	return r.AppendEntries(request)
+}
+
+func (n *MonsteraNode) TriggerSnapshot(replicaId string) error {
+	r, err := n.getReplica(replicaId)
+	if err != nil {
+		return err
+	}
+
+	r.TriggerSnapshot()
+
+	return nil
+}
+
+func (n *MonsteraNode) LeadershipTransfer(replicaId string) error {
+	r, err := n.getReplica(replicaId)
+	if err != nil {
+		return err
+	}
+
+	return r.LeadershipTransfer()
 }
 
 func (n *MonsteraNode) RequestVote(replicaId string, request *hraft.RequestVoteRequest) (*hraft.RequestVoteResponse, error) {

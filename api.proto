@@ -29,6 +29,8 @@ service MonsteraApi {
 
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {}
 
+  rpc LeadershipTransfer(LeadershipTransferRequest) returns (LeadershipTransferResponse) {}
+  rpc TriggerSnapshot(TriggerSnapshotRequest) returns (TriggerSnapshotResponse) {}
   rpc AddVoter(AddVoterRequest) returns (AddVoterResponse) {}
   rpc UpdateClusterConfig(UpdateClusterConfigRequest)
       returns (UpdateClusterConfigResponse) {}
@@ -67,6 +69,18 @@ message HealthCheckResponse {
   repeated ReplicaState replicas = 1;
 }
 
+message TriggerSnapshotRequest {
+  string replica_id = 1;
+}
+
+message TriggerSnapshotResponse {}
+
+message LeadershipTransferRequest {
+  string replica_id = 1;
+}
+
+message LeadershipTransferResponse {}
+
 message AddVoterRequest {
   string replica_id = 1;
   string voter_replica_id = 2;
@@ -79,6 +93,14 @@ message ReplicaState {
   string replica_id = 1;
   RaftState raft_state = 2;
   map<string, string> raft_stats = 3;
+  repeated RaftSnapshot snapshots = 4;
+}
+
+message RaftSnapshot {
+  string id = 1;
+  uint64 index = 2;
+  uint64 term = 3;
+  int64 size = 4;
 }
 
 enum RaftState {

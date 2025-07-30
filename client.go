@@ -67,7 +67,7 @@ func (c *MonsteraClient) Start() {
 				c.mu.Unlock()
 			}
 
-			duration := time.Duration(int32(rand.Int32N(10000))+55000) * time.Millisecond
+			duration := time.Duration(int32(rand.Int32N(1000))+5000) * time.Millisecond
 
 			select {
 			case <-ctx.Done():
@@ -211,6 +211,52 @@ func (c *MonsteraClient) updateShard(ctx context.Context, applicationName string
 	}
 
 	return nil, fmt.Errorf("all replicas failed")
+}
+
+func (c *MonsteraClient) TriggerSnapshot(applicationName string, shardId string, replicaId string) error {
+	shard, err := c.clusterConfig.GetShard(shardId)
+	if err != nil {
+		return err
+	}
+
+	replica, ok := lo.Find(shard.Replicas, func(r *Replica) bool {
+		return r.Id == replicaId
+	})
+	if !ok {
+		return fmt.Errorf("replica not found")
+	}
+
+	conn, err := c.getConnection(replica.NodeId)
+	if err != nil {
+		return err
+	}
+
+	_, err = conn.TriggerSnapshot(context.Background(), &TriggerSnapshotRequest{ReplicaId: replicaId})
+
+	return err
+}
+
+func (c *MonsteraClient) LeadershipTransfer(applicationName string, shardId string, replicaId string) error {
+	shard, err := c.clusterConfig.GetShard(shardId)
+	if err != nil {
+		return err
+	}
+
+	replica, ok := lo.Find(shard.Replicas, func(r *Replica) bool {
+		return r.Id == replicaId
+	})
+	if !ok {
+		return fmt.Errorf("replica not found")
+	}
+
+	conn, err := c.getConnection(replica.NodeId)
+	if err != nil {
+		return err
+	}
+
+	_, err = conn.LeadershipTransfer(context.Background(), &LeadershipTransferRequest{ReplicaId: replicaId})
+
+	return err
 }
 
 func (c *MonsteraClient) ListShards(applicationName string) ([]*Shard, error) {

@@ -8,23 +8,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func ListKeys(txn *monstera.Txn, tableId []byte, pk []byte, fn func(key []byte) (bool, error)) error {
-	prefix := monstera.ConcatBytes(tableId, pk)
-
-	return txn.EachPrefixKeys(prefix, fn)
-}
-
-func ListRange(txn *monstera.Txn, tableId []byte, pk []byte, lowerBound []byte, upperBound []byte, fn func(key []byte, value []byte) (bool, error)) error {
-	lower := monstera.ConcatBytes(tableId, pk, lowerBound)
-
-	var upper []byte
-	if upperBound != nil {
-		upper = monstera.ConcatBytes(tableId, pk, upperBound)
-	}
-
-	return txn.EachRange(lower, upper, fn)
-}
-
 // ptr is a generic constraint for proto messages (pointers)
 type ptr[T any] interface {
 	*T
@@ -57,9 +40,7 @@ func NewCompositeKeyTable[T ptr[U], U any](tableId []byte, keyLowerBound []byte,
 
 func (t *CompositeKeyTable[T, U]) Get(txn *monstera.Txn, pk []byte, sk []byte) (T, error) {
 	key := monstera.ConcatBytes(t.tableId, pk, sk)
-	if !isWithingRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper)
 
 	value, err := txn.Get(key)
 	if err != nil {
@@ -74,9 +55,7 @@ func (t *CompositeKeyTable[T, U]) Get(txn *monstera.Txn, pk []byte, sk []byte) (
 
 func (t *CompositeKeyTable[T, U]) Set(txn *monstera.Txn, pk []byte, sk []byte, message T) error {
 	key := monstera.ConcatBytes(t.tableId, pk, sk)
-	if !isWithingRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper)
 
 	value, err := proto.Marshal(message)
 	if err != nil {
@@ -88,21 +67,16 @@ func (t *CompositeKeyTable[T, U]) Set(txn *monstera.Txn, pk []byte, sk []byte, m
 
 func (t *CompositeKeyTable[T, U]) Delete(txn *monstera.Txn, pk []byte, sk []byte) error {
 	key := monstera.ConcatBytes(t.tableId, pk, sk)
-	if !isWithingRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper)
 
 	return txn.Delete(key)
 }
 
 func (t *CompositeKeyTable[T, U]) List(txn *monstera.Txn, pk []byte, fn func(message T) (bool, error)) error {
 	prefix := monstera.ConcatBytes(t.tableId, pk)
+	panicIfOutOfRange(prefix, t.tableKeyRange.Lower, t.tableKeyRange.Upper)
 
 	return txn.EachPrefix(prefix, func(key []byte, value []byte) (bool, error) {
-		if !isWithingRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper) {
-			panic("key is out of range!")
-		}
-
 		var message U
 		if err := proto.Unmarshal(value, T(&message)); err != nil {
 			return false, err
@@ -141,9 +115,7 @@ func NewSimpleKeyTable[T ptr[U], U any](tableId []byte, keyLowerBound []byte, ke
 
 func (t *SimpleKeyTable[T, U]) Get(txn *monstera.Txn, pk []byte) (T, error) {
 	key := monstera.ConcatBytes(t.tableId, pk)
-	if !isWithingRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper)
 
 	value, err := txn.Get(key)
 
@@ -159,9 +131,7 @@ func (t *SimpleKeyTable[T, U]) Get(txn *monstera.Txn, pk []byte) (T, error) {
 
 func (t *SimpleKeyTable[T, U]) Set(txn *monstera.Txn, pk []byte, message T) error {
 	key := monstera.ConcatBytes(t.tableId, pk)
-	if !isWithingRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper)
 
 	value, err := proto.Marshal(message)
 	if err != nil {
@@ -173,21 +143,13 @@ func (t *SimpleKeyTable[T, U]) Set(txn *monstera.Txn, pk []byte, message T) erro
 
 func (t *SimpleKeyTable[T, U]) Delete(txn *monstera.Txn, pk []byte) error {
 	key := monstera.ConcatBytes(t.tableId, pk)
-	if !isWithingRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper)
 
 	return txn.Delete(key)
 }
 
 func (t *SimpleKeyTable[T, U]) List(txn *monstera.Txn, fn func(message T) (bool, error)) error {
-	prefix := monstera.ConcatBytes(t.tableId)
-
-	return txn.EachPrefix(prefix, func(key []byte, value []byte) (bool, error) {
-		if !isWithingRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper) {
-			panic("key is out of range!")
-		}
-
+	return txn.EachRange(t.tableKeyRange.Lower, t.tableKeyRange.Upper, func(key []byte, value []byte) (bool, error) {
 		var message U
 		if err := proto.Unmarshal(value, T(&message)); err != nil {
 			return false, err
@@ -197,11 +159,13 @@ func (t *SimpleKeyTable[T, U]) List(txn *monstera.Txn, fn func(message T) (bool,
 }
 
 func (t *SimpleKeyTable[T, U]) ListInRange(txn *monstera.Txn, lowerBound []byte, upperBound []byte, fn func(message T) (bool, error)) error {
-	return ListRange(txn, t.tableId, []byte{}, lowerBound, upperBound, func(key []byte, value []byte) (bool, error) {
-		if !isWithingRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper) {
-			panic("key is out of range!")
-		}
+	lower := monstera.ConcatBytes(t.tableId, lowerBound)
+	upper := monstera.ConcatBytes(t.tableId, upperBound)
 
+	panicIfOutOfRange(lower, t.tableKeyRange.Lower, t.tableKeyRange.Upper)
+	panicIfOutOfRange(upper, t.tableKeyRange.Lower, t.tableKeyRange.Upper)
+
+	return txn.EachRange(lower, upper, func(key []byte, value []byte) (bool, error) {
 		var message U
 		if err := proto.Unmarshal(value, T(&message)); err != nil {
 			return false, err
@@ -238,9 +202,7 @@ func NewUniqueUint64Index(tableId []byte, keyLowerBound []byte, keyUpperBound []
 
 func (i *UniqueUint64Index) Get(txn *monstera.Txn, pk []byte) (uint64, error) {
 	key := monstera.ConcatBytes(i.tableId, pk)
-	if !isWithingRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
 
 	value, err := txn.Get(key)
 	if err != nil {
@@ -251,18 +213,14 @@ func (i *UniqueUint64Index) Get(txn *monstera.Txn, pk []byte) (uint64, error) {
 
 func (i *UniqueUint64Index) Set(txn *monstera.Txn, pk []byte, value uint64) error {
 	key := monstera.ConcatBytes(i.tableId, pk)
-	if !isWithingRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
 
 	return txn.Set(key, uint64ToBytes(value))
 }
 
 func (i *UniqueUint64Index) Delete(txn *monstera.Txn, pk []byte) error {
 	key := monstera.ConcatBytes(i.tableId, pk)
-	if !isWithingRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
 
 	return txn.Delete(key)
 }
@@ -294,29 +252,24 @@ func NewOneToManyUint64Index(tableId []byte, keyLowerBound []byte, keyUpperBound
 }
 
 func (i *OneToManyUint64Index) List(txn *monstera.Txn, pk []byte, fn func(item uint64) (bool, error)) error {
-	return ListKeys(txn, i.tableId, pk, func(key []byte) (bool, error) {
-		if !isWithingRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper) {
-			panic("key is out of range!")
-		}
+	prefix := monstera.ConcatBytes(i.tableId, pk)
+	panicIfOutOfRange(prefix, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
 
-		return fn(bytesToUint64(key[len(key)-8:]))
+	return txn.EachPrefixKeys(prefix, func(key []byte) (bool, error) {
+		return fn(bytesToUint64(key[len(prefix):]))
 	})
 }
 
 func (i *OneToManyUint64Index) Add(txn *monstera.Txn, pk []byte, item uint64) error {
 	key := monstera.ConcatBytes(i.tableId, pk, item)
-	if !isWithingRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
 
 	return txn.Set(key, nil)
 }
 
 func (i *OneToManyUint64Index) Delete(txn *monstera.Txn, pk []byte, item uint64) error {
 	key := monstera.ConcatBytes(i.tableId, pk, item)
-	if !isWithingRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
 
 	return txn.Delete(key)
 }
@@ -324,9 +277,7 @@ func (i *OneToManyUint64Index) Delete(txn *monstera.Txn, pk []byte, item uint64)
 func (i *OneToManyUint64Index) NotEmpty(txn *monstera.Txn, pk []byte) (bool, error) {
 	prefix := monstera.ConcatBytes(i.tableId, pk)
 
-	if !isWithingRange(prefix, i.tableKeyRange.Lower, i.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(prefix, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
 
 	return txn.PrefixExists(prefix)
 }
@@ -361,9 +312,7 @@ func NewCompositeKeyTableUint64(tableId []byte, keyLowerBound []byte, keyUpperBo
 
 func (t *CompositeKeyTableUint64) Get(txn *monstera.Txn, pk []byte, sk []byte) (uint64, error) {
 	key := monstera.ConcatBytes(t.tableId, pk, sk)
-	if !isWithingRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper)
 
 	value, err := txn.Get(key)
 	if err != nil {
@@ -374,30 +323,23 @@ func (t *CompositeKeyTableUint64) Get(txn *monstera.Txn, pk []byte, sk []byte) (
 
 func (t *CompositeKeyTableUint64) Set(txn *monstera.Txn, pk []byte, sk []byte, value uint64) error {
 	key := monstera.ConcatBytes(t.tableId, pk, sk)
-	if !isWithingRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper)
 
 	return txn.Set(key, uint64ToBytes(value))
 }
 
 func (t *CompositeKeyTableUint64) Delete(txn *monstera.Txn, pk []byte, sk []byte) error {
 	key := monstera.ConcatBytes(t.tableId, pk, sk)
-	if !isWithingRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper)
 
 	return txn.Delete(key)
 }
 
 func (t *CompositeKeyTableUint64) List(txn *monstera.Txn, pk []byte, fn func(value uint64) (bool, error)) error {
 	prefix := monstera.ConcatBytes(t.tableId, pk)
+	panicIfOutOfRange(prefix, t.tableKeyRange.Lower, t.tableKeyRange.Upper)
 
 	return txn.EachPrefix(prefix, func(key []byte, value []byte) (bool, error) {
-		if !isWithingRange(key, t.tableKeyRange.Lower, t.tableKeyRange.Upper) {
-			panic("key is out of range!")
-		}
-
 		return fn(bytesToUint64(value))
 	})
 }
@@ -429,39 +371,38 @@ func NewOneToManySortedIndex(tableId []byte, keyLowerBound []byte, keyUpperBound
 }
 
 func (i *OneToManySortedIndex) ListAll(txn *monstera.Txn, pk []byte, fn func(item []byte) (bool, error)) error {
-	return ListKeys(txn, i.tableId, pk, func(key []byte) (bool, error) {
-		if !isWithingRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper) {
-			panic("key is out of range!")
-		}
+	prefix := monstera.ConcatBytes(i.tableId, pk)
+	panicIfOutOfRange(prefix, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
 
-		return fn(key[len(pk):])
+	return txn.EachPrefixKeys(prefix, func(key []byte) (bool, error) {
+		return fn(key[len(prefix):])
 	})
 }
 
 func (i *OneToManySortedIndex) ListInRange(txn *monstera.Txn, pk []byte, lowerBound []byte, upperBound []byte, fn func(item []byte) (bool, error)) error {
-	return ListRange(txn, i.tableId, pk, lowerBound, upperBound, func(key []byte, value []byte) (bool, error) {
-		if !isWithingRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper) {
-			panic("key is out of range!")
-		}
+	lower := monstera.ConcatBytes(i.tableId, pk, lowerBound)
+	upper := monstera.ConcatBytes(i.tableId, pk, upperBound)
 
-		return fn(key[len(pk):])
+	panicIfOutOfRange(lower, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
+	panicIfOutOfRange(upper, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
+
+	pkLen := len(i.tableId) + len(pk)
+
+	return txn.EachRange(lower, upper, func(key []byte, value []byte) (bool, error) {
+		return fn(key[pkLen:])
 	})
 }
 
 func (i *OneToManySortedIndex) Add(txn *monstera.Txn, pk []byte, item []byte) error {
 	key := monstera.ConcatBytes(i.tableId, pk, item)
-	if !isWithingRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
 
 	return txn.Set(key, nil)
 }
 
 func (i *OneToManySortedIndex) Delete(txn *monstera.Txn, pk []byte, item []byte) error {
 	key := monstera.ConcatBytes(i.tableId, pk, item)
-	if !isWithingRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
 
 	return txn.Delete(key)
 }
@@ -493,29 +434,27 @@ func NewSortedIndex(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) 
 }
 
 func (i *SortedIndex) ListInRange(txn *monstera.Txn, lowerBound []byte, upperBound []byte, fn func(item []byte) (bool, error)) error {
-	return ListRange(txn, i.tableId, []byte{}, lowerBound, upperBound, func(key []byte, value []byte) (bool, error) {
-		if !isWithingRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper) {
-			panic("key is out of range!")
-		}
+	lower := monstera.ConcatBytes(i.tableId, lowerBound)
+	upper := monstera.ConcatBytes(i.tableId, upperBound)
 
+	panicIfOutOfRange(lower, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
+	panicIfOutOfRange(upper, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
+
+	return txn.EachRange(lower, upper, func(key []byte, value []byte) (bool, error) {
 		return fn(key)
 	})
 }
 
 func (i *SortedIndex) Add(txn *monstera.Txn, item []byte) error {
 	key := monstera.ConcatBytes(i.tableId, item)
-	if !isWithingRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
 
 	return txn.Set(key, nil)
 }
 
 func (i *SortedIndex) Delete(txn *monstera.Txn, item []byte) error {
 	key := monstera.ConcatBytes(i.tableId, item)
-	if !isWithingRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper) {
-		panic("key is out of range!")
-	}
+	panicIfOutOfRange(key, i.tableKeyRange.Lower, i.tableKeyRange.Upper)
 
 	return txn.Delete(key)
 }
@@ -527,6 +466,12 @@ func (i *SortedIndex) GetTableKeyRange() monstera.KeyRange {
 func isWithingRange(key []byte, lowerBound []byte, upperBound []byte) bool {
 	return bytes.Compare(key[:len(upperBound)], upperBound) <= 0 &&
 		bytes.Compare(key[:len(lowerBound)], lowerBound) >= 0
+}
+
+func panicIfOutOfRange(key []byte, lowerBound []byte, upperBound []byte) {
+	if !isWithingRange(key, lowerBound, upperBound) {
+		panic("key is out of range!")
+	}
 }
 
 // Converts bytes to an integer

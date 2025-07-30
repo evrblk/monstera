@@ -15,6 +15,19 @@ func encodeRPCHeader(s hraft.RPCHeader) *RPCHeader {
 	}
 }
 
+func encodeRaftSnapshots(s []*hraft.SnapshotMeta) []*RaftSnapshot {
+	ret := make([]*RaftSnapshot, len(s))
+	for i, s := range s {
+		ret[i] = &RaftSnapshot{
+			Id:    s.ID,
+			Index: s.Index,
+			Term:  s.Term,
+			Size:  s.Size,
+		}
+	}
+	return ret
+}
+
 func encodeRaftState(s hraft.RaftState) RaftState {
 	switch s {
 	case hraft.Follower:

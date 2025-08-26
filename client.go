@@ -1,11 +1,13 @@
 package monstera
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"log"
 	"math/rand/v2"
+	"sort"
 	"sync"
 	"time"
 
@@ -268,7 +270,14 @@ func (c *MonsteraClient) ListShards(applicationName string) ([]*Shard, error) {
 		return nil, err
 	}
 
-	return shards, nil
+	sortedShards := make([]*Shard, len(shards))
+	copy(sortedShards, shards)
+
+	sort.Slice(sortedShards, func(i, j int) bool {
+		return bytes.Compare(sortedShards[i].LowerBound, sortedShards[j].LowerBound) < 0
+	})
+
+	return sortedShards, nil
 }
 
 func (c *MonsteraClient) getConnection(nodeId string) (MonsteraApiClient, error) {

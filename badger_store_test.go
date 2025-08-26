@@ -83,7 +83,7 @@ func TestBadgerStoreView(t *testing.T) {
 	// Test EachRange
 	var rangeKeys []string
 	var rangeValues []string
-	err = viewTxn.EachRange([]byte("key1"), []byte("key3"), func(key []byte, value []byte) (bool, error) {
+	err = viewTxn.EachRange([]byte("key1"), []byte("key3"), false, func(key []byte, value []byte) (bool, error) {
 		rangeKeys = append(rangeKeys, string(key))
 		rangeValues = append(rangeValues, string(value))
 		return true, nil
@@ -387,7 +387,7 @@ func TestBadgerStoreEachRangeWithBounds(t *testing.T) {
 	defer viewTxn.Discard()
 
 	var rangeKeys []string
-	err = viewTxn.EachRange([]byte("b"), []byte("f"), func(key []byte, value []byte) (bool, error) {
+	err = viewTxn.EachRange([]byte("b"), []byte("f"), false, func(key []byte, value []byte) (bool, error) {
 		rangeKeys = append(rangeKeys, string(key))
 		return true, nil
 	})
@@ -421,7 +421,7 @@ func TestBadgerStoreEachRangeNoUpperBound(t *testing.T) {
 	defer viewTxn.Discard()
 
 	var rangeKeys []string
-	err = viewTxn.EachRange([]byte("c"), nil, func(key []byte, value []byte) (bool, error) {
+	err = viewTxn.EachRange([]byte("c"), nil, false, func(key []byte, value []byte) (bool, error) {
 		rangeKeys = append(rangeKeys, string(key))
 		return true, nil
 	})

@@ -220,15 +220,30 @@ func (t *Txn) EachPrefixKeys(prefix []byte, fn func(key []byte) (bool, error)) e
 	return nil
 }
 
-func (t *Txn) EachRange(lowerBound []byte, upperBound []byte, fn func(key []byte, value []byte) (bool, error)) error {
-	iter := t.btxn.NewIterator(badgerIteratorOptions())
+func (t *Txn) EachRange(lowerBound []byte, upperBound []byte, reverse bool, fn func(key []byte, value []byte) (bool, error)) error {
+	iterOpt := badgerIteratorOptions()
+	iterOpt.Reverse = reverse
+	iter := t.btxn.NewIterator(iterOpt)
 	defer iter.Close()
 
-	for iter.Seek(lowerBound); iter.Valid(); iter.Next() {
+	if reverse {
+		iter.Seek(upperBound)
+	} else {
+		iter.Seek(lowerBound)
+	}
+
+	for ; iter.Valid(); iter.Next() {
 		item := iter.Item()
 		key := item.Key()
-		if upperBound != nil && !bytes.HasPrefix(key, upperBound) && bytes.Compare(key, upperBound) > 0 {
-			break
+
+		if reverse {
+			if bytes.Compare(key, lowerBound) < 0 {
+				break
+			}
+		} else {
+			if !bytes.HasPrefix(key, upperBound) && bytes.Compare(key, upperBound) > 0 {
+				break
+			}
 		}
 
 		var value []byte

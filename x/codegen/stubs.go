@@ -85,15 +85,15 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 						Id(read.Name + "Request").Op(":").Id("request"),
 					),
 				)
-				g.List(Id("requestBytes"), Id("err")).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(Id("readRequest"))
+				g.List(Id("requestBytes"), Err()).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(Id("readRequest"))
 				g.If(
-					Id("err").Op("!=").Nil(),
+					Err().Op("!=").Nil(),
 				).Block(
 					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
 						Qual("github.com/evrblk/monstera/x", "Internal"),
 						Lit("failed to marshal request"),
 						Map(String()).String().Values(
-							Lit("error").Op(":").Id("err").Dot("Error()"),
+							Lit("error").Op(":").Err().Dot("Error()"),
 						),
 					)),
 				)
@@ -105,7 +105,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 					)
 					g.Line()
 
-					g.List(Id("responseBytes"), Id("err")).Op(":=").Id("s.monsteraClient.Read").Call(
+					g.List(Id("responseBytes"), Err()).Op(":=").Id("s.monsteraClient.Read").Call(
 						Id("ctx"),
 						Lit(core.Name),
 						Id("shardKey"),
@@ -115,7 +115,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 				} else {
 					g.Line()
 
-					g.List(Id("responseBytes"), Id("err")).Op(":=").Id("s.monsteraClient.ReadShard").Call(
+					g.List(Id("responseBytes"), Err()).Op(":=").Id("s.monsteraClient.ReadShard").Call(
 						Id("ctx"),
 						Lit(core.Name),
 						Id("shardId"),
@@ -125,22 +125,22 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 				}
 
 				g.If(
-					Id("err").Op("!=").Nil(),
+					Err().Op("!=").Nil(),
 				).Block(
-					Return(Id("nil"), Id("err")),
+					Return(Id("nil"), Err()),
 				)
 				g.Line()
 
 				g.Id("readResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadResponseProto).Values()
-				g.Id("err").Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("readResponse"))
+				g.Err().Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("readResponse"))
 				g.If(
-					Id("err").Op("!=").Nil(),
+					Err().Op("!=").Nil(),
 				).Block(
 					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
 						Qual("github.com/evrblk/monstera/x", "Internal"),
 						Lit("failed to unmarshal response"),
 						Map(String()).String().Values(
-							Lit("error").Op(":").Id("err").Dot("Error()"),
+							Lit("error").Op(":").Err().Dot("Error()"),
 						),
 					)),
 				)
@@ -186,15 +186,15 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 						Id(update.Name + "Request").Op(":").Id("request"),
 					),
 				)
-				g.List(Id("requestBytes"), Id("err")).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(Id("updateRequest"))
+				g.List(Id("requestBytes"), Err()).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(Id("updateRequest"))
 				g.If(
-					Id("err").Op("!=").Nil(),
+					Err().Op("!=").Nil(),
 				).Block(
 					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
 						Qual("github.com/evrblk/monstera/x", "Internal"),
 						Lit("failed to marshal request"),
 						Map(String()).String().Values(
-							Lit("error").Op(":").Id("err").Dot("Error()"),
+							Lit("error").Op(":").Err().Dot("Error()"),
 						),
 					)),
 				)
@@ -206,7 +206,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 					)
 					g.Line()
 
-					g.List(Id("responseBytes"), Id("err")).Op(":=").Id("s.monsteraClient.Update").Call(
+					g.List(Id("responseBytes"), Err()).Op(":=").Id("s.monsteraClient.Update").Call(
 						Id("ctx"),
 						Lit(core.Name),
 						Id("shardKey"),
@@ -215,7 +215,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 				} else {
 					g.Line()
 
-					g.List(Id("responseBytes"), Id("err")).Op(":=").Id("s.monsteraClient.UpdateShard").Call(
+					g.List(Id("responseBytes"), Err()).Op(":=").Id("s.monsteraClient.UpdateShard").Call(
 						Id("ctx"),
 						Lit(core.Name),
 						Id("shardId"),
@@ -224,22 +224,22 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 				}
 
 				g.If(
-					Id("err").Op("!=").Nil(),
+					Err().Op("!=").Nil(),
 				).Block(
-					Return(Id("nil"), Id("err")),
+					Return(Id("nil"), Err()),
 				)
 				g.Line()
 
 				g.Id("updateResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateResponseProto).Values()
-				g.Id("err").Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("updateResponse"))
+				g.Err().Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("updateResponse"))
 				g.If(
-					Id("err").Op("!=").Nil(),
+					Err().Op("!=").Nil(),
 				).Block(
 					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
 						Qual("github.com/evrblk/monstera/x", "Internal"),
 						Lit("failed to unmarshal response"),
 						Map(String()).String().Values(
-							Lit("error").Op(":").Id("err").Dot("Error()"),
+							Lit("error").Op(":").Err().Dot("Error()"),
 						),
 					)),
 				)
@@ -281,16 +281,16 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 	f.Line()
 
 	f.Func().Id("nilifyIfEmpty").Params(
-		Id("err").Op("*").Qual("github.com/evrblk/monstera/x", "Error"),
+		Err().Op("*").Qual("github.com/evrblk/monstera/x", "Error"),
 	).Params(
 		Error(),
 	).Block(
 		If(
-			Id("err").Op("==").Nil().Op("||").Id("err.Code").Op("==").Qual("github.com/evrblk/monstera/x", "ErrorCode_INVALID").Op("||").Id("err.Code").Op("==").Qual("github.com/evrblk/monstera/x", "ErrorCode_OK"),
+			Err().Op("==").Nil().Op("||").Id("err.Code").Op("==").Qual("github.com/evrblk/monstera/x", "ErrorCode_INVALID").Op("||").Id("err.Code").Op("==").Qual("github.com/evrblk/monstera/x", "ErrorCode_OK"),
 		).Block(
 			Return(Nil()),
 		).Else().Block(
-			Return(Id("err")),
+			Return(Err()),
 		),
 	)
 }

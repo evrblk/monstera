@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -23,6 +25,24 @@ var (
 	errApplicationAlreadyExists = errors.New("application already exists")
 )
 
+// LoadConfigFromFile loads monstera cluster config from either a binary Protobuf `.pb` or a ProtoJSON `.json` file.
+func LoadConfigFromFile(path string) (*ClusterConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	ext := filepath.Ext(path)
+	if ext == ".pb" {
+		return LoadConfigFromProto(data)
+	} else if ext == ".json" {
+		return LoadConfigFromJson(data)
+	} else {
+		return nil, fmt.Errorf("unsupported file extension: %s", ext)
+	}
+}
+
+// LoadConfigFromProto loads binary serialized Protobuf monstera cluster config.
 func LoadConfigFromProto(data []byte) (*ClusterConfig, error) {
 	config := &ClusterConfig{}
 
@@ -33,6 +53,7 @@ func LoadConfigFromProto(data []byte) (*ClusterConfig, error) {
 	return LoadConfig(config.Applications, config.Nodes, config.UpdatedAt)
 }
 
+// LoadConfigFromJson loads JSON serialized monstera cluster config.
 func LoadConfigFromJson(data []byte) (*ClusterConfig, error) {
 	config := &ClusterConfig{}
 
@@ -43,6 +64,7 @@ func LoadConfigFromJson(data []byte) (*ClusterConfig, error) {
 	return LoadConfig(config.Applications, config.Nodes, config.UpdatedAt)
 }
 
+// LoadConfig loads monstera cluster config from separate components.
 func LoadConfig(applications []*Application, nodes []*Node, updatedAt int64) (*ClusterConfig, error) {
 	config := &ClusterConfig{
 		UpdatedAt:    updatedAt,
@@ -56,6 +78,27 @@ func LoadConfig(applications []*Application, nodes []*Node, updatedAt int64) (*C
 	}
 
 	return config, nil
+}
+
+// WriteConfigToFile writes monstera cluster config into either a binary Protobuf `.pb` or a ProtoJSON `.json` file.
+func WriteConfigToFile(config *ClusterConfig, path string) error {
+	ext := filepath.Ext(path)
+	if ext == ".pb" {
+		data, err := WriteConfigToProto(config)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(path, data, 0666)
+	} else if ext == ".json" {
+		data, err := WriteConfigToJson(config)
+		if err != nil {
+			return err
+
+		}
+		return os.WriteFile(path, data, 0666)
+	} else {
+		return fmt.Errorf("unsupported file extension: %s", ext)
+	}
 }
 
 func WriteConfigToJson(config *ClusterConfig) ([]byte, error) {

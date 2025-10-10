@@ -1,11 +1,13 @@
 package monstera
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"log"
 	"math/rand/v2"
+	"sort"
 	"sync"
 	"time"
 
@@ -67,7 +69,7 @@ func (c *MonsteraClient) Start() {
 				c.mu.Unlock()
 			}
 
-			duration := time.Duration(int32(rand.Int32N(10000))+55000) * time.Millisecond
+			duration := time.Duration(int32(rand.Int32N(1000))+5000) * time.Millisecond
 
 			select {
 			case <-ctx.Done():
@@ -213,6 +215,52 @@ func (c *MonsteraClient) updateShard(ctx context.Context, applicationName string
 	return nil, fmt.Errorf("all replicas failed")
 }
 
+func (c *MonsteraClient) TriggerSnapshot(applicationName string, shardId string, replicaId string) error {
+	shard, err := c.clusterConfig.GetShard(shardId)
+	if err != nil {
+		return err
+	}
+
+	replica, ok := lo.Find(shard.Replicas, func(r *Replica) bool {
+		return r.Id == replicaId
+	})
+	if !ok {
+		return fmt.Errorf("replica not found")
+	}
+
+	conn, err := c.getConnection(replica.NodeAddress)
+	if err != nil {
+		return err
+	}
+
+	_, err = conn.TriggerSnapshot(context.Background(), &TriggerSnapshotRequest{ReplicaId: replicaId})
+
+	return err
+}
+
+func (c *MonsteraClient) LeadershipTransfer(applicationName string, shardId string, replicaId string) error {
+	shard, err := c.clusterConfig.GetShard(shardId)
+	if err != nil {
+		return err
+	}
+
+	replica, ok := lo.Find(shard.Replicas, func(r *Replica) bool {
+		return r.Id == replicaId
+	})
+	if !ok {
+		return fmt.Errorf("replica not found")
+	}
+
+	conn, err := c.getConnection(replica.NodeAddress)
+	if err != nil {
+		return err
+	}
+
+	_, err = conn.LeadershipTransfer(context.Background(), &LeadershipTransferRequest{ReplicaId: replicaId})
+
+	return err
+}
+
 func (c *MonsteraClient) ListShards(applicationName string) ([]*Shard, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -222,7 +270,14 @@ func (c *MonsteraClient) ListShards(applicationName string) ([]*Shard, error) {
 		return nil, err
 	}
 
-	return shards, nil
+	sortedShards := make([]*Shard, len(shards))
+	copy(sortedShards, shards)
+
+	sort.Slice(sortedShards, func(i, j int) bool {
+		return bytes.Compare(sortedShards[i].LowerBound, sortedShards[j].LowerBound) < 0
+	})
+
+	return sortedShards, nil
 }
 
 func (c *MonsteraClient) getConnection(nodeAddress string) (MonsteraApiClient, error) {

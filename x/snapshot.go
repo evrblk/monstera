@@ -19,7 +19,7 @@ type BadgerStoreSnapshot struct {
 
 func (s BadgerStoreSnapshot) Write(w io.Writer) error {
 	for _, r := range s.ranges {
-		err := s.txn.EachRange(r.Lower, r.Upper, func(key []byte, value []byte) (bool, error) {
+		err := s.txn.EachRange(r.Lower, r.Upper, false, func(key []byte, value []byte) (bool, error) {
 			// Write key size and key itself
 			err := WriteUint32IntoStream(w, uint32(len(key)))
 			if err != nil {

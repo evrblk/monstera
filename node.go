@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -24,7 +25,7 @@ var (
 type MonsteraNode struct {
 	baseDir         string
 	nodeAddress     string
-	coreDescriptors map[string]*ApplicationCoreDescriptor
+	coreDescriptors ApplicationCoreDescriptors
 
 	mu            sync.RWMutex
 	replicas      map[string]*MonsteraReplica
@@ -51,16 +52,17 @@ const (
 	maxHops = 3
 )
 
-// ApplicationCoreDescriptor is used to register an application core with Monstera framework.
-type ApplicationCoreDescriptor struct {
-	// Name is the name of the application core. It should match Application.Implementation
-	// in ClusterConfig.
-	Name string
+// ApplicationCoreDescriptors map is used to register application cores with Monstera.
+// Key: the name of the application core, it should match Application.Implementation in ClusterConfig.
+// Value: application core descriptor.
+type ApplicationCoreDescriptors = map[string]ApplicationCoreDescriptor
 
+// ApplicationCoreDescriptor is used to register an application core with Monstera.
+type ApplicationCoreDescriptor struct {
 	// CoreFactoryFunc is a function that creates a new application core. It is called when
 	// Monstera node starts for every replica on this node, and also for every new replica that
 	// is added to the node while it is running.
-	CoreFactoryFunc func(application *Application, shard *Shard, replica *Replica) ApplicationCore
+	CoreFactoryFunc func(shard *Shard, replica *Replica) ApplicationCore
 
 	// RestoreSnapshotOnStart is a flag that indicates if the application core should restore its
 	// state from a snapshot on start (via ApplicationCore.Restore). For fully in-memory applications,
@@ -73,29 +75,18 @@ type MonsteraNodeConfig struct {
 	MaxHops          int
 	MaxReadTimeout   time.Duration
 	MaxUpdateTimeout time.Duration
+
+	// UseInMemoryRaftStore set to `true` should be used only in unit tests or dev environment and is not
+	// recommended for production use, since in-memory Raft store is not durable.
+	UseInMemoryRaftStore bool
 }
 
 var DefaultMonsteraNodeConfig = MonsteraNodeConfig{
 	MaxHops:          10,
 	MaxReadTimeout:   10 * time.Second,
 	MaxUpdateTimeout: 30 * time.Second,
-}
 
-// RegisterApplicationCore registers an application core with the Monstera framework.
-// It should be called before MonsteraNode.Start.
-func (n *MonsteraNode) RegisterApplicationCore(descriptor *ApplicationCoreDescriptor) {
-	n.smu.Lock()
-	defer n.smu.Unlock()
-
-	if n.nodeState != INITIAL {
-		panic("cannot register application core after node has started")
-	}
-
-	if _, ok := n.coreDescriptors[descriptor.Name]; ok {
-		panic(fmt.Sprintf("core %s already registered", descriptor.Name))
-	}
-
-	n.coreDescriptors[descriptor.Name] = descriptor
+	UseInMemoryRaftStore: false,
 }
 
 func (n *MonsteraNode) Stop() {
@@ -118,6 +109,8 @@ func (n *MonsteraNode) Stop() {
 	}
 
 	n.logger.Printf("Monstera Node stopped")
+
+	n.raftStore.Close()
 }
 
 func (n *MonsteraNode) Start() {
@@ -256,6 +249,26 @@ func (n *MonsteraNode) AppendEntries(replicaId string, request *hraft.AppendEntr
 	return r.AppendEntries(request)
 }
 
+func (n *MonsteraNode) TriggerSnapshot(replicaId string) error {
+	r, err := n.getReplica(replicaId)
+	if err != nil {
+		return err
+	}
+
+	r.TriggerSnapshot()
+
+	return nil
+}
+
+func (n *MonsteraNode) LeadershipTransfer(replicaId string) error {
+	r, err := n.getReplica(replicaId)
+	if err != nil {
+		return err
+	}
+
+	return r.LeadershipTransfer()
+}
+
 func (n *MonsteraNode) RequestVote(ctx context.Context, replicaId string, request *hraft.RequestVoteRequest) (*hraft.RequestVoteResponse, error) {
 	if n.NodeState() != READY {
 		return nil, errNodeNotReady
@@ -369,11 +382,11 @@ func (n *MonsteraNode) loadCores() error {
 					// Find core descriptor
 					coreDescriptor, ok := n.coreDescriptors[a.Implementation]
 					if !ok {
-						return fmt.Errorf("no core registered for %s", a.Name)
+						return fmt.Errorf("no core registered for %s", a.Implementation)
 					}
 
 					// Create replica
-					applicationCore := coreDescriptor.CoreFactoryFunc(a, s, r)
+					applicationCore := coreDescriptor.CoreFactoryFunc(s, r)
 					replica := NewMonsteraReplica(n.baseDir, a.Name, s.Id, r.Id, n.nodeAddress, applicationCore, n.pool, n.raftStore, coreDescriptor.RestoreSnapshotOnStart)
 
 					n.replicas[r.Id] = replica
@@ -413,11 +426,24 @@ func (n *MonsteraNode) bootstrapShards() error {
 	return nil
 }
 
-func NewNode(baseDir string, nodeAddress string, clusterConfig *ClusterConfig, raftStore *BadgerStore, monsteraNodeConfig MonsteraNodeConfig) *MonsteraNode {
+func NewNode(baseDir string, nodeAddress string, clusterConfig *ClusterConfig, coreDescriptors ApplicationCoreDescriptors, monsteraNodeConfig MonsteraNodeConfig) (*MonsteraNode, error) {
+	var raftStore *BadgerStore
+	if monsteraNodeConfig.UseInMemoryRaftStore {
+		raftStore = NewBadgerInMemoryStore()
+	} else {
+		raftStore = NewBadgerStore(filepath.Join(baseDir, "raft"))
+	}
+
+	for _, a := range clusterConfig.GetApplications() {
+		if _, ok := coreDescriptors[a.Implementation]; !ok {
+			return nil, fmt.Errorf("no core implementation registered for %s", a.Implementation)
+		}
+	}
+
 	monsteraNode := &MonsteraNode{
 		baseDir:            baseDir,
 		nodeAddress:        nodeAddress,
-		coreDescriptors:    make(map[string]*ApplicationCoreDescriptor),
+		coreDescriptors:    coreDescriptors,
 		clusterConfig:      clusterConfig,
 		nodeState:          INITIAL,
 		replicas:           make(map[string]*MonsteraReplica),
@@ -427,5 +453,5 @@ func NewNode(baseDir string, nodeAddress string, clusterConfig *ClusterConfig, r
 		logger:             log.New(os.Stderr, fmt.Sprintf("[%s] ", nodeAddress), log.LstdFlags),
 	}
 
-	return monsteraNode
+	return monsteraNode, nil
 }

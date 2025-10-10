@@ -239,6 +239,19 @@ func (b *MonsteraReplica) IsBootstrapped() bool {
 	return ok
 }
 
+func (b *MonsteraReplica) TriggerSnapshot() {
+	b.hraft.Snapshot()
+}
+
+func (b *MonsteraReplica) ListSnapshots() ([]*hraft.SnapshotMeta, error) {
+	return b.hfss.List()
+}
+
+func (b *MonsteraReplica) LeadershipTransfer() error {
+	f := b.hraft.LeadershipTransfer()
+	return f.Error()
+}
+
 func NewMonsteraReplica(baseDir string, applicationName string, shardId string, replicaId string,
 	myAddress string, applicationCore ApplicationCore, pool *MonsteraConnectionPool, raftStore *BadgerStore, restoreSnapshotOnStart bool) *MonsteraReplica {
 	c := hraft.DefaultConfig()

@@ -135,15 +135,39 @@ func (s *MonsteraServer) AppendEntriesPipeline(stream MonsteraApi_AppendEntriesP
 	}
 }
 
+func (s *MonsteraServer) TriggerSnapshot(ctx context.Context, request *TriggerSnapshotRequest) (*TriggerSnapshotResponse, error) {
+	err := s.monsteraNode.TriggerSnapshot(request.ReplicaId)
+	if err != nil {
+		s.logger.Printf("Error calling MonsteraNode.TriggerSnapshot: %v", err)
+		return nil, err
+	}
+	return &TriggerSnapshotResponse{}, nil
+}
+
+func (s *MonsteraServer) LeadershipTransfer(ctx context.Context, request *LeadershipTransferRequest) (*LeadershipTransferResponse, error) {
+	err := s.monsteraNode.LeadershipTransfer(request.ReplicaId)
+	if err != nil {
+		s.logger.Printf("Error calling MonsteraNode.LeadershipTransfer: %v", err)
+		return nil, err
+	}
+	return &LeadershipTransferResponse{}, nil
+}
+
 func (s *MonsteraServer) HealthCheck(ctx context.Context, request *HealthCheckRequest) (*HealthCheckResponse, error) {
 	cores := s.monsteraNode.ListCores()
 
 	replicas := make([]*ReplicaState, len(cores))
 	for i, c := range cores {
+		snapshots, err := c.ListSnapshots()
+		if err != nil {
+			s.logger.Printf("Error calling MonsteraReplica.ListSnapshots: %v", err)
+		}
+
 		replicas[i] = &ReplicaState{
 			ReplicaId: c.ReplicaId,
 			RaftState: encodeRaftState(c.GetRaftState()),
 			RaftStats: c.GetRaftStats(),
+			Snapshots: encodeRaftSnapshots(snapshots),
 		}
 	}
 

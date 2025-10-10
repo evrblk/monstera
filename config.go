@@ -3,6 +3,7 @@ package monstera
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -102,7 +103,7 @@ func WriteConfigToFile(config *ClusterConfig, path string) error {
 }
 
 func WriteConfigToJson(config *ClusterConfig) ([]byte, error) {
-	data, err := json.Marshal(config)
+	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +140,6 @@ func CreateEmptyConfig() *ClusterConfig {
 // - Applications have replication factor of at least 3
 // - Shards have non-empty id
 // - Shards have globally unique ids
-// - Shards have globally unique global index prefixes
 // - Shards have no overlap in range
 // - Shards have 4 bytes ranges
 // - All shards together cover the full range of keys
@@ -148,6 +148,7 @@ func CreateEmptyConfig() *ClusterConfig {
 // - Replicas have globally unique ids
 // - Replicas are assigned to existing nodes
 // - Replicas are assigned to different nodes
+// - Metadata has unique keys
 //
 // Returns an error if any invariant is violated.
 func (c *ClusterConfig) Validate() error {
@@ -172,12 +173,16 @@ func (c *ClusterConfig) Validate() error {
 		}
 
 		nodesByAddress[n.Address] = n
+
+		err := validateMetadata(n.Metadata, fmt.Sprintf("node address %s", n.Address))
+		if err != nil {
+			return err
+		}
 	}
 
 	applicationsByNames := make(map[string]*Application)
 	shardsByIds := make(map[string]*Shard)
 	replicasByIds := make(map[string]*Replica)
-	shardsByGlobalIndexPrefixes := make(map[string]*Shard)
 
 	for _, a := range c.Applications {
 		if a.Name == "" {
@@ -198,6 +203,11 @@ func (c *ClusterConfig) Validate() error {
 			return fmt.Errorf("invalid replication factor for application %s", a.Name)
 		}
 
+		err := validateMetadata(a.Metadata, fmt.Sprintf("application %s", a.Name))
+		if err != nil {
+			return err
+		}
+
 		if len(a.Shards) == 0 {
 			return fmt.Errorf("no shards for %s", a.Name)
 		}
@@ -213,12 +223,6 @@ func (c *ClusterConfig) Validate() error {
 			}
 			shardsByIds[s.Id] = s
 
-			_, ok = shardsByGlobalIndexPrefixes[string(s.GlobalIndexPrefix)]
-			if ok {
-				return fmt.Errorf("duplicate global index prefix for shard %s", s.Id)
-			}
-			shardsByGlobalIndexPrefixes[string(s.GlobalIndexPrefix)] = s
-
 			if len(s.Replicas) < int(a.ReplicationFactor) {
 				return fmt.Errorf("not enough replicas for shard %s", s.Id)
 			}
@@ -229,6 +233,11 @@ func (c *ClusterConfig) Validate() error {
 
 			if bytes.Compare(s.LowerBound, s.UpperBound) >= 0 {
 				return fmt.Errorf("invalid lower bound/upper bounds for shard %s", s.Id)
+			}
+
+			err := validateMetadata(s.Metadata, fmt.Sprintf("shard %s", s.Id))
+			if err != nil {
+				return err
 			}
 
 			for _, r := range s.Replicas {
@@ -245,6 +254,11 @@ func (c *ClusterConfig) Validate() error {
 				_, ok = nodesByAddress[r.NodeAddress]
 				if !ok {
 					return fmt.Errorf("node %s for replica %s not found", r.NodeAddress, r.Id)
+				}
+
+				err := validateMetadata(r.Metadata, fmt.Sprintf("replica id %s", r.Id))
+				if err != nil {
+					return err
 				}
 			}
 
@@ -284,6 +298,17 @@ func (c *ClusterConfig) Validate() error {
 		}
 	}
 
+	return nil
+}
+
+func validateMetadata(metadata []*Metadata, parent string) error {
+	metadataKeys := make(map[string]string)
+	for _, m := range metadata {
+		if _, ok := metadataKeys[m.Key]; ok {
+			return fmt.Errorf("duplicate metadata key %s for %s", m.Key, parent)
+		}
+		metadataKeys[m.Key] = m.Value
+	}
 	return nil
 }
 
@@ -379,23 +404,11 @@ func (c *ClusterConfig) CreateShard(applicationName string, lowerBound []byte, u
 		}
 	}
 
-	globalIndexPrefix := make([]byte, 8)
-	for {
-		binary.BigEndian.PutUint64(globalIndexPrefix[0:8], rand.Uint64())
-		_, ok := lo.Find(application.Shards, func(s *Shard) bool {
-			return bytes.Equal(s.GlobalIndexPrefix, globalIndexPrefix)
-		})
-		if !ok {
-			break
-		}
-	}
-
 	shard := &Shard{
-		Id:                id,
-		LowerBound:        lowerBound,
-		UpperBound:        upperBound,
-		GlobalIndexPrefix: globalIndexPrefix,
-		ParentId:          parentId,
+		Id:         id,
+		LowerBound: lowerBound,
+		UpperBound: upperBound,
+		ParentId:   parentId,
 	}
 
 	application.Shards = append(application.Shards, shard)
@@ -565,9 +578,8 @@ func ValidateTransition(old, new *ClusterConfig) error {
 				return fmt.Errorf("cannot remove shard %s from application %s", shardId, appName)
 			}
 			if !bytes.Equal(oldShard.LowerBound, newShard.LowerBound) ||
-				!bytes.Equal(oldShard.UpperBound, newShard.UpperBound) ||
-				!bytes.Equal(oldShard.GlobalIndexPrefix, newShard.GlobalIndexPrefix) {
-				return fmt.Errorf("cannot change bounds or global index prefix for shard %s in application %s", shardId, appName)
+				!bytes.Equal(oldShard.UpperBound, newShard.UpperBound) {
+				return fmt.Errorf("cannot change bounds for shard %s in application %s", shardId, appName)
 			}
 		}
 	}
@@ -639,4 +651,64 @@ func generateId(prefix string) string {
 func isWithinRange(key []byte, lowerBound []byte, upperBound []byte) bool {
 	return bytes.Compare(key, upperBound) <= 0 &&
 		bytes.Compare(key, lowerBound) >= 0
+}
+
+// shardJsonProxy is used for human-readable Shard JSON representation, with HEX instead of Base64 for []byte
+type shardJsonProxy struct {
+	Id         string      `json:"id,omitempty"`
+	LowerBound string      `json:"lower_bound,omitempty"`
+	UpperBound string      `json:"upper_bound,omitempty"`
+	ParentId   string      `json:"parent_id,omitempty"`
+	Replicas   []*Replica  `json:"replicas,omitempty"`
+	Metadata   []*Metadata `json:"metadata,omitempty"`
+}
+
+func (s *Shard) MarshalJSON() ([]byte, error) {
+	i := len(s.LowerBound)
+	for ; i > 0; i-- {
+		if s.LowerBound[i-1] != 0x00 || s.UpperBound[i-1] != 0xff {
+			break
+		}
+	}
+
+	return json.Marshal(&shardJsonProxy{
+		Id:         s.Id,
+		LowerBound: hex.EncodeToString(s.LowerBound[:i]),
+		UpperBound: hex.EncodeToString(s.UpperBound[:i]),
+		ParentId:   s.ParentId,
+		Replicas:   s.Replicas,
+		Metadata:   s.Metadata,
+	})
+}
+
+func (s *Shard) UnmarshalJSON(data []byte) error {
+	var p shardJsonProxy
+
+	err := json.Unmarshal(data, &p)
+	if err != nil {
+		return err
+	}
+
+	// Initialize with 0x00s
+	s.LowerBound = []byte{0x00, 0x00, 0x00, 0x00}
+	// Decode can rewrite less than 4 bytes leaving 0x00s in the end
+	_, err = hex.Decode(s.LowerBound, []byte(p.LowerBound))
+	if err != nil {
+		return err
+	}
+
+	// Initialize with 0xffs
+	s.UpperBound = []byte{0xff, 0xff, 0xff, 0xff}
+	// Decode can rewrite less than 4 bytes leaving 0xffs in the end
+	_, err = hex.Decode(s.UpperBound, []byte(p.UpperBound))
+	if err != nil {
+		return err
+	}
+
+	s.Id = p.Id
+	s.ParentId = p.ParentId
+	s.Replicas = p.Replicas
+	s.Metadata = p.Metadata
+
+	return nil
 }

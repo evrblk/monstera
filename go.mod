@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/dave/jennifer v1.7.1
 	github.com/dgraph-io/badger/v4 v4.7.0
+	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-hclog v1.6.2
 	github.com/hashicorp/raft v1.7.3
 	github.com/prometheus/client_golang v1.22.0

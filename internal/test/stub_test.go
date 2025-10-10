@@ -48,8 +48,6 @@ func TestPlaygroundApiMonsteraStub_ReadAndUpdate(t *testing.T) {
 	}
 	log.Println("Nodes are ready")
 
-	time.Sleep(1 * time.Second)
-
 	for i := 0; i < 100; i++ {
 		// Test reading non-existent key
 		key := rand.Uint64()
@@ -162,10 +160,9 @@ func NewTestClusterConfig() *monstera.ClusterConfig {
 			ReplicationFactor: 3,
 			Shards: []*monstera.Shard{
 				{
-					Id:                "shrd_01",
-					LowerBound:        []byte{0x00, 0x00, 0x00, 0x00},
-					UpperBound:        []byte{0x3f, 0xff, 0xff, 0xff},
-					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
+					Id:         "shrd_01",
+					LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
+					UpperBound: []byte{0x3f, 0xff, 0xff, 0xff},
 					Replicas: []*monstera.Replica{
 						{Id: "rplc_01", NodeAddress: "localhost:9001"},
 						{Id: "rplc_02", NodeAddress: "localhost:9002"},
@@ -173,10 +170,9 @@ func NewTestClusterConfig() *monstera.ClusterConfig {
 					},
 				},
 				{
-					Id:                "shrd_02",
-					LowerBound:        []byte{0x40, 0x00, 0x00, 0x00},
-					UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
-					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
+					Id:         "shrd_02",
+					LowerBound: []byte{0x40, 0x00, 0x00, 0x00},
+					UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
 					Replicas: []*monstera.Replica{
 						{Id: "rplc_4", NodeAddress: "localhost:9001"},
 						{Id: "rplc_5", NodeAddress: "localhost:9002"},
@@ -184,10 +180,9 @@ func NewTestClusterConfig() *monstera.ClusterConfig {
 					},
 				},
 				{
-					Id:                "shrd_03",
-					LowerBound:        []byte{0x80, 0x00, 0x00, 0x00},
-					UpperBound:        []byte{0xbf, 0xff, 0xff, 0xff},
-					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x03},
+					Id:         "shrd_03",
+					LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
+					UpperBound: []byte{0xbf, 0xff, 0xff, 0xff},
 					Replicas: []*monstera.Replica{
 						{Id: "rplc_7", NodeAddress: "localhost:9001"},
 						{Id: "rplc_8", NodeAddress: "localhost:9002"},
@@ -195,10 +190,9 @@ func NewTestClusterConfig() *monstera.ClusterConfig {
 					},
 				},
 				{
-					Id:                "shrd_04",
-					LowerBound:        []byte{0xc0, 0x00, 0x00, 0x00},
-					UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
-					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x04},
+					Id:         "shrd_04",
+					LowerBound: []byte{0xc0, 0x00, 0x00, 0x00},
+					UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
 					Replicas: []*monstera.Replica{
 						{Id: "rplc_10", NodeAddress: "localhost:9001"},
 						{Id: "rplc_11", NodeAddress: "localhost:9002"},

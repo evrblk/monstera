@@ -26,8 +26,11 @@ Go to [official documentation](https://everblack.dev/docs/monstera) to learn mor
 
 ## Example
 
-[evrblk/monstera-example](https://github.com/evrblk/monstera-example) repository has examples of applications built entirely on Monstera. It might be easier to
-understand how it works from those examples rather than from the documentation.
+It might be easier to understand how it works from examples rather than from the documentation.
+
+* [evrblk/grackle](https://github.com/evrblk/grackle) is a complete production-ready application built with Monstera.
+* [evrblk/monstera-example](https://github.com/evrblk/monstera-example) repository has toy examples of applications 
+  built with Monstera.
 
 ## Installing
 

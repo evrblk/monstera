@@ -45,11 +45,9 @@ type MonsteraNode struct {
 type MonsteraNodeState = int
 
 const (
-	INITIAL MonsteraNodeState = iota + 1
+	INITIAL MonsteraNodeState = iota
 	READY
 	STOPPED
-
-	maxHops = 3
 )
 
 // ApplicationCoreDescriptors map is used to register application cores with Monstera.
@@ -72,7 +70,7 @@ type ApplicationCoreDescriptor struct {
 }
 
 type MonsteraNodeConfig struct {
-	MaxHops          int
+	MaxHops          int32
 	MaxReadTimeout   time.Duration
 	MaxUpdateTimeout time.Duration
 
@@ -82,7 +80,7 @@ type MonsteraNodeConfig struct {
 }
 
 var DefaultMonsteraNodeConfig = MonsteraNodeConfig{
-	MaxHops:          10,
+	MaxHops:          5,
 	MaxReadTimeout:   10 * time.Second,
 	MaxUpdateTimeout: 30 * time.Second,
 
@@ -166,7 +164,7 @@ func (n *MonsteraNode) Read(ctx context.Context, request *ReadRequest) ([]byte, 
 		if r.GetRaftState() == hraft.Leader {
 			return r.Read(request.Payload)
 		} else {
-			if request.Hops >= maxHops {
+			if request.Hops >= n.monsteraNodeConfig.MaxHops {
 				return nil, errLeaderUnknown
 			}
 
@@ -208,7 +206,7 @@ func (n *MonsteraNode) Update(ctx context.Context, request *UpdateRequest) ([]by
 	if r.GetRaftState() == hraft.Leader {
 		return r.Update(request.Payload)
 	} else {
-		if request.Hops >= maxHops {
+		if request.Hops >= n.monsteraNodeConfig.MaxHops {
 			return nil, errLeaderUnknown
 		}
 

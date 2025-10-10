@@ -1,4 +1,4 @@
-package playground
+package test
 
 import (
 	"context"

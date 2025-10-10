@@ -5,8 +5,7 @@ option go_package = "github.com/evrblk/monstera";
 package com.evrblk.monstera;
 
 message Node {
-  string id = 1;
-  string address = 2;
+  string address = 1;
 }
 
 message Application {
@@ -27,7 +26,7 @@ message Shard {
 
 message Replica {
   string id = 1;
-  string node_id = 2;
+  string node_address = 2;
 }
 
 message ClusterConfig {

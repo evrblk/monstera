@@ -2,21 +2,25 @@ package monstera
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
 )
 
 type MonsteraServer struct {
 	UnimplementedMonsteraApiServer
 
 	monsteraNode *MonsteraNode
+
+	logger *log.Logger
 }
 
 var _ MonsteraApiServer = &MonsteraServer{}
 
 func (s *MonsteraServer) Read(ctx context.Context, request *ReadRequest) (*ReadResponse, error) {
-	payload, err := s.monsteraNode.Read(request)
+	payload, err := s.monsteraNode.Read(ctx, request)
 	if err != nil {
-		log.Printf("[%s] Error calling MonsteraNode.Read: %v", s.monsteraNode.nodeId, err)
+		s.logger.Printf("Error calling MonsteraNode.Read: %v", err)
 		return nil, err
 	}
 
@@ -26,9 +30,9 @@ func (s *MonsteraServer) Read(ctx context.Context, request *ReadRequest) (*ReadR
 }
 
 func (s *MonsteraServer) Update(ctx context.Context, request *UpdateRequest) (*UpdateResponse, error) {
-	payload, err := s.monsteraNode.Update(request)
+	payload, err := s.monsteraNode.Update(ctx, request)
 	if err != nil {
-		log.Printf("[%s] Error calling MonsteraNode.Update: %v", s.monsteraNode.nodeId, err)
+		s.logger.Printf("Error calling MonsteraNode.Update: %v", err)
 		return nil, err
 	}
 
@@ -38,9 +42,9 @@ func (s *MonsteraServer) Update(ctx context.Context, request *UpdateRequest) (*U
 }
 
 func (s *MonsteraServer) AddVoter(ctx context.Context, request *AddVoterRequest) (*AddVoterResponse, error) {
-	err := s.monsteraNode.AddVoter(request.ReplicaId, request.VoterReplicaId, request.VoterAddress)
+	err := s.monsteraNode.AddVoter(ctx, request.ReplicaId, request.VoterReplicaId, request.VoterAddress)
 	if err != nil {
-		log.Printf("[%s] Error calling MonsteraNode.AddVoter: %v", s.monsteraNode.nodeId, err)
+		s.logger.Printf("Error calling MonsteraNode.AddVoter: %v", err)
 		return nil, err
 	}
 
@@ -50,25 +54,25 @@ func (s *MonsteraServer) AddVoter(ctx context.Context, request *AddVoterRequest)
 func (s *MonsteraServer) AppendEntries(ctx context.Context, request *AppendEntriesRequest) (*AppendEntriesResponse, error) {
 	resp, err := s.monsteraNode.AppendEntries(request.TargetReplicaId, decodeAppendEntriesRequest(request))
 	if err != nil {
-		log.Printf("[%s] Error calling MonsteraNode.AppendEntries: %v", s.monsteraNode.nodeId, err)
+		s.logger.Printf("Error calling MonsteraNode.AppendEntries: %v", err)
 		return nil, err
 	}
 	return encodeAppendEntriesResponse(resp), nil
 }
 
 func (s *MonsteraServer) RequestVote(ctx context.Context, request *RequestVoteRequest) (*RequestVoteResponse, error) {
-	resp, err := s.monsteraNode.RequestVote(request.TargetReplicaId, decodeRequestVoteRequest(request))
+	resp, err := s.monsteraNode.RequestVote(ctx, request.TargetReplicaId, decodeRequestVoteRequest(request))
 	if err != nil {
-		log.Printf("[%s] Error calling MonsteraNode.RequestVote: %v", s.monsteraNode.nodeId, err)
+		s.logger.Printf("Error calling MonsteraNode.RequestVote: %v", err)
 		return nil, err
 	}
 	return encodeRequestVoteResponse(resp), nil
 }
 
 func (s *MonsteraServer) TimeoutNow(ctx context.Context, request *TimeoutNowRequest) (*TimeoutNowResponse, error) {
-	resp, err := s.monsteraNode.TimeoutNow(request.TargetReplicaId, decodeTimeoutNowRequest(request))
+	resp, err := s.monsteraNode.TimeoutNow(ctx, request.TargetReplicaId, decodeTimeoutNowRequest(request))
 	if err != nil {
-		log.Printf("[%s] Error calling MonsteraNode.TimeoutNow: %v", s.monsteraNode.nodeId, err)
+		s.logger.Printf("Error calling MonsteraNode.TimeoutNow: %v", err)
 		return nil, err
 	}
 	return encodeTimeoutNowResponse(resp), nil
@@ -77,13 +81,13 @@ func (s *MonsteraServer) TimeoutNow(ctx context.Context, request *TimeoutNowRequ
 func (s *MonsteraServer) InstallSnapshot(stream MonsteraApi_InstallSnapshotServer) error {
 	request, err := stream.Recv()
 	if err != nil {
-		log.Printf("[%s] Error calling stream.Recv: %v", s.monsteraNode.nodeId, err)
+		s.logger.Printf("Error calling stream.Recv: %v", err)
 		return err
 	}
 
 	resp, err := s.monsteraNode.InstallSnapshot(request.TargetReplicaId, decodeInstallSnapshotRequest(request), &snapshotStream{stream, request.GetData()})
 	if err != nil {
-		log.Printf("[%s] Error calling MonsteraNode.InstallSnapshot: %v", s.monsteraNode.nodeId, err)
+		s.logger.Printf("Error calling MonsteraNode.InstallSnapshot: %v", err)
 		return err
 	}
 	return stream.SendAndClose(encodeInstallSnapshotResponse(resp))
@@ -122,7 +126,7 @@ func (s *MonsteraServer) AppendEntriesPipeline(stream MonsteraApi_AppendEntriesP
 		resp, err := s.monsteraNode.AppendEntries(msg.TargetReplicaId, decodeAppendEntriesRequest(msg))
 
 		if err != nil {
-			log.Printf("[%s] Error calling MonsteraNode.AppendEntries: %v", s.monsteraNode.nodeId, err)
+			s.logger.Printf("Error calling MonsteraNode.AppendEntries: %v", err)
 			return err
 		}
 		if err := stream.Send(encodeAppendEntriesResponse(resp)); err != nil {
@@ -149,9 +153,9 @@ func (s *MonsteraServer) HealthCheck(ctx context.Context, request *HealthCheckRe
 }
 
 func (s *MonsteraServer) UpdateClusterConfig(ctx context.Context, request *UpdateClusterConfigRequest) (*UpdateClusterConfigResponse, error) {
-	err := s.monsteraNode.UpdateClusterConfig(request.Config)
+	err := s.monsteraNode.UpdateClusterConfig(ctx, request.Config)
 	if err != nil {
-		log.Printf("[%s] Error calling MonsteraNode.UpdateClusterConfig: %v", s.monsteraNode.nodeId, err)
+		s.logger.Printf("Error calling MonsteraNode.UpdateClusterConfig: %v", err)
 		return nil, err
 	}
 
@@ -161,5 +165,6 @@ func (s *MonsteraServer) UpdateClusterConfig(ctx context.Context, request *Updat
 func NewMonsteraServer(monsteraNode *MonsteraNode) *MonsteraServer {
 	return &MonsteraServer{
 		monsteraNode: monsteraNode,
+		logger:       log.New(os.Stdout, fmt.Sprintf("[%s] ", monsteraNode.nodeAddress), log.LstdFlags),
 	}
 }

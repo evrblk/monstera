@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	maxRetriesOnSingleReplica = 5
+	maxRetriesOnSingleReplica = 10
 )
 
 type MonsteraClient struct {
@@ -118,7 +118,7 @@ func (c *MonsteraClient) readShard(ctx context.Context, applicationName string, 
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
-		conn, err := c.getConnection(r.NodeId)
+		conn, err := c.getConnection(r.NodeAddress)
 		if err != nil {
 			return nil, err
 		}
@@ -127,7 +127,7 @@ func (c *MonsteraClient) readShard(ctx context.Context, applicationName string, 
 			resp, err := conn.Read(ctx, &readRequest)
 			if err != nil {
 				if isErrorRetryableOnTheSameReplica(err) {
-					time.Sleep(250 * time.Millisecond) // TODO: make this configurable
+					time.Sleep(100 * time.Millisecond) // TODO: make this configurable
 					continue
 				}
 
@@ -182,7 +182,7 @@ func (c *MonsteraClient) updateShard(ctx context.Context, applicationName string
 		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
-		conn, err := c.getConnection(r.NodeId)
+		conn, err := c.getConnection(r.NodeAddress)
 		if err != nil {
 			return nil, err
 		}
@@ -191,7 +191,7 @@ func (c *MonsteraClient) updateShard(ctx context.Context, applicationName string
 			resp, err := conn.Update(ctx, &updateRequest)
 			if err != nil {
 				if isErrorRetryableOnTheSameReplica(err) {
-					time.Sleep(250 * time.Millisecond) // TODO: make this configurable
+					time.Sleep(100 * time.Millisecond) // TODO: make this configurable
 					continue
 				}
 
@@ -225,13 +225,8 @@ func (c *MonsteraClient) ListShards(applicationName string) ([]*Shard, error) {
 	return shards, nil
 }
 
-func (c *MonsteraClient) getConnection(nodeId string) (MonsteraApiClient, error) {
-	n, err := c.clusterConfig.GetNode(nodeId)
-	if err != nil {
-		return nil, fmt.Errorf("clusterConfig.GetNode: %v", err)
-	}
-
-	conn, err := c.pool.GetConnection(n.Address)
+func (c *MonsteraClient) getConnection(nodeAddress string) (MonsteraApiClient, error) {
+	conn, err := c.pool.GetConnection(nodeAddress)
 	if err != nil {
 		return nil, fmt.Errorf("pool.GetConnection: %v", err)
 	}

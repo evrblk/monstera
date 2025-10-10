@@ -3,6 +3,7 @@ package monstera
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"sort"
@@ -11,7 +12,6 @@ import (
 	"errors"
 
 	"github.com/samber/lo"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -36,7 +36,7 @@ func LoadConfigFromProto(data []byte) (*ClusterConfig, error) {
 func LoadConfigFromJson(data []byte) (*ClusterConfig, error) {
 	config := &ClusterConfig{}
 
-	if err := protojson.Unmarshal(data, config); err != nil {
+	if err := json.Unmarshal(data, config); err != nil {
 		return nil, err
 	}
 
@@ -59,7 +59,7 @@ func LoadConfig(applications []*Application, nodes []*Node, updatedAt int64) (*C
 }
 
 func WriteConfigToJson(config *ClusterConfig) ([]byte, error) {
-	data, err := protojson.MarshalOptions{Indent: "  ", Multiline: true}.Marshal(config)
+	data, err := json.Marshal(config)
 	if err != nil {
 		return nil, err
 	}
@@ -88,9 +88,8 @@ func CreateEmptyConfig() *ClusterConfig {
 //
 // - UpdatedAt is not 0
 // - There are at least 3 nodes
-// - Nodes have non-empty id
 // - Nodes have non-empty address
-// - Nodes have unique ids
+// - Nodes have unique addresses
 // - Applications have non-empty names
 // - Applications have globally unique names
 // - Applications have non-empty implementation
@@ -109,7 +108,7 @@ func CreateEmptyConfig() *ClusterConfig {
 //
 // Returns an error if any invariant is violated.
 func (c *ClusterConfig) Validate() error {
-	nodesByIds := make(map[string]*Node)
+	nodesByAddress := make(map[string]*Node)
 
 	if c.UpdatedAt == 0 {
 		return fmt.Errorf("updated at is required")
@@ -124,16 +123,12 @@ func (c *ClusterConfig) Validate() error {
 			return fmt.Errorf("empty node address")
 		}
 
-		if n.Id == "" {
-			return fmt.Errorf("empty node id")
-		}
-
-		_, ok := nodesByIds[n.Id]
+		_, ok := nodesByAddress[n.Address]
 		if ok {
-			return fmt.Errorf("duplicate node id %s", n.Id)
+			return fmt.Errorf("duplicate node address %s", n.Address)
 		}
 
-		nodesByIds[n.Id] = n
+		nodesByAddress[n.Address] = n
 	}
 
 	applicationsByNames := make(map[string]*Application)
@@ -204,14 +199,14 @@ func (c *ClusterConfig) Validate() error {
 				}
 				replicasByIds[r.Id] = r
 
-				_, ok = nodesByIds[r.NodeId]
+				_, ok = nodesByAddress[r.NodeAddress]
 				if !ok {
-					return fmt.Errorf("node %s for replica %s not found", r.NodeId, r.Id)
+					return fmt.Errorf("node %s for replica %s not found", r.NodeAddress, r.Id)
 				}
 			}
 
 			uniqueNodes := lo.UniqBy(s.Replicas, func(r *Replica) string {
-				return r.NodeId
+				return r.NodeAddress
 			})
 			if len(uniqueNodes) < len(s.Replicas) {
 				return fmt.Errorf("replicas are not assigned to different nodes for shard %s", s.Id)
@@ -264,19 +259,7 @@ func (c *ClusterConfig) CreateNode(address string) (*Node, error) {
 		}
 	}
 
-	var id string
-	for {
-		id = generateId("nd")
-		_, ok := lo.Find(c.Nodes, func(n *Node) bool {
-			return n.Id == id
-		})
-		if !ok {
-			break
-		}
-	}
-
 	node := &Node{
-		Id:      id,
 		Address: address,
 	}
 
@@ -287,9 +270,9 @@ func (c *ClusterConfig) CreateNode(address string) (*Node, error) {
 	return node, nil
 }
 
-func (c *ClusterConfig) GetNode(nodeId string) (*Node, error) {
+func (c *ClusterConfig) GetNode(nodeAddress string) (*Node, error) {
 	node, ok := lo.Find(c.Nodes, func(n *Node) bool {
-		return n.Id == nodeId
+		return n.Address == nodeAddress
 	})
 	if !ok {
 		return nil, errNodeNotFound
@@ -379,7 +362,7 @@ func (c *ClusterConfig) CreateShard(applicationName string, lowerBound []byte, u
 	return shard, nil
 }
 
-func (c *ClusterConfig) CreateReplica(applicationName string, shardId string, nodeId string) (*Replica, error) {
+func (c *ClusterConfig) CreateReplica(applicationName string, shardId string, nodeAddress string) (*Replica, error) {
 	application, ok := lo.Find(c.Applications, func(a *Application) bool {
 		return a.Name == applicationName
 	})
@@ -409,8 +392,8 @@ func (c *ClusterConfig) CreateReplica(applicationName string, shardId string, no
 	}
 
 	replica := &Replica{
-		Id:     id,
-		NodeId: nodeId,
+		Id:          id,
+		NodeAddress: nodeAddress,
 	}
 	shard.Replicas = append(shard.Replicas, replica)
 
@@ -470,22 +453,22 @@ func ValidateTransition(old, new *ClusterConfig) error {
 	// if they have at least one assigned replica in the old config
 	oldNodes := make(map[string]*Node)
 	for _, n := range old.Nodes {
-		oldNodes[n.Id] = n
+		oldNodes[n.Address] = n
 	}
 	newNodes := make(map[string]*Node)
 	for _, n := range new.Nodes {
-		newNodes[n.Id] = n
+		newNodes[n.Address] = n
 	}
 
 	// Find removed nodes
-	for oldNodeId := range oldNodes {
-		if _, exists := newNodes[oldNodeId]; !exists {
+	for oldNode := range oldNodes {
+		if _, exists := newNodes[oldNode]; !exists {
 			// Check if this node had any replicas in the old config
 			hadReplica := false
 			for _, a := range old.Applications {
 				for _, s := range a.Shards {
 					for _, r := range s.Replicas {
-						if r.NodeId == oldNodeId {
+						if r.NodeAddress == oldNode {
 							hadReplica = true
 							break
 						}
@@ -499,7 +482,7 @@ func ValidateTransition(old, new *ClusterConfig) error {
 				}
 			}
 			if hadReplica {
-				return fmt.Errorf("cannot remove node %s: it has assigned replicas in the old config", oldNodeId)
+				return fmt.Errorf("cannot remove node %s: it has assigned replicas in the old config", oldNode)
 			}
 		}
 	}
@@ -587,8 +570,8 @@ func ValidateTransition(old, new *ClusterConfig) error {
 			removedReplicas++
 		} else {
 			// Must be assigned to the same node
-			if oldReplica.NodeId != newReplica.NodeId {
-				return fmt.Errorf("replica %s changed node assignment: %s -> %s", key, oldReplica.NodeId, newReplica.NodeId)
+			if oldReplica.NodeAddress != newReplica.NodeAddress {
+				return fmt.Errorf("replica %s changed node assignment: %s -> %s", key, oldReplica.NodeAddress, newReplica.NodeAddress)
 			}
 		}
 	}

@@ -41,6 +41,7 @@ message UpdateRequest {
   string keyspace_name = 4;
   string shard_id = 5;
   string replica_id = 6;
+  int32 hops = 8;
 }
 
 message UpdateResponse {
@@ -55,6 +56,7 @@ message ReadRequest {
   string keyspace_name = 5;
   string shard_id = 6;
   string replica_id = 7;
+  int32 hops = 8;
 }
 
 message ReadResponse {

@@ -3,6 +3,7 @@ package monstera
 import (
 	"errors"
 	"fmt"
+	"github.com/hashicorp/go-hclog"
 	"io"
 	"log"
 	"os"
@@ -22,13 +23,15 @@ type MonsteraReplica struct {
 	KeyspaceName    string
 	ShardId         string
 	ReplicaId       string
-	NodeId          string
+	NodeAddress     string
 
 	applicationCore ApplicationCore
 	hraft           *hraft.Raft
 	transport       *RaftGrpcTransport
 	hstore          *HraftBadgerStore
 	hfss            *hraft.FileSnapshotStore
+
+	logger *log.Logger
 }
 
 // ApplicationCore is the interface that must be implemented by clients to be used
@@ -95,7 +98,7 @@ func (b *MonsteraReplica) Update(request []byte) ([]byte, error) {
 	f := b.hraft.Apply(commandBytes, 30*time.Second) // TODO timeout
 	if err := f.Error(); err != nil {
 		// TODO retry
-		log.Print(err)
+		b.logger.Print(err)
 		return nil, err
 	}
 
@@ -112,7 +115,7 @@ func (b *MonsteraReplica) Close() {
 	f := b.hraft.Shutdown()
 	err := f.Error()
 	if err != nil {
-		log.Printf("Failed to shutdown hraft: %v", err)
+		b.logger.Printf("Failed to shutdown hraft: %v", err)
 	}
 
 	// Close the application core.
@@ -240,7 +243,11 @@ func NewMonsteraReplica(baseDir string, applicationName string, shardId string, 
 	myAddress string, applicationCore ApplicationCore, pool *MonsteraConnectionPool, raftStore *BadgerStore, restoreSnapshotOnStart bool) *MonsteraReplica {
 	c := hraft.DefaultConfig()
 	c.LocalID = hraft.ServerID(replicaId)
-	c.LogLevel = "off"
+	c.Logger = hclog.New(&hclog.LoggerOptions{
+		Name:   replicaId,
+		Level:  hclog.LevelFromString("error"),
+		Output: os.Stdout,
+	})
 	c.NoSnapshotRestoreOnStart = !restoreSnapshotOnStart
 	c.NoLegacyTelemetry = true
 
@@ -274,5 +281,6 @@ func NewMonsteraReplica(baseDir string, applicationName string, shardId string, 
 		hstore:          hstore,
 		hfss:            hfss,
 		transport:       tm,
+		logger:          log.New(os.Stderr, fmt.Sprintf("[%s]", replicaId), log.LstdFlags),
 	}
 }

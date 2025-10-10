@@ -26,18 +26,9 @@ func TestClusterConfigFindShard(t *testing.T) {
 					UpperBound:        []byte{0x3f, 0xff, 0xff, 0xff},
 					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 					Replicas: []*Replica{
-						{
-							Id:     "rplc_01",
-							NodeId: "nd_01",
-						},
-						{
-							Id:     "rplc_02",
-							NodeId: "nd_02",
-						},
-						{
-							Id:     "rplc_03",
-							NodeId: "nd_03",
-						},
+						{Id: "rplc_01", NodeAddress: "localhost:9001"},
+						{Id: "rplc_02", NodeAddress: "localhost:9002"},
+						{Id: "rplc_03", NodeAddress: "localhost:9003"},
 					},
 				},
 				{
@@ -46,18 +37,9 @@ func TestClusterConfigFindShard(t *testing.T) {
 					UpperBound:        []byte{0x4f, 0xff, 0xff, 0xff},
 					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x05},
 					Replicas: []*Replica{
-						{
-							Id:     "rplc_13",
-							NodeId: "nd_01",
-						},
-						{
-							Id:     "rplc_14",
-							NodeId: "nd_02",
-						},
-						{
-							Id:     "rplc_15",
-							NodeId: "nd_03",
-						},
+						{Id: "rplc_13", NodeAddress: "localhost:9001"},
+						{Id: "rplc_14", NodeAddress: "localhost:9002"},
+						{Id: "rplc_15", NodeAddress: "localhost:9003"},
 					},
 				},
 				{
@@ -66,18 +48,9 @@ func TestClusterConfigFindShard(t *testing.T) {
 					UpperBound:        []byte{0x5f, 0xff, 0xff, 0xff},
 					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x06},
 					Replicas: []*Replica{
-						{
-							Id:     "rplc_16",
-							NodeId: "nd_01",
-						},
-						{
-							Id:     "rplc_17",
-							NodeId: "nd_02",
-						},
-						{
-							Id:     "rplc_18",
-							NodeId: "nd_03",
-						},
+						{Id: "rplc_16", NodeAddress: "localhost:9001"},
+						{Id: "rplc_17", NodeAddress: "localhost:9002"},
+						{Id: "rplc_18", NodeAddress: "localhost:9003"},
 					},
 				},
 				{
@@ -86,18 +59,9 @@ func TestClusterConfigFindShard(t *testing.T) {
 					UpperBound:        []byte{0x6f, 0xff, 0xff, 0xff},
 					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x07},
 					Replicas: []*Replica{
-						{
-							Id:     "rplc_19",
-							NodeId: "nd_01",
-						},
-						{
-							Id:     "rplc_20",
-							NodeId: "nd_02",
-						},
-						{
-							Id:     "rplc_21",
-							NodeId: "nd_03",
-						},
+						{Id: "rplc_19", NodeAddress: "localhost:9001"},
+						{Id: "rplc_20", NodeAddress: "localhost:9002"},
+						{Id: "rplc_21", NodeAddress: "localhost:9003"},
 					},
 				},
 				{
@@ -106,18 +70,9 @@ func TestClusterConfigFindShard(t *testing.T) {
 					UpperBound:        []byte{0x74, 0xff, 0xff, 0xff},
 					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x08},
 					Replicas: []*Replica{
-						{
-							Id:     "rplc_22",
-							NodeId: "nd_01",
-						},
-						{
-							Id:     "rplc_23",
-							NodeId: "nd_02",
-						},
-						{
-							Id:     "rplc_24",
-							NodeId: "nd_03",
-						},
+						{Id: "rplc_22", NodeAddress: "localhost:9001"},
+						{Id: "rplc_23", NodeAddress: "localhost:9002"},
+						{Id: "rplc_24", NodeAddress: "localhost:9003"},
 					},
 				},
 				{
@@ -126,18 +81,9 @@ func TestClusterConfigFindShard(t *testing.T) {
 					UpperBound:        []byte{0x75, 0x7f, 0xff, 0xff},
 					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x09},
 					Replicas: []*Replica{
-						{
-							Id:     "rplc_25",
-							NodeId: "nd_01",
-						},
-						{
-							Id:     "rplc_26",
-							NodeId: "nd_02",
-						},
-						{
-							Id:     "rplc_27",
-							NodeId: "nd_03",
-						},
+						{Id: "rplc_25", NodeAddress: "localhost:9001"},
+						{Id: "rplc_26", NodeAddress: "localhost:9002"},
+						{Id: "rplc_27", NodeAddress: "localhost:9003"},
 					},
 				},
 				{
@@ -146,18 +92,9 @@ func TestClusterConfigFindShard(t *testing.T) {
 					UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
 					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x0a},
 					Replicas: []*Replica{
-						{
-							Id:     "rplc_28",
-							NodeId: "nd_01",
-						},
-						{
-							Id:     "rplc_29",
-							NodeId: "nd_02",
-						},
-						{
-							Id:     "rplc_30",
-							NodeId: "nd_03",
-						},
+						{Id: "rplc_28", NodeAddress: "localhost:9001"},
+						{Id: "rplc_29", NodeAddress: "localhost:9002"},
+						{Id: "rplc_30", NodeAddress: "localhost:9003"},
 					},
 				},
 				{
@@ -166,18 +103,9 @@ func TestClusterConfigFindShard(t *testing.T) {
 					UpperBound:        []byte{0xbf, 0xff, 0xff, 0xff},
 					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x03},
 					Replicas: []*Replica{
-						{
-							Id:     "rplc_07",
-							NodeId: "nd_01",
-						},
-						{
-							Id:     "rplc_08",
-							NodeId: "nd_02",
-						},
-						{
-							Id:     "rplc_09",
-							NodeId: "nd_03",
-						},
+						{Id: "rplc_07", NodeAddress: "localhost:9001"},
+						{Id: "rplc_08", NodeAddress: "localhost:9002"},
+						{Id: "rplc_09", NodeAddress: "localhost:9003"},
 					},
 				},
 				{
@@ -186,18 +114,9 @@ func TestClusterConfigFindShard(t *testing.T) {
 					UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x04},
 					Replicas: []*Replica{
-						{
-							Id:     "rplc_10",
-							NodeId: "nd_01",
-						},
-						{
-							Id:     "rplc_11",
-							NodeId: "nd_02",
-						},
-						{
-							Id:     "rplc_12",
-							NodeId: "nd_03",
-						},
+						{Id: "rplc_10", NodeAddress: "localhost:9001"},
+						{Id: "rplc_11", NodeAddress: "localhost:9002"},
+						{Id: "rplc_12", NodeAddress: "localhost:9003"},
 					},
 				},
 			},
@@ -205,18 +124,9 @@ func TestClusterConfigFindShard(t *testing.T) {
 	}
 
 	nodes := []*Node{
-		{
-			Id:      "nd_01",
-			Address: "localhost:9001",
-		},
-		{
-			Id:      "nd_02",
-			Address: "localhost:9002",
-		},
-		{
-			Id:      "nd_03",
-			Address: "localhost:9003",
-		},
+		{Address: "localhost:9001"},
+		{Address: "localhost:9002"},
+		{Address: "localhost:9003"},
 	}
 
 	clusterConfig, err := LoadConfig(applications, nodes, time.Now().UnixMilli())
@@ -276,9 +186,9 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 						{
@@ -287,18 +197,18 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
 							Replicas: []*Replica{
-								{Id: "rpl_04", NodeId: "nd_01"},
-								{Id: "rpl_05", NodeId: "nd_02"},
-								{Id: "rpl_06", NodeId: "nd_03"},
+								{Id: "rpl_04", NodeAddress: "localhost:9001"},
+								{Id: "rpl_05", NodeAddress: "localhost:9002"},
+								{Id: "rpl_06", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -311,9 +221,9 @@ func TestClusterConfigValidate(t *testing.T) {
 	t.Run("empty node address", func(t *testing.T) {
 		config := &ClusterConfig{
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: ""},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: ""},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -323,34 +233,19 @@ func TestClusterConfigValidate(t *testing.T) {
 		require.Contains(err.Error(), "empty node address")
 	})
 
-	t.Run("empty node id", func(t *testing.T) {
+	t.Run("duplicate node address", func(t *testing.T) {
 		config := &ClusterConfig{
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9001"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
 		require.Error(err)
-		require.Contains(err.Error(), "empty node id")
-	})
-
-	t.Run("duplicate node id", func(t *testing.T) {
-		config := &ClusterConfig{
-			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_01", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
-			},
-			UpdatedAt: time.Now().UnixMilli(),
-		}
-
-		err := config.Validate()
-		require.Error(err)
-		require.Contains(err.Error(), "duplicate node id")
+		require.Contains(err.Error(), "duplicate node address")
 	})
 
 	// Test application validations
@@ -360,9 +255,9 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Name: "", Implementation: "test.impl", ReplicationFactor: 3},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -378,9 +273,9 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Name: "test.app", Implementation: "", ReplicationFactor: 3},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -400,9 +295,9 @@ func TestClusterConfigValidate(t *testing.T) {
 						UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 						GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 						Replicas: []*Replica{
-							{Id: "rpl_01", NodeId: "nd_01"},
-							{Id: "rpl_02", NodeId: "nd_02"},
-							{Id: "rpl_03", NodeId: "nd_03"},
+							{Id: "rpl_01", NodeAddress: "localhost:9001"},
+							{Id: "rpl_02", NodeAddress: "localhost:9002"},
+							{Id: "rpl_03", NodeAddress: "localhost:9003"},
 						}},
 				}},
 				{Name: "test.app", Implementation: "test.impl2", ReplicationFactor: 3,
@@ -413,16 +308,16 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							}},
 					}},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -438,9 +333,9 @@ func TestClusterConfigValidate(t *testing.T) {
 				{Name: "test.app", Implementation: "test.impl", ReplicationFactor: 2},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -465,18 +360,18 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -500,9 +395,9 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 						{
@@ -511,18 +406,18 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
 							Replicas: []*Replica{
-								{Id: "rpl_04", NodeId: "nd_01"},
-								{Id: "rpl_05", NodeId: "nd_02"},
-								{Id: "rpl_06", NodeId: "nd_03"},
+								{Id: "rpl_04", NodeAddress: "localhost:9001"},
+								{Id: "rpl_05", NodeAddress: "localhost:9002"},
+								{Id: "rpl_06", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -546,9 +441,9 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 						{
@@ -557,18 +452,18 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_04", NodeId: "nd_01"},
-								{Id: "rpl_05", NodeId: "nd_02"},
-								{Id: "rpl_06", NodeId: "nd_03"},
+								{Id: "rpl_04", NodeAddress: "localhost:9001"},
+								{Id: "rpl_05", NodeAddress: "localhost:9002"},
+								{Id: "rpl_06", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -592,17 +487,17 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
 							},
 						},
 					},
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -626,9 +521,9 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 						{
@@ -637,18 +532,18 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -672,18 +567,18 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0x00, 0x00, 0x00, 0x00},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -708,18 +603,18 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -743,18 +638,18 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_01", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_01", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -778,25 +673,25 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_04"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9004"},
 							},
 						},
 					},
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
 
 		err := config.Validate()
 		require.Error(err)
-		require.Contains(err.Error(), "node nd_04 for replica rpl_03 not found")
+		require.Contains(err.Error(), "node localhost:9004 for replica rpl_03 not found")
 	})
 
 	t.Run("replicas assigned to same node", func(t *testing.T) {
@@ -813,18 +708,18 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_01"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9001"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -849,9 +744,9 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
@@ -867,18 +762,18 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
 							Replicas: []*Replica{
-								{Id: "rpl_04", NodeId: "nd_01"},
-								{Id: "rpl_05", NodeId: "nd_02"},
-								{Id: "rpl_06", NodeId: "nd_03"},
+								{Id: "rpl_04", NodeAddress: "localhost:9001"},
+								{Id: "rpl_05", NodeAddress: "localhost:9002"},
+								{Id: "rpl_06", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -902,18 +797,18 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -936,18 +831,18 @@ func TestClusterConfigValidate(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -985,8 +880,8 @@ func TestClusterConfigValidate(t *testing.T) {
 		config := &ClusterConfig{
 			Applications: []*Application{},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -1000,9 +895,9 @@ func TestClusterConfigValidate(t *testing.T) {
 		config := &ClusterConfig{
 			Applications: []*Application{},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -1015,11 +910,11 @@ func TestClusterConfigValidate(t *testing.T) {
 		config := &ClusterConfig{
 			Applications: []*Application{},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
-				{Id: "nd_04", Address: "localhost:9004"},
-				{Id: "nd_05", Address: "localhost:9005"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
+				{Address: "localhost:9004"},
+				{Address: "localhost:9005"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -1039,9 +934,9 @@ func TestClusterConfigValidate(t *testing.T) {
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_03", Address: "localhost:9003"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9003"},
 			},
 			UpdatedAt: time.Now().UnixMilli(),
 		}
@@ -1055,9 +950,9 @@ func TestClusterConfigValidate(t *testing.T) {
 func TestClusterConfigValidate_ShardCoverage(t *testing.T) {
 	require := require.New(t)
 	baseNodes := []*Node{
-		{Id: "nd_01", Address: "localhost:9001"},
-		{Id: "nd_02", Address: "localhost:9002"},
-		{Id: "nd_03", Address: "localhost:9003"},
+		{Address: "localhost:9001"},
+		{Address: "localhost:9002"},
+		{Address: "localhost:9003"},
 	}
 
 	t.Run("valid contiguous full coverage", func(t *testing.T) {
@@ -1074,9 +969,9 @@ func TestClusterConfigValidate_ShardCoverage(t *testing.T) {
 							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 						{
@@ -1085,9 +980,9 @@ func TestClusterConfigValidate_ShardCoverage(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
 							Replicas: []*Replica{
-								{Id: "rpl_04", NodeId: "nd_01"},
-								{Id: "rpl_05", NodeId: "nd_02"},
-								{Id: "rpl_06", NodeId: "nd_03"},
+								{Id: "rpl_04", NodeAddress: "localhost:9001"},
+								{Id: "rpl_05", NodeAddress: "localhost:9002"},
+								{Id: "rpl_06", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
@@ -1114,9 +1009,9 @@ func TestClusterConfigValidate_ShardCoverage(t *testing.T) {
 							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xfe}, // gap after this
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 						{
@@ -1125,9 +1020,9 @@ func TestClusterConfigValidate_ShardCoverage(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
 							Replicas: []*Replica{
-								{Id: "rpl_04", NodeId: "nd_01"},
-								{Id: "rpl_05", NodeId: "nd_02"},
-								{Id: "rpl_06", NodeId: "nd_03"},
+								{Id: "rpl_04", NodeAddress: "localhost:9001"},
+								{Id: "rpl_05", NodeAddress: "localhost:9002"},
+								{Id: "rpl_06", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
@@ -1155,9 +1050,9 @@ func TestClusterConfigValidate_ShardCoverage(t *testing.T) {
 							UpperBound:        []byte{0x80, 0x00, 0x00, 0x00}, // overlaps next
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 						{
@@ -1166,9 +1061,9 @@ func TestClusterConfigValidate_ShardCoverage(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
 							Replicas: []*Replica{
-								{Id: "rpl_04", NodeId: "nd_01"},
-								{Id: "rpl_05", NodeId: "nd_02"},
-								{Id: "rpl_06", NodeId: "nd_03"},
+								{Id: "rpl_04", NodeAddress: "localhost:9001"},
+								{Id: "rpl_05", NodeAddress: "localhost:9002"},
+								{Id: "rpl_06", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
@@ -1196,9 +1091,9 @@ func TestClusterConfigValidate_ShardCoverage(t *testing.T) {
 							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 						{
@@ -1207,9 +1102,9 @@ func TestClusterConfigValidate_ShardCoverage(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
 							Replicas: []*Replica{
-								{Id: "rpl_04", NodeId: "nd_01"},
-								{Id: "rpl_05", NodeId: "nd_02"},
-								{Id: "rpl_06", NodeId: "nd_03"},
+								{Id: "rpl_04", NodeAddress: "localhost:9001"},
+								{Id: "rpl_05", NodeAddress: "localhost:9002"},
+								{Id: "rpl_06", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
@@ -1237,9 +1132,9 @@ func TestClusterConfigValidate_ShardCoverage(t *testing.T) {
 							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_03"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9003"},
 							},
 						},
 						{
@@ -1248,9 +1143,9 @@ func TestClusterConfigValidate_ShardCoverage(t *testing.T) {
 							UpperBound:        []byte{0xfe, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
 							Replicas: []*Replica{
-								{Id: "rpl_04", NodeId: "nd_01"},
-								{Id: "rpl_05", NodeId: "nd_02"},
-								{Id: "rpl_06", NodeId: "nd_03"},
+								{Id: "rpl_04", NodeAddress: "localhost:9001"},
+								{Id: "rpl_05", NodeAddress: "localhost:9002"},
+								{Id: "rpl_06", NodeAddress: "localhost:9003"},
 							},
 						},
 					},
@@ -1281,9 +1176,9 @@ func TestValidateTransition(t *testing.T) {
 						UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
 						GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 						Replicas: []*Replica{
-							{Id: "rpl_01", NodeId: "nd_01"},
-							{Id: "rpl_02", NodeId: "nd_02"},
-							{Id: "rpl_03", NodeId: "nd_03"},
+							{Id: "rpl_01", NodeAddress: "localhost:9001"},
+							{Id: "rpl_02", NodeAddress: "localhost:9002"},
+							{Id: "rpl_03", NodeAddress: "localhost:9003"},
 						},
 					},
 					{
@@ -1292,18 +1187,18 @@ func TestValidateTransition(t *testing.T) {
 						UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 						GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
 						Replicas: []*Replica{
-							{Id: "rpl_04", NodeId: "nd_01"},
-							{Id: "rpl_05", NodeId: "nd_02"},
-							{Id: "rpl_06", NodeId: "nd_03"},
+							{Id: "rpl_04", NodeAddress: "localhost:9001"},
+							{Id: "rpl_05", NodeAddress: "localhost:9002"},
+							{Id: "rpl_06", NodeAddress: "localhost:9003"},
 						},
 					},
 				},
 			},
 		},
 		Nodes: []*Node{
-			{Id: "nd_01", Address: "localhost:9001"},
-			{Id: "nd_02", Address: "localhost:9002"},
-			{Id: "nd_03", Address: "localhost:9003"},
+			{Address: "localhost:9001"},
+			{Address: "localhost:9002"},
+			{Address: "localhost:9003"},
 		},
 		UpdatedAt: time.Now().UnixMilli(),
 	}
@@ -1315,7 +1210,7 @@ func TestValidateTransition(t *testing.T) {
 
 	t.Run("allow adding a new node", func(t *testing.T) {
 		newConfig := cloneConfig(baseConfig)
-		newConfig.Nodes = append(newConfig.Nodes, &Node{Id: "nd_04", Address: "localhost:9004"})
+		newConfig.Nodes = append(newConfig.Nodes, &Node{Address: "localhost:9004"})
 
 		err := newConfig.Validate()
 		require.NoError(err)
@@ -1326,7 +1221,7 @@ func TestValidateTransition(t *testing.T) {
 
 	t.Run("forbid removing node with assigned replica", func(t *testing.T) {
 		oldConfig := cloneConfig(baseConfig)
-		oldConfig.Nodes = append(oldConfig.Nodes, &Node{Id: "nd_04", Address: "localhost:9004"})
+		oldConfig.Nodes = append(oldConfig.Nodes, &Node{Address: "localhost:9004"})
 
 		newConfig := &ClusterConfig{
 			Applications: []*Application{
@@ -1341,9 +1236,9 @@ func TestValidateTransition(t *testing.T) {
 							UpperBound:        []byte{0x7f, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x01},
 							Replicas: []*Replica{
-								{Id: "rpl_01", NodeId: "nd_01"},
-								{Id: "rpl_02", NodeId: "nd_02"},
-								{Id: "rpl_03", NodeId: "nd_04"},
+								{Id: "rpl_01", NodeAddress: "localhost:9001"},
+								{Id: "rpl_02", NodeAddress: "localhost:9002"},
+								{Id: "rpl_03", NodeAddress: "localhost:9004"},
 							},
 						},
 						{
@@ -1352,18 +1247,18 @@ func TestValidateTransition(t *testing.T) {
 							UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 							GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x02},
 							Replicas: []*Replica{
-								{Id: "rpl_04", NodeId: "nd_01"},
-								{Id: "rpl_05", NodeId: "nd_02"},
-								{Id: "rpl_06", NodeId: "nd_04"},
+								{Id: "rpl_04", NodeAddress: "localhost:9001"},
+								{Id: "rpl_05", NodeAddress: "localhost:9002"},
+								{Id: "rpl_06", NodeAddress: "localhost:9004"},
 							},
 						},
 					},
 				},
 			},
 			Nodes: []*Node{
-				{Id: "nd_01", Address: "localhost:9001"},
-				{Id: "nd_02", Address: "localhost:9002"},
-				{Id: "nd_04", Address: "localhost:9004"},
+				{Address: "localhost:9001"},
+				{Address: "localhost:9002"},
+				{Address: "localhost:9004"},
 			},
 			UpdatedAt: oldConfig.UpdatedAt + 1,
 		}
@@ -1377,7 +1272,7 @@ func TestValidateTransition(t *testing.T) {
 
 	t.Run("allow removing node with no assigned replica", func(t *testing.T) {
 		oldConfig := cloneConfig(baseConfig)
-		oldConfig.Nodes = append(oldConfig.Nodes, &Node{Id: "nd_04", Address: "localhost:9004"})
+		oldConfig.Nodes = append(oldConfig.Nodes, &Node{Address: "localhost:9004"})
 		newConfig := cloneConfig(oldConfig)
 		newConfig.Nodes = newConfig.Nodes[:3] // remove nd_04, which has no replica
 		err := newConfig.Validate()
@@ -1400,9 +1295,9 @@ func TestValidateTransition(t *testing.T) {
 					UpperBound:        []byte{0xff, 0xff, 0xff, 0xff},
 					GlobalIndexPrefix: []byte{0x00, 0x00, 0x00, 0x03},
 					Replicas: []*Replica{
-						{Id: "rpl_07", NodeId: "nd_01"},
-						{Id: "rpl_08", NodeId: "nd_02"},
-						{Id: "rpl_09", NodeId: "nd_03"},
+						{Id: "rpl_07", NodeAddress: "localhost:9001"},
+						{Id: "rpl_08", NodeAddress: "localhost:9002"},
+						{Id: "rpl_09", NodeAddress: "localhost:9003"},
 					},
 				},
 			},
@@ -1450,8 +1345,8 @@ func TestValidateTransition(t *testing.T) {
 
 	t.Run("allow adding a new replica only", func(t *testing.T) {
 		newConfig := cloneConfig(baseConfig)
-		newConfig.Nodes = append(newConfig.Nodes, &Node{Id: "nd_04", Address: "localhost:9004"})
-		newConfig.Applications[0].Shards[1].Replicas = append(newConfig.Applications[0].Shards[1].Replicas, &Replica{Id: "rpl_07", NodeId: "nd_04"})
+		newConfig.Nodes = append(newConfig.Nodes, &Node{Address: "localhost:9004"})
+		newConfig.Applications[0].Shards[1].Replicas = append(newConfig.Applications[0].Shards[1].Replicas, &Replica{Id: "rpl_07", NodeAddress: "localhost:9004"})
 		err := newConfig.Validate()
 		require.NoError(err)
 
@@ -1461,19 +1356,19 @@ func TestValidateTransition(t *testing.T) {
 
 	t.Run("allow removing a replica only", func(t *testing.T) {
 		oldConfig := cloneConfig(baseConfig)
-		oldConfig.Nodes = append(oldConfig.Nodes, &Node{Id: "nd_04", Address: "localhost:9004"})
+		oldConfig.Nodes = append(oldConfig.Nodes, &Node{Address: "localhost:9004"})
 		oldConfig.Applications[0].Shards[0].Replicas = []*Replica{
-			{Id: "rpl_01", NodeId: "nd_01"},
-			{Id: "rpl_02", NodeId: "nd_02"},
-			{Id: "rpl_03", NodeId: "nd_03"},
-			{Id: "rpl_09", NodeId: "nd_04"},
+			{Id: "rpl_01", NodeAddress: "localhost:9001"},
+			{Id: "rpl_02", NodeAddress: "localhost:9002"},
+			{Id: "rpl_03", NodeAddress: "localhost:9003"},
+			{Id: "rpl_09", NodeAddress: "localhost:9004"},
 		}
 
 		newConfig := cloneConfig(oldConfig)
 		newConfig.Applications[0].Shards[0].Replicas = []*Replica{
-			{Id: "rpl_01", NodeId: "nd_01"},
-			{Id: "rpl_02", NodeId: "nd_02"},
-			{Id: "rpl_03", NodeId: "nd_03"},
+			{Id: "rpl_01", NodeAddress: "localhost:9001"},
+			{Id: "rpl_02", NodeAddress: "localhost:9002"},
+			{Id: "rpl_03", NodeAddress: "localhost:9003"},
 		}
 		err := newConfig.Validate()
 		require.NoError(err)
@@ -1486,9 +1381,9 @@ func TestValidateTransition(t *testing.T) {
 		newConfig := cloneConfig(baseConfig)
 		// Remove one, add one
 		newConfig.Applications[0].Shards[0].Replicas = []*Replica{
-			{Id: "rpl_01", NodeId: "nd_01"},
-			{Id: "rpl_02", NodeId: "nd_02"},
-			{Id: "rpl_07", NodeId: "nd_03"}, // new
+			{Id: "rpl_01", NodeAddress: "localhost:9001"},
+			{Id: "rpl_02", NodeAddress: "localhost:9002"},
+			{Id: "rpl_07", NodeAddress: "localhost:9003"}, // new
 		}
 		err := newConfig.Validate()
 		require.NoError(err)
@@ -1500,7 +1395,7 @@ func TestValidateTransition(t *testing.T) {
 
 	t.Run("forbid reassigning existing replica to another node", func(t *testing.T) {
 		newConfig := cloneConfig(baseConfig)
-		newConfig.Applications[0].Shards[0].Replicas[0].NodeId = "nd_02"
+		newConfig.Applications[0].Shards[0].Replicas[0].NodeAddress = "localhost:9002"
 
 		err := ValidateTransition(baseConfig, newConfig)
 		require.Error(err)
@@ -1544,7 +1439,6 @@ func BenchmarkClusterConfigFindShard(b *testing.B) {
 	nodes := make([]*Node, numNodes)
 	for i := 0; i < numNodes; i++ {
 		nodes[i] = &Node{
-			Id:      fmt.Sprintf("nd_%04d", i),
 			Address: fmt.Sprintf("localhost:%d", 9000+i),
 		}
 	}
@@ -1566,8 +1460,8 @@ func BenchmarkClusterConfigFindShard(b *testing.B) {
 			for r := 0; r < replication; r++ {
 				nodeIdx := (shardIdx*replication + r) % numNodes
 				replicas[r] = &Replica{
-					Id:     fmt.Sprintf("rpl_%02d_%04d_%d", appIdx, shardIdx, r),
-					NodeId: nodes[nodeIdx].Id,
+					Id:          fmt.Sprintf("rpl_%02d_%04d_%d", appIdx, shardIdx, r),
+					NodeAddress: nodes[nodeIdx].Address,
 				}
 			}
 			shards[shardIdx] = &Shard{

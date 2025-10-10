@@ -393,16 +393,8 @@ func (c *ClusterConfig) CreateShard(applicationName string, lowerBound []byte, u
 		application.Shards = make([]*Shard, 0)
 	}
 
-	var id string
-	for {
-		id = generateId("shrd")
-		_, ok := lo.Find(application.Shards, func(s *Shard) bool {
-			return s.Id == id
-		})
-		if !ok {
-			break
-		}
-	}
+	sl, su := shortenBounds(lowerBound, upperBound)
+	id := fmt.Sprintf("%s_%x_%x", applicationName, sl, su)
 
 	shard := &Shard{
 		Id:         id,
@@ -438,13 +430,18 @@ func (c *ClusterConfig) CreateReplica(applicationName string, shardId string, no
 
 	var id string
 	for {
-		id = generateId("rpl")
-		_, ok := lo.Find(shard.Replicas, func(r *Replica) bool {
-			return r.Id == id
-		}) // TODO globally
-		if !ok {
-			break
+		id = generateId(shardId)
+		for _, a := range c.Applications {
+			for _, s := range a.Shards {
+				for _, r := range s.Replicas {
+					if r.Id == id {
+						continue // try generating again
+					}
+				}
+			}
 		}
+
+		break // did not find such id
 	}
 
 	replica := &Replica{
@@ -664,17 +661,12 @@ type shardJsonProxy struct {
 }
 
 func (s *Shard) MarshalJSON() ([]byte, error) {
-	i := len(s.LowerBound)
-	for ; i > 0; i-- {
-		if s.LowerBound[i-1] != 0x00 || s.UpperBound[i-1] != 0xff {
-			break
-		}
-	}
+	sl, su := shortenBounds(s.LowerBound, s.UpperBound)
 
 	return json.Marshal(&shardJsonProxy{
 		Id:         s.Id,
-		LowerBound: hex.EncodeToString(s.LowerBound[:i]),
-		UpperBound: hex.EncodeToString(s.UpperBound[:i]),
+		LowerBound: hex.EncodeToString(sl),
+		UpperBound: hex.EncodeToString(su),
 		ParentId:   s.ParentId,
 		Replicas:   s.Replicas,
 		Metadata:   s.Metadata,
@@ -711,4 +703,14 @@ func (s *Shard) UnmarshalJSON(data []byte) error {
 	s.Metadata = p.Metadata
 
 	return nil
+}
+
+func shortenBounds(lower, upper []byte) ([]byte, []byte) {
+	i := len(lower)
+	for ; i > 0; i-- {
+		if lower[i-1] != 0x00 || upper[i-1] != 0xff {
+			break
+		}
+	}
+	return lower[:i], upper[:i]
 }

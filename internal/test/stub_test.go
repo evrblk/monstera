@@ -15,8 +15,6 @@ import (
 )
 
 func TestPlaygroundApiMonsteraStub_ReadAndUpdate(t *testing.T) {
-	require := require.New(t)
-
 	clusterConfig := NewTestClusterConfig()
 	stub := NewMonsteraStub(clusterConfig)
 	nodes := NewCluster(clusterConfig)
@@ -53,19 +51,19 @@ func TestPlaygroundApiMonsteraStub_ReadAndUpdate(t *testing.T) {
 		key := rand.Uint64()
 
 		resp1, err := stub.Read(context.Background(), key)
-		require.NoError(err)
-		require.Empty(resp1, "Expected empty result for non-existent key")
+		require.NoError(t, err)
+		require.Empty(t, resp1, "Expected empty result for non-existent key")
 
 		// Update key
 		value := "test value"
 		resp2, err := stub.Update(context.Background(), key, value)
-		require.NoError(err)
-		require.Equal(value, resp2)
+		require.NoError(t, err)
+		require.Equal(t, value, resp2)
 
 		// Test reading existing key
 		resp3, err := stub.Read(context.Background(), key)
-		require.NoError(err)
-		require.Equal(value, resp3)
+		require.NoError(t, err)
+		require.Equal(t, value, resp3)
 	}
 
 	nodes[0].grpcServer.Stop()
@@ -77,13 +75,13 @@ func TestPlaygroundApiMonsteraStub_ReadAndUpdate(t *testing.T) {
 		// Update key
 		value := "test value"
 		resp2, err := stub.Update(context.Background(), key, value)
-		require.NoError(err)
-		require.Equal(value, resp2)
+		require.NoError(t, err)
+		require.Equal(t, value, resp2)
 
 		// Test reading existing key
 		resp3, err := stub.Read(context.Background(), key)
-		require.NoError(err)
-		require.Equal(value, resp3)
+		require.NoError(t, err)
+		require.Equal(t, value, resp3)
 	}
 
 	log.Println("Test completed")

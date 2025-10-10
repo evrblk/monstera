@@ -13,6 +13,61 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
+func TestClusterConfigBuilder(t *testing.T) {
+	clusterConfig := CreateEmptyConfig()
+
+	n1, err := clusterConfig.CreateNode("localhost:9001")
+	require.NoError(t, err)
+	require.NotNil(t, n1)
+
+	n2, err := clusterConfig.CreateNode("localhost:9002")
+	require.NoError(t, err)
+	require.NotNil(t, n2)
+
+	n3, err := clusterConfig.CreateNode("localhost:9003")
+	require.NoError(t, err)
+	require.NotNil(t, n3)
+
+	a, err := clusterConfig.CreateApplication("Core", "Core", 3)
+	require.NoError(t, err)
+	require.NotNil(t, a)
+
+	s1, err := clusterConfig.CreateShard(a.Name, []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, "")
+	require.NoError(t, err)
+	require.NotNil(t, s1)
+
+	s2, err := clusterConfig.CreateShard(a.Name, []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, "")
+	require.NoError(t, err)
+	require.NotNil(t, s2)
+
+	r1, err := clusterConfig.CreateReplica(a.Name, s1.Id, n1.Address)
+	require.NoError(t, err)
+	require.NotNil(t, r1)
+
+	r2, err := clusterConfig.CreateReplica(a.Name, s1.Id, n2.Address)
+	require.NoError(t, err)
+	require.NotNil(t, r2)
+
+	r3, err := clusterConfig.CreateReplica(a.Name, s1.Id, n3.Address)
+	require.NoError(t, err)
+	require.NotNil(t, r3)
+
+	r4, err := clusterConfig.CreateReplica(a.Name, s2.Id, n1.Address)
+	require.NoError(t, err)
+	require.NotNil(t, r4)
+
+	r5, err := clusterConfig.CreateReplica(a.Name, s2.Id, n2.Address)
+	require.NoError(t, err)
+	require.NotNil(t, r5)
+
+	r6, err := clusterConfig.CreateReplica(a.Name, s2.Id, n3.Address)
+	require.NoError(t, err)
+	require.NotNil(t, r6)
+
+	err = clusterConfig.Validate()
+	require.NoError(t, err)
+}
+
 func TestClusterConfigFindShard(t *testing.T) {
 	applications := []*Application{
 		{

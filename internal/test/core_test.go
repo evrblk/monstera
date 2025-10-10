@@ -9,18 +9,14 @@ import (
 )
 
 func TestNewPlaygroundCore(t *testing.T) {
-	require := require.New(t)
-
 	core := NewPlaygroundCore()
 
-	require.NotNil(core, "NewPlaygroundCore returned nil")
-	require.NotNil(core.state, "NewPlaygroundCore state map is nil")
-	require.Empty(core.state, "NewPlaygroundCore should start with empty state")
+	require.NotNil(t, core, "NewPlaygroundCore returned nil")
+	require.NotNil(t, core.state, "NewPlaygroundCore state map is nil")
+	require.Empty(t, core.state, "NewPlaygroundCore should start with empty state")
 }
 
 func TestPlaygroundCore_Read(t *testing.T) {
-	require := require.New(t)
-
 	core := NewPlaygroundCore()
 
 	// Test reading non-existent key
@@ -28,19 +24,17 @@ func TestPlaygroundCore_Read(t *testing.T) {
 	keyBytes := createKeyBytes(key)
 
 	result := core.Read(keyBytes)
-	require.Empty(result, "Expected empty result for non-existent key")
+	require.Empty(t, result, "Expected empty result for non-existent key")
 
 	// Test reading existing key
 	value := "test value"
 	core.state[key] = value
 
 	result = core.Read(keyBytes)
-	require.Equal(value, string(result), "Expected %s, got %s", value, string(result))
+	require.Equal(t, value, string(result), "Expected %s, got %s", value, string(result))
 }
 
 func TestPlaygroundCore_Update(t *testing.T) {
-	require := require.New(t)
-
 	core := NewPlaygroundCore()
 
 	// Test updating with new key-value pair
@@ -52,10 +46,10 @@ func TestPlaygroundCore_Update(t *testing.T) {
 	result := core.Update(request)
 
 	// Check return value
-	require.Equal(value, string(result), "Expected return value %s, got %s", value, string(result))
+	require.Equal(t, value, string(result), "Expected return value %s, got %s", value, string(result))
 
 	// Check if state was updated
-	require.Equal(value, core.state[key], "Expected state value %s, got %s", value, core.state[key])
+	require.Equal(t, value, core.state[key], "Expected state value %s, got %s", value, core.state[key])
 
 	// Test updating existing key
 	newValue := "updated value"
@@ -63,13 +57,11 @@ func TestPlaygroundCore_Update(t *testing.T) {
 
 	result = core.Update(request)
 
-	require.Equal(newValue, string(result), "Expected return value %s, got %s", newValue, string(result))
-	require.Equal(newValue, core.state[key], "Expected state value %s, got %s", newValue, core.state[key])
+	require.Equal(t, newValue, string(result), "Expected return value %s, got %s", newValue, string(result))
+	require.Equal(t, newValue, core.state[key], "Expected state value %s, got %s", newValue, core.state[key])
 }
 
 func TestPlaygroundCore_Snapshot(t *testing.T) {
-	require := require.New(t)
-
 	core := NewPlaygroundCore()
 
 	// Add some test data
@@ -79,7 +71,7 @@ func TestPlaygroundCore_Snapshot(t *testing.T) {
 
 	snapshot := core.Snapshot()
 
-	require.NotNil(snapshot, "Snapshot returned nil")
+	require.NotNil(t, snapshot, "Snapshot returned nil")
 
 	// Test that snapshot is independent of original state
 	core.state[1] = "modified"
@@ -87,26 +79,24 @@ func TestPlaygroundCore_Snapshot(t *testing.T) {
 	// Write snapshot to buffer
 	var buf bytes.Buffer
 	err := snapshot.Write(&buf)
-	require.NoError(err, "Failed to write snapshot")
+	require.NoError(t, err, "Failed to write snapshot")
 
 	// Create new core and restore from snapshot
 	newCore := NewPlaygroundCore()
 	reader := io.NopCloser(&buf)
 	err = newCore.Restore(reader)
-	require.NoError(err, "Failed to restore snapshot")
+	require.NoError(t, err, "Failed to restore snapshot")
 
 	// Verify restored state has original values
-	require.Equal("value1", newCore.state[1], "Expected value1, got %s", newCore.state[1])
-	require.Equal("value2", newCore.state[2], "Expected value2, got %s", newCore.state[2])
-	require.Equal("value3", newCore.state[3], "Expected value3, got %s", newCore.state[3])
+	require.Equal(t, "value1", newCore.state[1], "Expected value1, got %s", newCore.state[1])
+	require.Equal(t, "value2", newCore.state[2], "Expected value2, got %s", newCore.state[2])
+	require.Equal(t, "value3", newCore.state[3], "Expected value3, got %s", newCore.state[3])
 
 	// Verify original core has modified value
-	require.Equal("modified", core.state[1], "Expected modified, got %s", core.state[1])
+	require.Equal(t, "modified", core.state[1], "Expected modified, got %s", core.state[1])
 }
 
 func TestPlaygroundCore_Restore(t *testing.T) {
-	require := require.New(t)
-
 	core := NewPlaygroundCore()
 
 	// Add initial state
@@ -122,25 +112,23 @@ func TestPlaygroundCore_Restore(t *testing.T) {
 	// Write snapshot to buffer
 	var buf bytes.Buffer
 	err := snapshot.Write(&buf)
-	require.NoError(err, "Failed to write snapshot")
+	require.NoError(t, err, "Failed to write snapshot")
 
 	// Restore from snapshot
 	reader := io.NopCloser(&buf)
 	err = core.Restore(reader)
-	require.NoError(err, "Failed to restore snapshot")
+	require.NoError(t, err, "Failed to restore snapshot")
 
 	// Verify state was replaced
-	require.Equal("restored1", core.state[1], "Expected restored1, got %s", core.state[1])
-	require.Equal("restored2", core.state[2], "Expected restored2, got %s", core.state[2])
+	require.Equal(t, "restored1", core.state[1], "Expected restored1, got %s", core.state[1])
+	require.Equal(t, "restored2", core.state[2], "Expected restored2, got %s", core.state[2])
 
 	// Verify old state is gone
 	_, exists := core.state[999]
-	require.False(exists, "Old state should be completely replaced")
+	require.False(t, exists, "Old state should be completely replaced")
 }
 
 func TestPlaygroundCore_Close(t *testing.T) {
-	require := require.New(t)
-
 	core := NewPlaygroundCore()
 
 	// Add some data
@@ -149,7 +137,7 @@ func TestPlaygroundCore_Close(t *testing.T) {
 	// Close should not panic
 	defer func() {
 		if r := recover(); r != nil {
-			require.Fail("Close() panicked")
+			require.Fail(t, "Close() panicked")
 		}
 	}()
 
@@ -160,8 +148,6 @@ func TestPlaygroundCore_Close(t *testing.T) {
 }
 
 func TestPlaygroundCore_Integration(t *testing.T) {
-	require := require.New(t)
-
 	core := NewPlaygroundCore()
 
 	// Test full workflow: update, read, snapshot, restore
@@ -172,13 +158,13 @@ func TestPlaygroundCore_Integration(t *testing.T) {
 	request := createRequestBytes(key, value)
 
 	result := core.Update(request)
-	require.Equal(value, string(result), "Update failed: expected %s, got %s", value, string(result))
+	require.Equal(t, value, string(result), "Update failed: expected %s, got %s", value, string(result))
 
 	// Read
 	keyBytes := createKeyBytes(key)
 
 	result = core.Read(keyBytes)
-	require.Equal(value, string(result), "Read failed: expected %s, got %s", value, string(result))
+	require.Equal(t, value, string(result), "Read failed: expected %s, got %s", value, string(result))
 
 	// Snapshot
 	snapshot := core.Snapshot()
@@ -189,21 +175,19 @@ func TestPlaygroundCore_Integration(t *testing.T) {
 	// Write and restore snapshot
 	var buf bytes.Buffer
 	err := snapshot.Write(&buf)
-	require.NoError(err, "Failed to write snapshot")
+	require.NoError(t, err, "Failed to write snapshot")
 
 	newCore := NewPlaygroundCore()
 	reader := io.NopCloser(&buf)
 	err = newCore.Restore(reader)
-	require.NoError(err, "Failed to restore snapshot")
+	require.NoError(t, err, "Failed to restore snapshot")
 
 	// Verify restored state
 	result = newCore.Read(keyBytes)
-	require.Equal(value, string(result), "Restored read failed: expected %s, got %s", value, string(result))
+	require.Equal(t, value, string(result), "Restored read failed: expected %s, got %s", value, string(result))
 }
 
 func TestPlaygroundCore_EmptyState(t *testing.T) {
-	require := require.New(t)
-
 	core := NewPlaygroundCore()
 
 	// Test snapshot of empty state
@@ -211,7 +195,7 @@ func TestPlaygroundCore_EmptyState(t *testing.T) {
 
 	var buf bytes.Buffer
 	err := snapshot.Write(&buf)
-	require.NoError(err, "Failed to write empty snapshot")
+	require.NoError(t, err, "Failed to write empty snapshot")
 
 	// Restore empty state
 	newCore := NewPlaygroundCore()
@@ -219,15 +203,13 @@ func TestPlaygroundCore_EmptyState(t *testing.T) {
 
 	reader := io.NopCloser(&buf)
 	err = newCore.Restore(reader)
-	require.NoError(err, "Failed to restore empty snapshot")
+	require.NoError(t, err, "Failed to restore empty snapshot")
 
 	// Verify state is empty
-	require.Empty(newCore.state, "Expected empty state after restore, got %d items", len(newCore.state))
+	require.Empty(t, newCore.state, "Expected empty state after restore, got %d items", len(newCore.state))
 }
 
 func TestPlaygroundCore_MultipleUpdates(t *testing.T) {
-	require := require.New(t)
-
 	core := NewPlaygroundCore()
 
 	// Test multiple updates
@@ -241,7 +223,7 @@ func TestPlaygroundCore_MultipleUpdates(t *testing.T) {
 		request := createRequestBytes(key, value)
 
 		result := core.Update(request)
-		require.Equal(value, string(result), "Update failed for key %d: expected %s, got %s", key, value, string(result))
+		require.Equal(t, value, string(result), "Update failed for key %d: expected %s, got %s", key, value, string(result))
 	}
 
 	// Verify all updates
@@ -249,6 +231,6 @@ func TestPlaygroundCore_MultipleUpdates(t *testing.T) {
 		keyBytes := createKeyBytes(key)
 
 		result := core.Read(keyBytes)
-		require.Equal(expectedValue, string(result), "Read failed for key %d: expected %s, got %s", key, expectedValue, string(result))
+		require.Equal(t, expectedValue, string(result), "Read failed for key %d: expected %s, got %s", key, expectedValue, string(result))
 	}
 }

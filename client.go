@@ -328,9 +328,9 @@ func NewMonsteraClient(clusterConfig *ClusterConfig) *MonsteraClient {
 	}
 }
 
-func GetShardKey(key []byte, size int) []byte {
+func GetTruncatedHash(data []byte, size int) []byte {
 	h := sha256.New()
-	h.Write(key)
+	h.Write(data)
 	return h.Sum(nil)[0:size]
 }
 

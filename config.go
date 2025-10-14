@@ -26,6 +26,12 @@ var (
 	errApplicationAlreadyExists = errors.New("application already exists")
 )
 
+const (
+	// KeyspacePerApplication holds the total size of an application's keyspace, currently 4 bytes.
+	// It is used for shard bounds calculation.
+	KeyspacePerApplication = 1 << 32
+)
+
 // LoadConfigFromFile loads monstera cluster config from either a binary Protobuf `.pb` or a ProtoJSON `.json` file.
 func LoadConfigFromFile(path string) (*ClusterConfig, error) {
 	data, err := os.ReadFile(path)
@@ -393,7 +399,7 @@ func (c *ClusterConfig) CreateShard(applicationName string, lowerBound []byte, u
 		application.Shards = make([]*Shard, 0)
 	}
 
-	sl, su := shortenBounds(lowerBound, upperBound)
+	sl, su := ShortenBounds(lowerBound, upperBound)
 	id := fmt.Sprintf("%s_%x_%x", applicationName, sl, su)
 
 	shard := &Shard{
@@ -661,7 +667,7 @@ type shardJsonProxy struct {
 }
 
 func (s *Shard) MarshalJSON() ([]byte, error) {
-	sl, su := shortenBounds(s.LowerBound, s.UpperBound)
+	sl, su := ShortenBounds(s.LowerBound, s.UpperBound)
 
 	return json.Marshal(&shardJsonProxy{
 		Id:         s.Id,
@@ -705,7 +711,7 @@ func (s *Shard) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func shortenBounds(lower, upper []byte) ([]byte, []byte) {
+func ShortenBounds(lower, upper []byte) ([]byte, []byte) {
 	i := len(lower)
 	for ; i > 0; i-- {
 		if lower[i-1] != 0x00 || upper[i-1] != 0xff {

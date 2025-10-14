@@ -36,15 +36,30 @@ It might be easier to understand how it works from examples rather than from the
 
 Use go get to install the latest version of the library.
 
-```
-go get -u github.com/evrblk/monstera@latest
+```shell
+$ go get -u github.com/evrblk/monstera@latest
 ```
 
 There are also few CLI tools (such as codegen), so it also should be added as a tool:
 
+```shell
+$ go get -tool github.com/evrblk/monstera/cmd/monstera@latest
 ```
-go get -tool github.com/evrblk/monstera/cmd/monstera@latest
+
+## CLI
+
+Monstera comes with CLI toolkit:
+
+```shell
+$ go tool github.com/evrblk/monstera/cmd/monstera
 ```
+
+* Code generation:
+  * `monstera code generate` Generates stubs, core interfaces and adapters from `monstera.yaml` file.
+* Working with cluster configs:
+  * `monstera config init` Creates a new cluster config.
+  * `monstera config add-node` Adds node to the cluster config.
+  * `monstera config add-application` Adds application to the cluster config.
 
 ## Status
 

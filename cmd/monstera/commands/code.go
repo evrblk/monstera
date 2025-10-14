@@ -6,7 +6,7 @@ import (
 
 var codeCmd = &cobra.Command{
 	Use:   "code",
-	Short: "Generates code",
+	Short: "Code generation",
 }
 
 func init() {

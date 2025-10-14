@@ -67,6 +67,8 @@ func generateStubApi(f *File, stub *MonsteraStub, cores []*MonsteraCore, monster
 			}
 			g.Line()
 		}
+		g.Line()
+		g.Id("ListShards").Params(Id("applicationName").String()).Params(List(Index().String(), Error()))
 	})
 
 	unimplementedApiName := "Unimplemented" + apiName
@@ -81,6 +83,17 @@ func generateStubApi(f *File, stub *MonsteraStub, cores []*MonsteraCore, monster
 			generateUnimplementedStubApiMethod(f, unimplementedApiName, update.Sharded, update.Name, monsteraYaml)
 		}
 	}
+
+	f.Func().Params(
+		Id("a").Op("*").Id(unimplementedApiName),
+	).Id("ListShards").Params(
+		Id("applicationName").String(),
+	).Params(
+		List(Index().String(), Error()),
+	).Block(
+		Panic(Lit("not implemented")),
+	)
+	f.Line()
 }
 
 func generateUnimplementedStubApiMethod(f *File, unimplementedApiName string, sharded bool, method string, monsteraYaml *MonsteraYaml) {

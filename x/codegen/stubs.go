@@ -28,7 +28,7 @@ func GenerateStubs(monsteraYaml *MonsteraYaml) string {
 
 		generateMonsteraShardKeyCalculator(f, stub, cores, monsteraYaml)
 		generateMonsteraStub(f, stub, cores, monsteraYaml)
-		generateStandaloneStub(f, stub, cores, monsteraYaml)
+		generateNonclusteredStub(f, stub, cores, monsteraYaml)
 	}
 
 	return fmt.Sprintf("%#v", f)
@@ -55,20 +55,23 @@ func generateMonsteraShardKeyCalculator(f *File, stub *MonsteraStub, cores []*Mo
 }
 
 func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, monsteraYaml *MonsteraYaml) {
-	stubName := stub.Name + "CoreApiMonsteraStub"
-	f.Type().Id(stubName).Struct(
+	stubType := stub.Name + "CoreApiMonsteraStub"
+	shardCalculatorType := stub.Name + "MonsteraShardKeyCalculator"
+
+	// type <Stub>
+	f.Type().Id(stubType).Struct(
 		Id("monsteraClient").Op("*").Qual("github.com/evrblk/monstera", "MonsteraClient"),
-		Id("shardKeyCalculator").Id(stub.Name+"MonsteraShardKeyCalculator"),
+		Id("shardKeyCalculator").Id(shardCalculatorType),
 	)
 	apiName := stub.Name + "CoreApi"
-	f.Var().Id("_").Qual(monsteraYaml.GoCode.OutputPackage, apiName).Op("=").Op("&").Id(stubName).Values()
+	f.Var().Id("_").Qual(monsteraYaml.GoCode.OutputPackage, apiName).Op("=").Op("&").Id(stubType).Values()
 	f.Line()
+
+	stubReceiver := Id("s").Op("*").Id(stubType)
 
 	for _, core := range cores {
 		for _, read := range core.Reads {
-			f.Func().Params(
-				Id("s").Op("*").Id(stubName),
-			).Id(read.Name).ParamsFunc(func(g *Group) {
+			f.Func().Params(stubReceiver).Id(read.Name).ParamsFunc(func(g *Group) {
 				g.Id("ctx").Qual("context", "Context")
 				g.Id("request").Op("*").Qual(monsteraYaml.GoCode.CorePbPackage, read.Name+"Request")
 				if !read.Sharded {
@@ -167,9 +170,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 		}
 
 		for _, update := range core.Updates {
-			f.Func().Params(
-				Id("s").Op("*").Id(stubName),
-			).Id(update.Name).ParamsFunc(func(g *Group) {
+			f.Func().Params(stubReceiver).Id(update.Name).ParamsFunc(func(g *Group) {
 				g.Id("ctx").Qual("context", "Context")
 				g.Id("request").Op("*").Qual(monsteraYaml.GoCode.CorePbPackage, update.Name+"Request")
 				if !update.Sharded {
@@ -266,14 +267,33 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 		}
 	}
 
-	f.Func().Id("New"+stubName).Params(
-		Id("monsteraClient").Op("*").Qual("github.com/evrblk/monstera", "MonsteraClient"),
-		Id("shardKeyCalculator").Qual(monsteraYaml.GoCode.OutputPackage, stub.Name+"MonsteraShardKeyCalculator"),
+	// func ListShards()
+	f.Func().Params(stubReceiver).Id("ListShards").Params(
+		Id("applicationName").String(),
 	).Params(
-		Op("*").Id(stubName),
+		List(Index().String(), Error()),
+	).BlockFunc(func(g *Group) {
+		g.List(Id("shards"), Err()).Op(":=").Id("s").Dot("monsteraClient").Dot("ListShards").Call(Id("applicationName"))
+		g.If(Err().Op("!=").Nil()).Block(
+			Return(Id("nil"), Err()),
+		)
+		g.Id("shardIds").Op(":=").Make(Index().String(), Len(Id("shards")))
+		g.For(Id("i").Op(":=").Range().Id("shards")).Block(
+			Id("shardIds").Index(Id("i")).Op("=").Id("shards").Index(Id("i")).Dot("Id"),
+		)
+		g.Return(Id("shardIds"), Nil())
+	})
+	f.Line()
+
+	// func New<Stub>
+	f.Func().Id("New"+stubType).Params(
+		Id("monsteraClient").Op("*").Qual("github.com/evrblk/monstera", "MonsteraClient"),
+		Id("shardKeyCalculator").Qual(monsteraYaml.GoCode.OutputPackage, shardCalculatorType),
+	).Params(
+		Op("*").Id(stubType),
 	).Block(
 		Return(
-			Op("&").Id(stubName).Values(
+			Op("&").Id(stubType).Values(
 				Id("monsteraClient").Op(":").Id("monsteraClient"),
 				Id("shardKeyCalculator").Op(":").Id("shardKeyCalculator"),
 			)),
@@ -295,26 +315,51 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 	)
 }
 
-func generateStandaloneStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, monsteraYaml *MonsteraYaml) {
-	stubName := stub.Name + "CoreApiStandaloneStub"
+func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, monsteraYaml *MonsteraYaml) {
+	adapterTypeName := func(coreName string) string {
+		return firstCharToLower(coreName) + "CoreNonclusteredAdapter"
+	}
 
-	f.Type().Id(stubName).StructFunc(func(g *Group) {
+	// core adapters for internal shards
+	for _, core := range cores {
+		f.Type().Id(adapterTypeName(core.Name)).StructFunc(func(g *Group) {
+			g.Id("core").Qual(monsteraYaml.GoCode.OutputPackage, core.Name+"CoreApi")
+			g.Id("mu").Qual("sync", "RWMutex")
+			g.Id("id").String()
+			g.Id("lowerBound").Index().Byte()
+			g.Id("upperBound").Index().Byte()
+		})
+		f.Line()
+	}
+
+	// type <Stub>NonclusteredApplicationCoresFactory
+	applicationCoresFactoryType := stub.Name + "NonclusteredApplicationCoresFactory"
+	f.Type().Id(applicationCoresFactoryType).StructFunc(func(g *Group) {
 		for _, core := range cores {
-			g.Id(firstCharToLower(core.Name)+"Core").Qual(monsteraYaml.GoCode.OutputPackage, core.Name+"CoreApi")
+			g.Id(core.Name+"CoreFactoryFunc").Func().Params(Id("shardId").String(), Id("lowerBound").Index().Byte(), Id("upperBound").Index().Byte()).Qual(monsteraYaml.GoCode.OutputPackage, core.Name+"CoreApi")
+		}
+	})
+
+	stubType := stub.Name + "CoreApiNonclusteredStub"
+	shardCalculatorType := stub.Name + "MonsteraShardKeyCalculator"
+
+	// type <Stub>
+	f.Type().Id(stubType).StructFunc(func(g *Group) {
+		for _, core := range cores {
+			g.Id(firstCharToLower(core.Name) + "Cores").Index().Op("*").Id(adapterTypeName(core.Name))
 		}
 		g.Line()
-
-		g.Id("mu").Qual("sync", "RWMutex")
+		g.Id("shardKeyCalculator").Id(shardCalculatorType)
 	})
 	apiName := stub.Name + "CoreApi"
-	f.Var().Id("_").Qual(monsteraYaml.GoCode.OutputPackage, apiName).Op("=").Op("&").Id(stubName).Values()
+	f.Var().Id("_").Qual(monsteraYaml.GoCode.OutputPackage, apiName).Op("=").Op("&").Id(stubType).Values()
 	f.Line()
+
+	stubReceiver := Id("s").Op("*").Qual(monsteraYaml.GoCode.OutputPackage, stubType)
 
 	for _, core := range cores {
 		for _, read := range core.Reads {
-			f.Func().Params(
-				Id("s").Op("*").Qual(monsteraYaml.GoCode.OutputPackage, stubName),
-			).Id(read.Name).ParamsFunc(func(g *Group) {
+			f.Func().Params(stubReceiver).Id(read.Name).ParamsFunc(func(g *Group) {
 				g.Id("ctx").Qual("context", "Context")
 				g.Id("request").Op("*").Qual(monsteraYaml.GoCode.CorePbPackage, read.Name+"Request")
 				if !read.Sharded {
@@ -325,21 +370,48 @@ func generateStandaloneStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, 
 					Op("*").Qual(monsteraYaml.GoCode.CorePbPackage, read.Name+"Response"),
 					Error(),
 				),
-			).Block(
-				Id("s.mu.RLock").Call(),
-				Defer().Id("s.mu.RUnlock").Call(),
-				Line(),
-				Return(Id("s").Dot(firstCharToLower(core.Name)+"Core").Dot(read.Name).Call(
-					Id("request"),
-				)),
-			)
+			).BlockFunc(func(g *Group) {
+				if read.Sharded {
+					g.Id("shardKey").Op(":=").Id("s.shardKeyCalculator." + read.Name + "ShardKey").Call(
+						Id("request"),
+					)
+					g.Line()
+
+					g.For(List(Id("_"), Id("adapter")).Op(":=").Range().Id("s").Dot(firstCharToLower(core.Name) + "Cores")).Block(
+						If(Qual("bytes", "Compare").Call(Id("shardKey"), Id("adapter").Dot("upperBound")).Op("<=").Lit(0).Op("&&").
+							Qual("bytes", "Compare").Call(Id("shardKey"), Id("adapter").Dot("lowerBound")).Op(">=").Lit(0)).Block(
+							Id("adapter").Dot("mu").Dot("RLock").Call(),
+							Defer().Id("adapter").Dot("mu").Dot("RUnlock").Call(),
+							Line(),
+							Return(Id("adapter").Dot("core").Dot(read.Name).Call(
+								Id("request"),
+							)),
+						),
+					)
+					g.Line()
+
+					g.Return(List(Nil(), Qual("fmt", "Errorf").Call(Lit("no shard found for shardKey: %s"), Id("shardKey"))))
+				} else {
+					g.For(List(Id("_"), Id("adapter")).Op(":=").Range().Id("s").Dot(firstCharToLower(core.Name) + "Cores")).Block(
+						If(Id("adapter").Dot("id").Op("==").Id("shardId")).Block(
+							Id("adapter").Dot("mu").Dot("RLock").Call(),
+							Defer().Id("adapter").Dot("mu").Dot("RUnlock").Call(),
+							Line(),
+							Return(Id("adapter").Dot("core").Dot(read.Name).Call(
+								Id("request"),
+							)),
+						),
+					)
+					g.Line()
+
+					g.Return(List(Nil(), Qual("fmt", "Errorf").Call(Lit("no shard found for shardId: %s"), Id("shardId"))))
+				}
+			})
 			f.Line()
 		}
 
 		for _, update := range core.Updates {
-			f.Func().Params(
-				Id("s").Op("*").Qual(monsteraYaml.GoCode.OutputPackage, stubName),
-			).Id(update.Name).ParamsFunc(func(g *Group) {
+			f.Func().Params(stubReceiver).Id(update.Name).ParamsFunc(func(g *Group) {
 				g.Id("ctx").Qual("context", "Context")
 				g.Id("request").Op("*").Qual(monsteraYaml.GoCode.CorePbPackage, update.Name+"Request")
 				if !update.Sharded {
@@ -350,30 +422,118 @@ func generateStandaloneStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, 
 					Op("*").Qual(monsteraYaml.GoCode.CorePbPackage, update.Name+"Response"),
 					Error(),
 				),
-			).Block(
-				Id("s.mu.Lock").Call(),
-				Defer().Id("s.mu.Unlock").Call(),
-				Line(),
-				Return(Id("s").Dot(firstCharToLower(core.Name)+"Core").Dot(update.Name).Call(
-					Id("request"),
-				)),
-			)
+			).BlockFunc(func(g *Group) {
+				if update.Sharded {
+					g.Id("shardKey").Op(":=").Id("s.shardKeyCalculator." + update.Name + "ShardKey").Call(
+						Id("request"),
+					)
+					g.Line()
+
+					g.For(List(Id("_"), Id("adapter")).Op(":=").Range().Id("s").Dot(firstCharToLower(core.Name) + "Cores")).Block(
+						If(Qual("bytes", "Compare").Call(Id("shardKey"), Id("adapter").Dot("upperBound")).Op("<=").Lit(0).Op("&&").
+							Qual("bytes", "Compare").Call(Id("shardKey"), Id("adapter").Dot("lowerBound")).Op(">=").Lit(0)).Block(
+							Id("adapter").Dot("mu").Dot("Lock").Call(),
+							Defer().Id("adapter").Dot("mu").Dot("Unlock").Call(),
+							Line(),
+							Return(Id("adapter").Dot("core").Dot(update.Name).Call(
+								Id("request"),
+							)),
+						),
+					)
+					g.Line()
+
+					g.Return(List(Nil(), Qual("fmt", "Errorf").Call(Lit("no shard found for shardKey: %s"), Id("shardKey"))))
+				} else {
+					g.For(List(Id("_"), Id("adapter")).Op(":=").Range().Id("s").Dot(firstCharToLower(core.Name) + "Cores")).Block(
+						If(Id("adapter").Dot("id").Op("==").Id("shardId")).Block(
+							Id("adapter").Dot("mu").Dot("Lock").Call(),
+							Defer().Id("adapter").Dot("mu").Dot("Unlock").Call(),
+							Line(),
+							Return(Id("adapter").Dot("core").Dot(update.Name).Call(
+								Id("request"),
+							)),
+						),
+					)
+					g.Line()
+
+					g.Return(List(Nil(), Qual("fmt", "Errorf").Call(Lit("no shard found for shardId: %s"), Id("shardId"))))
+				}
+
+			})
 			f.Line()
 		}
 	}
 
-	f.Func().Id("New" + stubName).ParamsFunc(func(g *Group) {
+	// func ListShards()
+	f.Func().Params(stubReceiver).Id("ListShards").Params(
+		Id("applicationName").String(),
+	).Params(
+		List(Index().String(), Error()),
+	).BlockFunc(func(g *Group) {
+		g.Switch(Id("applicationName")).BlockFunc(func(g *Group) {
+			for _, core := range cores {
+				adapters := firstCharToLower(core.Name) + "Cores"
+				g.Case(Lit(core.Name)).Block(
+					Id("shardIds").Op(":=").Make(Index().String(), Len(Id("s").Dot(adapters))),
+					For(Id("i").Op(":=").Range().Id("s").Dot(adapters)).Block(
+						Id("shardIds").Index(Id("i")).Op("=").Id("s").Dot(adapters).Index(Id("i")).Dot("id"),
+					),
+					Return(List(Id("shardIds"), Nil())),
+				)
+			}
+			g.Default().Block(
+				Return(List(Nil(), Qual("fmt", "Errorf").Call(Lit("application not found: %s"), Id("applicationName")))),
+			)
+		})
+	})
+	f.Line()
+
+	// func New<Stub>()
+	f.Func().Id("New"+stubType).Params(
+		Id("shardsPerApp").Int(),
+		Id("coresFactory").Op("*").Id(applicationCoresFactoryType),
+		Id("shardKeyCalculator").Id(shardCalculatorType),
+	).Params(
+		Op("*").Id(stubType),
+	).BlockFunc(func(g *Group) {
 		for _, core := range cores {
-			g.Id(firstCharToLower(core.Name)+"Core").Qual(monsteraYaml.GoCode.OutputPackage, core.Name+"CoreApi")
+			g.Id(firstCharToLower(core.Name)+"Cores").Op(":=").Make(Index().Op("*").Id(adapterTypeName(core.Name)), Id("shardsPerApp"))
 		}
-	}).Params(
-		Op("*").Id(stubName),
-	).Block(
-		Return(
-			Op("&").Id(stubName).ValuesFunc(func(g *Group) {
+		g.Line()
+
+		g.Id("shardSize").Op(":=").Qual("github.com/evrblk/monstera", "KeyspacePerApplication").Op("/").Id("shardsPerApp")
+
+		g.For(Id("i").Op(":=").Lit(0), Id("i").Op("<").Id("shardsPerApp"), Id("i").Op("++")).BlockFunc(func(g *Group) {
+			g.Id("lower").Op(":=").Uint32().Call(Id("i").Op("*").Id("shardSize"))
+			g.Id("upper").Op(":=").Uint32().Call(Parens(Id("i").Op("+").Lit(1)).Op("*").Id("shardSize").Op("-").Lit(1))
+			g.Id("lowerBound").Op(":=").Make(Index().Byte(), Lit(4))
+			g.Id("upperBound").Op(":=").Make(Index().Byte(), Lit(4))
+			g.Qual("encoding/binary", "BigEndian").Dot("PutUint32").Call(Id("lowerBound"), Id("lower"))
+			g.Qual("encoding/binary", "BigEndian").Dot("PutUint32").Call(Id("upperBound"), Id("upper"))
+			g.Line()
+
+			g.List(Id("sl"), Id("su")).Op(":=").Qual("github.com/evrblk/monstera", "ShortenBounds").Call(Id("lowerBound"), Id("upperBound"))
+			g.Line()
+
+			for _, core := range cores {
+				shardIdVarName := firstCharToLower(core.Name) + "ShardId"
+				g.Id(shardIdVarName).Op(":=").Qual("fmt", "Sprintf").Call(Lit("%s_%x_%x"), Lit(core.Name), Id("sl"), Id("su"))
+				g.Id(firstCharToLower(core.Name)+"Cores").Index(Id("i")).Op("=").Op("&").Id(adapterTypeName(core.Name)).Values(
+					Id("core").Op(":").Id("coresFactory").Dot(core.Name+"CoreFactoryFunc").Call(Id(shardIdVarName), Id("lowerBound"), Id("upperBound")),
+					Id("id").Op(":").Id(shardIdVarName),
+					Id("lowerBound").Op(":").Id("lowerBound"),
+					Id("upperBound").Op(":").Id("upperBound"),
+				)
+				g.Line()
+			}
+		})
+
+		g.Return(
+			Op("&").Id(stubType).ValuesFunc(func(g *Group) {
 				for _, core := range cores {
-					g.Id(firstCharToLower(core.Name) + "Core").Op(":").Id(firstCharToLower(core.Name) + "Core")
+					g.Id(firstCharToLower(core.Name) + "Cores").Op(":").Id(firstCharToLower(core.Name) + "Cores")
 				}
-			})),
-	)
+				g.Id("shardKeyCalculator").Op(":").Id("shardKeyCalculator")
+			}))
+	})
 }

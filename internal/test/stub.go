@@ -12,7 +12,7 @@ type PlaygroundApiMonsteraStub struct {
 }
 
 func (s *PlaygroundApiMonsteraStub) Read(ctx context.Context, key uint64) (string, error) {
-	shardKey := monstera.GetShardKey(monstera.ConcatBytes(key), 4)
+	shardKey := monstera.GetTruncatedHash(monstera.ConcatBytes(key), 4)
 	request := createKeyBytes(key)
 
 	responseBytes, err := s.monsteraClient.Read(ctx, "Core", shardKey, false, request)
@@ -21,7 +21,7 @@ func (s *PlaygroundApiMonsteraStub) Read(ctx context.Context, key uint64) (strin
 }
 
 func (s *PlaygroundApiMonsteraStub) Update(ctx context.Context, key uint64, value string) (string, error) {
-	shardKey := monstera.GetShardKey(monstera.ConcatBytes(key), 4)
+	shardKey := monstera.GetTruncatedHash(monstera.ConcatBytes(key), 4)
 	request := createRequestBytes(key, value)
 
 	responseBytes, err := s.monsteraClient.Update(ctx, "Core", shardKey, request)

@@ -9,13 +9,13 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// RaftFSMAdapter is an adapter between the hashicorp/raft.FSM interface
+// raftFSMAdapter is an adapter between the hashicorp/raft.FSM interface
 // and a Monstera application core.
-type RaftFSMAdapter struct {
-	applicationCore ApplicationCore
+type raftFSMAdapter struct {
+	core ApplicationCore
 }
 
-var _ hraft.FSM = &RaftFSMAdapter{}
+var _ hraft.FSM = &raftFSMAdapter{}
 
 // Apply is called once a log entry is committed by a majority of the cluster.
 //
@@ -23,13 +23,13 @@ var _ hraft.FSM = &RaftFSMAdapter{}
 // produce the same result on all peers in the cluster.
 //
 // The returned value is returned to the client as the ApplyFuture.Response.
-func (f *RaftFSMAdapter) Apply(l *hraft.Log) interface{} {
+func (f *raftFSMAdapter) Apply(l *hraft.Log) interface{} {
 	command := &MonsteraCommand{}
 	if err := proto.Unmarshal(l.Data, command); err != nil {
 		panic(err)
 	}
 
-	return f.applicationCore.Update(command.Payload)
+	return f.core.Update(command.Payload)
 }
 
 // Snapshot returns an FSMSnapshot used to: support log compaction, to
@@ -46,21 +46,21 @@ func (f *RaftFSMAdapter) Apply(l *hraft.Log) interface{} {
 // be implemented to allow for concurrent updates while a snapshot is happening.
 //
 // Clients of this library should make no assumptions about whether a returned
-// Snapshot() will actually be stored by Raft. In fact it's quite possible that
+// Snapshot() will actually be stored by Raft. In fact, it's quite possible that
 // any Snapshot returned by this call will be discarded, and that
-// FSMSnapshot.Persist will never be called. Raft will always call
-// FSMSnapshot.Release however.
-func (f *RaftFSMAdapter) Snapshot() (hraft.FSMSnapshot, error) {
+// FSMSnapshot.Persist will never be called. However, Raft will always call
+// FSMSnapshot.Release.
+func (f *raftFSMAdapter) Snapshot() (hraft.FSMSnapshot, error) {
 	return &snapshot{
-		stream: f.applicationCore.Snapshot(),
+		stream: f.core.Snapshot(),
 	}, nil
 }
 
 // Restore is used to restore an FSM from a snapshot. It is not called
 // concurrently with any other command. The FSM must discard all previous
 // state before restoring the snapshot.
-func (f *RaftFSMAdapter) Restore(reader io.ReadCloser) error {
-	err := f.applicationCore.Restore(reader)
+func (f *raftFSMAdapter) Restore(reader io.ReadCloser) error {
+	err := f.core.Restore(reader)
 	if err != nil {
 		log.Printf("error restoring raft snapshot: %s", err)
 	}
@@ -91,8 +91,8 @@ func (s *snapshot) Release() {
 	s.stream.Release()
 }
 
-func NewRaftFSMAdapter(applicationCore ApplicationCore) *RaftFSMAdapter {
-	return &RaftFSMAdapter{
-		applicationCore: applicationCore,
+func newRaftFSMAdapter(core ApplicationCore) hraft.FSM {
+	return &raftFSMAdapter{
+		core: core,
 	}
 }

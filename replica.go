@@ -3,12 +3,13 @@ package monstera
 import (
 	"errors"
 	"fmt"
-	"github.com/hashicorp/go-hclog"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/hashicorp/go-hclog"
 
 	hraft "github.com/hashicorp/raft"
 	"google.golang.org/protobuf/proto"
@@ -17,22 +18,6 @@ import (
 var (
 	errNotALeader = errors.New("updates are only available on a leader")
 )
-
-type MonsteraReplica struct {
-	ApplicationName string
-	KeyspaceName    string
-	ShardId         string
-	ReplicaId       string
-	NodeAddress     string
-
-	applicationCore ApplicationCore
-	hraft           *hraft.Raft
-	transport       *RaftGrpcTransport
-	hstore          *HraftBadgerStore
-	hfss            *hraft.FileSnapshotStore
-
-	logger *log.Logger
-}
 
 // ApplicationCore is the interface that must be implemented by clients to be used
 // with Monstera framework.
@@ -75,6 +60,20 @@ type ApplicationCore interface {
 	Close()
 }
 
+type MonsteraReplica struct {
+	ApplicationName string
+	ShardId         string
+	ReplicaId       string
+
+	core      ApplicationCore
+	hraft     *hraft.Raft
+	transport *raftGrpcTransport
+	hstore    *HraftBadgerStore
+	hfss      *hraft.FileSnapshotStore
+
+	logger *log.Logger
+}
+
 type ApplicationCoreSnapshot interface {
 	Write(w io.Writer) error
 	Release()
@@ -82,7 +81,7 @@ type ApplicationCoreSnapshot interface {
 
 func (b *MonsteraReplica) Read(request []byte) ([]byte, error) {
 	// TODO shutdown raft if Read panics
-	response := b.applicationCore.Read(request)
+	response := b.core.Read(request)
 	return response, nil
 }
 
@@ -119,7 +118,7 @@ func (b *MonsteraReplica) Close() {
 	}
 
 	// Close the application core.
-	b.applicationCore.Close()
+	b.core.Close()
 }
 
 func (b *MonsteraReplica) GetRaftStats() map[string]string {
@@ -253,7 +252,7 @@ func (b *MonsteraReplica) LeadershipTransfer() error {
 }
 
 func NewMonsteraReplica(baseDir string, applicationName string, shardId string, replicaId string,
-	myAddress string, applicationCore ApplicationCore, pool *MonsteraConnectionPool, raftStore *BadgerStore, restoreSnapshotOnStart bool) *MonsteraReplica {
+	myAddress string, core ApplicationCore, pool *MonsteraConnectionPool, raftStore *BadgerStore, restoreSnapshotOnStart bool) *MonsteraReplica {
 	c := hraft.DefaultConfig()
 	c.LocalID = hraft.ServerID(replicaId)
 	c.Logger = hclog.New(&hclog.LoggerOptions{
@@ -276,9 +275,8 @@ func NewMonsteraReplica(baseDir string, applicationName string, shardId string, 
 		panic(fmt.Errorf("raft.NewFileSnapshotStore(%q, ...): %v", raftDir, err))
 	}
 
-	tm := NewTransport(myAddress, pool)
-
-	fsm := NewRaftFSMAdapter(applicationCore)
+	tm := newTransport(myAddress, pool)
+	fsm := newRaftFSMAdapter(core)
 
 	r, err := hraft.NewRaft(c, fsm, hstore, hstore, hfss, tm)
 	if err != nil {
@@ -289,7 +287,7 @@ func NewMonsteraReplica(baseDir string, applicationName string, shardId string, 
 		ApplicationName: applicationName,
 		ShardId:         shardId,
 		ReplicaId:       replicaId,
-		applicationCore: applicationCore,
+		core:            core,
 		hraft:           r,
 		hstore:          hstore,
 		hfss:            hfss,

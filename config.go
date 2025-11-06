@@ -14,7 +14,6 @@ import (
 
 	"errors"
 
-	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -268,9 +267,10 @@ func (c *ClusterConfig) Validate() error {
 				}
 			}
 
-			uniqueNodes := lo.UniqBy(s.Replicas, func(r *Replica) string {
-				return r.NodeAddress
-			})
+			uniqueNodes := make(map[string]struct{}, len(s.Replicas))
+			for _, n := range s.Replicas {
+				uniqueNodes[n.NodeAddress] = struct{}{}
+			}
 			if len(uniqueNodes) < len(s.Replicas) {
 				return fmt.Errorf("replicas are not assigned to different nodes for shard %s", s.Id)
 			}
@@ -345,10 +345,16 @@ func (c *ClusterConfig) CreateNode(address string) (*Node, error) {
 }
 
 func (c *ClusterConfig) GetNode(nodeAddress string) (*Node, error) {
-	node, ok := lo.Find(c.Nodes, func(n *Node) bool {
-		return n.Address == nodeAddress
-	})
-	if !ok {
+	var node *Node
+	found := false
+	for _, n := range c.Nodes {
+		if n.Address == nodeAddress {
+			node = n
+			found = true
+			break
+		}
+	}
+	if !found {
 		return nil, errNodeNotFound
 	}
 
@@ -356,10 +362,16 @@ func (c *ClusterConfig) GetNode(nodeAddress string) (*Node, error) {
 }
 
 func (c *ClusterConfig) ListShards(applicationName string) ([]*Shard, error) {
-	application, ok := lo.Find(c.Applications, func(a *Application) bool {
-		return a.Name == applicationName
-	})
-	if !ok {
+	var application *Application
+	found := false
+	for _, a := range c.Applications {
+		if a.Name == applicationName {
+			application = a
+			found = true
+			break
+		}
+	}
+	if !found {
 		return nil, errApplicationNotFound
 	}
 
@@ -367,11 +379,10 @@ func (c *ClusterConfig) ListShards(applicationName string) ([]*Shard, error) {
 }
 
 func (c *ClusterConfig) CreateApplication(applicationName string, implementation string, replicationFactor int32) (*Application, error) {
-	_, ok := lo.Find(c.Applications, func(a *Application) bool {
-		return a.Name == applicationName
-	})
-	if ok {
-		return nil, errApplicationAlreadyExists
+	for _, a := range c.Applications {
+		if a.Name == applicationName {
+			return nil, errApplicationAlreadyExists
+		}
 	}
 
 	application := &Application{
@@ -388,10 +399,16 @@ func (c *ClusterConfig) CreateApplication(applicationName string, implementation
 }
 
 func (c *ClusterConfig) CreateShard(applicationName string, lowerBound []byte, upperBound []byte, parentId string) (*Shard, error) {
-	application, ok := lo.Find(c.Applications, func(a *Application) bool {
-		return a.Name == applicationName
-	})
-	if !ok {
+	var application *Application
+	found := false
+	for _, a := range c.Applications {
+		if a.Name == applicationName {
+			application = a
+			found = true
+			break
+		}
+	}
+	if !found {
 		return nil, errApplicationNotFound
 	}
 
@@ -417,19 +434,32 @@ func (c *ClusterConfig) CreateShard(applicationName string, lowerBound []byte, u
 }
 
 func (c *ClusterConfig) CreateReplica(applicationName string, shardId string, nodeAddress string) (*Replica, error) {
-	application, ok := lo.Find(c.Applications, func(a *Application) bool {
-		return a.Name == applicationName
-	})
-	if !ok {
+	var application *Application
+	found := false
+	for _, a := range c.Applications {
+		if a.Name == applicationName {
+			application = a
+			found = true
+			break
+		}
+	}
+	if !found {
 		return nil, errApplicationNotFound
 	}
 
-	shard, ok := lo.Find(application.Shards, func(s *Shard) bool {
-		return s.Id == shardId
-	})
-	if !ok {
+	var shard *Shard
+	found = false
+	for _, s := range application.Shards {
+		if s.Id == shardId {
+			shard = s
+			found = true
+			break
+		}
+	}
+	if !found {
 		return nil, errShardNotFound
 	}
+
 	if shard.Replicas == nil {
 		shard.Replicas = make([]*Replica, 0)
 	}
@@ -462,10 +492,16 @@ func (c *ClusterConfig) CreateReplica(applicationName string, shardId string, no
 }
 
 func (c *ClusterConfig) FindShard(applicationName string, shardKey []byte) (*Shard, error) {
-	application, ok := lo.Find(c.Applications, func(a *Application) bool {
-		return a.Name == applicationName
-	})
-	if !ok {
+	var application *Application
+	found := false
+	for _, a := range c.Applications {
+		if a.Name == applicationName {
+			application = a
+			found = true
+			break
+		}
+	}
+	if !found {
 		return nil, errApplicationNotFound
 	}
 

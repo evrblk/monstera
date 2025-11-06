@@ -3,10 +3,10 @@ package monstera
 import (
 	"encoding/binary"
 	"errors"
+	"slices"
 	"sync"
 
 	hraft "github.com/hashicorp/raft"
-	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -188,19 +188,20 @@ func (h *HraftBadgerStore) StoreLogs(logs []*hraft.Log) error {
 	defer h.mu.Unlock()
 
 	return h.store.BatchUpdate(func(batch *Batch) error {
-		indexes := lo.Map(logs, func(l *hraft.Log, _ int) uint64 {
-			return l.Index
-		})
+		indexes := make([]uint64, len(logs))
+		for i, l := range logs {
+			indexes[i] = l.Index
+		}
 
 		if h.firstIndex == 0 {
-			lowestIndex := lo.Min(indexes)
+			lowestIndex := slices.Min(indexes)
 			err := h.setFirstIndex(lowestIndex, batch)
 			if err != nil {
 				return err
 			}
 		}
 
-		highestIndex := lo.Max(indexes)
+		highestIndex := slices.Max(indexes)
 		if h.lastIndex < highestIndex {
 			err := h.setLastIndex(highestIndex, batch)
 			if err != nil {

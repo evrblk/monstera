@@ -12,7 +12,6 @@ import (
 	"time"
 
 	hraft "github.com/hashicorp/raft"
-	"github.com/samber/lo"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )
@@ -310,7 +309,12 @@ func (n *MonsteraNode) ListCores() []*MonsteraReplica {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	return lo.Values(n.replicas)
+	result := make([]*MonsteraReplica, 0, len(n.replicas))
+	for _, r := range n.replicas {
+		result = append(result, r)
+	}
+
+	return result
 }
 
 func (n *MonsteraNode) NodeState() MonsteraNodeState {

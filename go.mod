@@ -1,6 +1,6 @@
 module github.com/evrblk/monstera
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/dave/jennifer v1.7.1
@@ -9,7 +9,6 @@ require (
 	github.com/hashicorp/go-hclog v1.6.2
 	github.com/hashicorp/raft v1.7.3
 	github.com/prometheus/client_golang v1.22.0
-	github.com/samber/lo v1.50.0
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/grpc v1.76.0

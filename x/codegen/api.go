@@ -5,7 +5,6 @@ import (
 	"log"
 
 	. "github.com/dave/jennifer/jen"
-	"github.com/samber/lo"
 )
 
 func GenerateCoreApis(monsteraYaml *MonsteraYaml) string {
@@ -15,13 +14,18 @@ func GenerateCoreApis(monsteraYaml *MonsteraYaml) string {
 	for _, stub := range monsteraYaml.Stubs {
 		cores := make([]*MonsteraCore, len(stub.Cores))
 		for i, coreName := range stub.Cores {
-			core, ok := lo.Find(monsteraYaml.Cores, func(core *MonsteraCore) bool {
-				return core.Name == coreName
-			})
-			if !ok {
+			found := false
+			for _, core := range monsteraYaml.Cores {
+				if core.Name == coreName {
+					cores[i] = core
+					found = true
+					break
+				}
+			}
+
+			if !found {
 				log.Fatalf("core %s not found", coreName)
 			}
-			cores[i] = core
 		}
 
 		generateStubApi(f, stub, cores, monsteraYaml)

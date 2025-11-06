@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/samber/lo"
 	"gopkg.in/yaml.v3"
 )
 
@@ -61,9 +60,12 @@ func LoadMonsteraYaml(path string) (*MonsteraYaml, error) {
 }
 
 func getAllMethods(core *MonsteraCore) []string {
-	return append(lo.Map(core.Reads, func(read *ReadMethod, _ int) string {
-		return read.Name
-	}), lo.Map(core.Updates, func(update *UpdateMethod, _ int) string {
-		return update.Name
-	})...)
+	result := make([]string, 0, len(core.Reads)+len(core.Updates))
+	for _, read := range core.Reads {
+		result = append(result, read.Name)
+	}
+	for _, update := range core.Updates {
+		result = append(result, update.Name)
+	}
+	return result
 }

@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/samber/lo"
-	"github.com/samber/lo/mutable"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -221,10 +219,16 @@ func (c *MonsteraClient) TriggerSnapshot(applicationName string, shardId string,
 		return err
 	}
 
-	replica, ok := lo.Find(shard.Replicas, func(r *Replica) bool {
-		return r.Id == replicaId
-	})
-	if !ok {
+	var replica *Replica
+	found := false
+	for _, r := range shard.Replicas {
+		if r.Id == replicaId {
+			replica = r
+			found = true
+			break
+		}
+	}
+	if !found {
 		return fmt.Errorf("replica not found")
 	}
 
@@ -244,10 +248,16 @@ func (c *MonsteraClient) LeadershipTransfer(applicationName string, shardId stri
 		return err
 	}
 
-	replica, ok := lo.Find(shard.Replicas, func(r *Replica) bool {
-		return r.Id == replicaId
-	})
-	if !ok {
+	var replica *Replica
+	found := false
+	for _, r := range shard.Replicas {
+		if r.Id == replicaId {
+			replica = r
+			found = true
+			break
+		}
+	}
+	if !found {
 		return fmt.Errorf("replica not found")
 	}
 
@@ -292,17 +302,24 @@ func (c *MonsteraClient) getConnection(nodeAddress string) (MonsteraApiClient, e
 func (c *MonsteraClient) shuffleReplicas(replicas []*Replica) []*Replica {
 	result := make([]*Replica, len(replicas))
 	copy(result, replicas)
-	mutable.Shuffle(result)
+	rand.Shuffle(len(result), func(i, j int) {
+		result[i], result[j] = result[j], result[i]
+	})
 	return result
 }
 
 func (c *MonsteraClient) shuffleReplicasAndLeaderFirst(replicas []*Replica) []*Replica {
 	result := make([]*Replica, len(replicas))
 	result[0] = c.getLeader(replicas)
-	otherReplicas := lo.Filter(replicas, func(r *Replica, _ int) bool {
-		return r.Id != result[0].Id
+	otherReplicas := make([]*Replica, 0, len(replicas))
+	for _, r := range replicas {
+		if r.Id != result[0].Id {
+			otherReplicas = append(otherReplicas, r)
+		}
+	}
+	rand.Shuffle(len(otherReplicas), func(i, j int) {
+		otherReplicas[i], otherReplicas[j] = otherReplicas[j], otherReplicas[i]
 	})
-	mutable.Shuffle(otherReplicas)
 	copy(result[1:], otherReplicas)
 	return result
 }
@@ -317,7 +334,7 @@ func (c *MonsteraClient) getLeader(replicas []*Replica) *Replica {
 			return r
 		}
 	}
-	return lo.Sample(replicas) // this is a fallback
+	return replicas[rand.IntN(len(replicas))] // this is a fallback
 }
 
 func NewMonsteraClient(clusterConfig *ClusterConfig) *MonsteraClient {

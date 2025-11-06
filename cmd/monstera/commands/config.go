@@ -3,9 +3,9 @@ package commands
 import (
 	"encoding/binary"
 	"log"
+	"math/rand/v2"
 
 	"github.com/evrblk/monstera"
-	"github.com/samber/lo/mutable"
 	"github.com/spf13/cobra"
 )
 
@@ -124,7 +124,9 @@ var addApplicationCmd = &cobra.Command{
 
 			shuffledNodes := make([]string, len(nodes))
 			copy(shuffledNodes, nodes)
-			mutable.Shuffle(shuffledNodes)
+			rand.Shuffle(len(shuffledNodes), func(i, j int) {
+				shuffledNodes[i], shuffledNodes[j] = shuffledNodes[j], shuffledNodes[i]
+			})
 
 			for j := 0; j < addApplicationCmdCfg.replicationFactor; j++ {
 				_, err := config.CreateReplica(addApplicationCmdCfg.applicationName, shard.Id, shuffledNodes[j])

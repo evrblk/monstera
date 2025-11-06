@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/samber/lo"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -27,15 +26,18 @@ func (e *Error) Error() string {
 }
 
 func NewErrorWithContext(code ErrorCode, message string, context map[string]string) *Error {
+	ctxArr := make([]*ErrorContext, 0, len(context))
+	for k, v := range context {
+		ctxArr = append(ctxArr, &ErrorContext{
+			Key:   k,
+			Value: v,
+		})
+	}
+
 	return &Error{
 		Code:    code,
 		Message: message,
-		Context: lo.Map(lo.Entries(context), func(e lo.Entry[string, string], _ int) *ErrorContext {
-			return &ErrorContext{
-				Key:   e.Key,
-				Value: e.Value,
-			}
-		}),
+		Context: ctxArr,
 	}
 }
 

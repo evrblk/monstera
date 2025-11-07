@@ -493,6 +493,33 @@ func (i *UniqueUint64Index) Delete(txn *monstera.Txn, pk []byte) error {
 	return i.delete(txn, pk)
 }
 
+// UniqueUint32Index stores unique keys and returns uint64 as values.
+type UniqueUint32Index struct {
+	table
+}
+
+func NewUniqueUint32Index(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) *UniqueUint32Index {
+	return &UniqueUint32Index{
+		table: newTable(tableId, keyLowerBound, keyUpperBound),
+	}
+}
+
+func (i *UniqueUint32Index) Get(txn *monstera.Txn, pk []byte) (uint32, error) {
+	value, err := i.get(txn, pk)
+	if err != nil {
+		return 0, err
+	}
+	return bytesToUint32(value), nil
+}
+
+func (i *UniqueUint32Index) Set(txn *monstera.Txn, pk []byte, value uint32) error {
+	return i.set(txn, pk, uint32ToBytes(value))
+}
+
+func (i *UniqueUint32Index) Delete(txn *monstera.Txn, pk []byte) error {
+	return i.delete(txn, pk)
+}
+
 // OneToManyUint64Index stores multiple items (uint64) per single key PK (arbitrary []byte).
 type OneToManyUint64Index struct {
 	table
@@ -648,6 +675,16 @@ func bytesToUint64(b []byte) uint64 {
 func uint64ToBytes(u uint64) []byte {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, u)
+	return buf
+}
+
+func bytesToUint32(b []byte) uint32 {
+	return binary.BigEndian.Uint32(b)
+}
+
+func uint32ToBytes(u uint32) []byte {
+	buf := make([]byte, 4)
+	binary.BigEndian.PutUint32(buf, u)
 	return buf
 }
 

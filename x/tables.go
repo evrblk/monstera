@@ -612,7 +612,7 @@ func (i *OneToManySortedIndex) ListInRange(txn *monstera.Txn, pk []byte, lowerBo
 	upper := monstera.ConcatBytes(pk, upperBound)
 
 	return i.listInRange(txn, lower, upper, false, func(key []byte, value []byte) (bool, error) {
-		return fn(key[len(pk):])
+		return fn(key)
 	})
 }
 
@@ -639,7 +639,7 @@ func NewSortedIndex(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) 
 
 func (i *SortedIndex) ListInRange(txn *monstera.Txn, lowerBound []byte, upperBound []byte, fn func(item []byte) (bool, error)) error {
 	return i.listInRange(txn, lowerBound, upperBound, false, func(key []byte, value []byte) (bool, error) {
-		return fn(key)
+		return fn(key[len(i.tableId):])
 	})
 }
 

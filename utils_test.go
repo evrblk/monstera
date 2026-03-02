@@ -8,55 +8,55 @@ import (
 func TestConcatBytes(t *testing.T) {
 	tests := []struct {
 		name     string
-		items    []interface{}
+		items    []any
 		expected []byte
 		panics   bool
 	}{
 		{
 			name:     "empty items",
-			items:    []interface{}{},
+			items:    []any{},
 			expected: []byte{},
 			panics:   false,
 		},
 		{
 			name:     "single uint64",
-			items:    []interface{}{uint64(1234567890)},
+			items:    []any{uint64(1234567890)},
 			expected: []byte{0, 0, 0, 0, 73, 150, 2, 210},
 			panics:   false,
 		},
 		{
 			name:     "single int64",
-			items:    []interface{}{int64(-1234567890)},
+			items:    []any{int64(-1234567890)},
 			expected: []byte{255, 255, 255, 255, 182, 105, 253, 46},
 			panics:   false,
 		},
 		{
 			name:     "single uint32",
-			items:    []interface{}{uint32(1234567890)},
+			items:    []any{uint32(1234567890)},
 			expected: []byte{73, 150, 2, 210},
 			panics:   false,
 		},
 		{
 			name:     "single int32",
-			items:    []interface{}{int32(-1234567890)},
+			items:    []any{int32(-1234567890)},
 			expected: []byte{182, 105, 253, 46},
 			panics:   false,
 		},
 		{
 			name:     "single byte slice",
-			items:    []interface{}{[]byte{1, 2, 3, 4}},
+			items:    []any{[]byte{1, 2, 3, 4}},
 			expected: []byte{1, 2, 3, 4},
 			panics:   false,
 		},
 		{
 			name:     "single string",
-			items:    []interface{}{"hello"},
+			items:    []any{"hello"},
 			expected: []byte("hello"),
 			panics:   false,
 		},
 		{
 			name: "mixed types",
-			items: []interface{}{
+			items: []any{
 				uint64(1234567890),
 				[]byte{1, 2, 3},
 				"world",
@@ -72,31 +72,31 @@ func TestConcatBytes(t *testing.T) {
 		},
 		{
 			name:     "nil item",
-			items:    []interface{}{uint64(1), nil, []byte{1}},
+			items:    []any{uint64(1), nil, []byte{1}},
 			expected: nil,
 			panics:   true,
 		},
 		{
 			name:     "unsupported type",
-			items:    []interface{}{uint64(1), "hello", 42}, // int is not supported
+			items:    []any{uint64(1), "hello", 42}, // int is not supported
 			expected: nil,
 			panics:   true,
 		},
 		{
 			name:     "unsupported type float",
-			items:    []interface{}{uint64(1), 3.14}, // float64 is not supported
+			items:    []any{uint64(1), 3.14}, // float64 is not supported
 			expected: nil,
 			panics:   true,
 		},
 		{
 			name:     "unsupported type bool",
-			items:    []interface{}{uint64(1), true}, // bool is not supported
+			items:    []any{uint64(1), true}, // bool is not supported
 			expected: nil,
 			panics:   true,
 		},
 		{
 			name: "large values",
-			items: []interface{}{
+			items: []any{
 				uint64(0xFFFFFFFFFFFFFFFF),
 				int64(-0x7FFFFFFFFFFFFFFF),
 				uint32(0xFFFFFFFF),
@@ -112,19 +112,19 @@ func TestConcatBytes(t *testing.T) {
 		},
 		{
 			name:     "empty string",
-			items:    []interface{}{""},
+			items:    []any{""},
 			expected: []byte{},
 			panics:   false,
 		},
 		{
 			name:     "empty byte slice",
-			items:    []interface{}{[]byte{}},
+			items:    []any{[]byte{}},
 			expected: []byte{},
 			panics:   false,
 		},
 		{
 			name: "zero values",
-			items: []interface{}{
+			items: []any{
 				uint64(0),
 				int64(0),
 				uint32(0),
@@ -173,7 +173,7 @@ func TestConcatBytes(t *testing.T) {
 
 func TestConcatBytesManualVerification(t *testing.T) {
 	// Test with known values to manually verify binary encoding
-	items := []interface{}{
+	items := []any{
 		uint64(0x1234567890ABCDEF),
 		uint32(0x12345678),
 		[]byte{0xAA, 0xBB, 0xCC},
@@ -185,7 +185,7 @@ func TestConcatBytesManualVerification(t *testing.T) {
 	// Verify uint64 encoding
 	expectedUint64 := make([]byte, 8)
 	binary.BigEndian.PutUint64(expectedUint64, 0x1234567890ABCDEF)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		if result[i] != expectedUint64[i] {
 			t.Errorf("uint64 encoding mismatch at index %d: got %d, want %d", i, result[i], expectedUint64[i])
 		}
@@ -194,7 +194,7 @@ func TestConcatBytesManualVerification(t *testing.T) {
 	// Verify uint32 encoding
 	expectedUint32 := make([]byte, 4)
 	binary.BigEndian.PutUint32(expectedUint32, 0x12345678)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		if result[i+8] != expectedUint32[i] {
 			t.Errorf("uint32 encoding mismatch at index %d: got %d, want %d", i+8, result[i+8], expectedUint32[i])
 		}
@@ -202,7 +202,7 @@ func TestConcatBytesManualVerification(t *testing.T) {
 
 	// Verify byte slice
 	expectedBytes := []byte{0xAA, 0xBB, 0xCC}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if result[i+12] != expectedBytes[i] {
 			t.Errorf("byte slice mismatch at index %d: got %d, want %d", i+12, result[i+12], expectedBytes[i])
 		}
@@ -210,7 +210,7 @@ func TestConcatBytesManualVerification(t *testing.T) {
 
 	// Verify string
 	expectedString := []byte("test")
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		if result[i+15] != expectedString[i] {
 			t.Errorf("string mismatch at index %d: got %d, want %d", i+15, result[i+15], expectedString[i])
 		}
@@ -218,7 +218,7 @@ func TestConcatBytesManualVerification(t *testing.T) {
 }
 
 func BenchmarkConcatBytes(b *testing.B) {
-	items := []interface{}{
+	items := []any{
 		uint64(1234567890),
 		[]byte{1, 2, 3, 4, 5},
 		"hello world",

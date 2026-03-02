@@ -23,7 +23,7 @@ var _ hraft.FSM = &raftFSMAdapter{}
 // produce the same result on all peers in the cluster.
 //
 // The returned value is returned to the client as the ApplyFuture.Response.
-func (f *raftFSMAdapter) Apply(l *hraft.Log) interface{} {
+func (f *raftFSMAdapter) Apply(l *hraft.Log) any {
 	command := &MonsteraCommand{}
 	if err := proto.Unmarshal(l.Data, command); err != nil {
 		panic(err)

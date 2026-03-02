@@ -19,12 +19,12 @@ func TestNewPlaygroundCore(t *testing.T) {
 func TestPlaygroundCore_Read(t *testing.T) {
 	core := NewPlaygroundCore()
 
-	// Test reading non-existent key
+	// Test reading nonexistent key
 	key := uint64(123)
 	keyBytes := createKeyBytes(key)
 
 	result := core.Read(keyBytes)
-	require.Empty(t, result, "Expected empty result for non-existent key")
+	require.Empty(t, result, "Expected empty result for nonexistent key")
 
 	// Test reading existing key
 	value := "test value"

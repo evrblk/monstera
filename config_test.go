@@ -644,7 +644,7 @@ func TestClusterConfigValidate(t *testing.T) {
 		require.Contains(t, err.Error(), "duplicate replica id")
 	})
 
-	t.Run("replica assigned to non-existent node", func(t *testing.T) {
+	t.Run("replica assigned to nonexistent node", func(t *testing.T) {
 		config := &ClusterConfig{
 			Applications: []*Application{
 				{
@@ -1496,18 +1496,18 @@ func BenchmarkClusterConfigFindShard(b *testing.B) {
 	)
 
 	nodes := make([]*Node, numNodes)
-	for i := 0; i < numNodes; i++ {
+	for i := range numNodes {
 		nodes[i] = &Node{
 			Address: fmt.Sprintf("localhost:%d", 9000+i),
 		}
 	}
 
 	applications := make([]*Application, numApps)
-	for appIdx := 0; appIdx < numApps; appIdx++ {
+	for appIdx := range numApps {
 		appName := fmt.Sprintf("app_%02d", appIdx)
 		shards := make([]*Shard, shardsPerApp)
 		shardSize := keyspacePerApp / shardsPerApp
-		for shardIdx := 0; shardIdx < shardsPerApp; shardIdx++ {
+		for shardIdx := range shardsPerApp {
 			lower := uint32(shardIdx * shardSize)
 			upper := uint32((shardIdx+1)*shardSize - 1)
 			lowerBound := make([]byte, 4)
@@ -1516,7 +1516,7 @@ func BenchmarkClusterConfigFindShard(b *testing.B) {
 			binary.BigEndian.PutUint32(upperBound, upper)
 			// Assign replicas to 3 different nodes in round-robin
 			replicas := make([]*Replica, replication)
-			for r := 0; r < replication; r++ {
+			for r := range replication {
 				nodeIdx := (shardIdx*replication + r) % numNodes
 				replicas[r] = &Replica{
 					Id:          fmt.Sprintf("rpl_%02d_%04d_%d", appIdx, shardIdx, r),

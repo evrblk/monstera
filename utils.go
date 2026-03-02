@@ -2,7 +2,7 @@ package monstera
 
 import "encoding/binary"
 
-func ConcatBytes(items ...interface{}) []byte {
+func ConcatBytes(items ...any) []byte {
 	total := 0
 	for _, item := range items {
 		if item == nil {

@@ -66,7 +66,7 @@ func TestHraftBadgerStoreGetLog(t *testing.T) {
 
 	log := new(raft.Log)
 
-	// Should return an error on non-existent log
+	// Should return an error on nonexistent log
 	err := hraftStore.GetLog(1, log)
 	require.Error(t, err)
 	require.ErrorIs(t, err, raft.ErrLogNotFound)
@@ -376,7 +376,7 @@ func TestHraftBadgerStoreDeleteRangeNonExistent(t *testing.T) {
 	err := hraftStore.StoreLogs(logs)
 	require.NoError(t, err)
 
-	// Delete range that includes non-existent logs (2, 4)
+	// Delete range that includes nonexistent logs (2, 4)
 	err = hraftStore.DeleteRange(2, 4)
 	require.NoError(t, err)
 
@@ -435,7 +435,7 @@ func TestHraftBadgerStoreDeleteRangeInvalidRange(t *testing.T) {
 func TestHraftBadgerStoreSetAndGet(t *testing.T) {
 	hraftStore := NewHraftBadgerStore(NewBadgerInMemoryStore(), []byte("test"))
 
-	// Returns error on non-existent key
+	// Returns error on nonexistent key
 	_, err := hraftStore.Get([]byte("bad"))
 	require.Error(t, err)
 	require.Equal(t, "not found", err.Error())
@@ -455,7 +455,7 @@ func TestHraftBadgerStoreSetAndGet(t *testing.T) {
 func TestHraftBadgerStoreSetUint64AndGetUint64(t *testing.T) {
 	hraftStore := NewHraftBadgerStore(NewBadgerInMemoryStore(), []byte("test"))
 
-	// Returns error on non-existent key
+	// Returns error on nonexistent key
 	_, err := hraftStore.GetUint64([]byte("bad"))
 	require.Error(t, err)
 	require.Equal(t, "not found", err.Error())
@@ -536,7 +536,7 @@ func TestHraftBadgerStoreNewWithExistingData(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(42), counter)
 
-	// Verify that non-existent data still returns errors
+	// Verify that nonexistent data still returns errors
 	_, err = hraftStore2.Get([]byte("nonexistent"))
 	require.Error(t, err)
 	require.Equal(t, "not found", err.Error())

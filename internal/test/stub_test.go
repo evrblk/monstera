@@ -47,12 +47,12 @@ func TestPlaygroundApiMonsteraStub_ReadAndUpdate(t *testing.T) {
 	log.Println("Nodes are ready")
 
 	for i := 0; i < 100; i++ {
-		// Test reading non-existent key
+		// Test reading nonexistent key
 		key := rand.Uint64()
 
 		resp1, err := stub.Read(context.Background(), key)
 		require.NoError(t, err)
-		require.Empty(t, resp1, "Expected empty result for non-existent key")
+		require.Empty(t, resp1, "Expected empty result for nonexistent key")
 
 		// Update key
 		value := "test value"

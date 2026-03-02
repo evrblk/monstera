@@ -19,16 +19,17 @@ type PaginationToken struct {
 	Reverse bool
 }
 
-type ListPaginatedResult[T ptr[U], U any] struct {
-	Items                   []T
-	NextPaginationToken     *PaginationToken
-	PreviousPaginationToken *PaginationToken
-}
-
+// table helps working with a KV store without worrying about tableId prefixes.
 type table struct {
+	// keyLowerBound and keyUpperBound are used to define the range of keys that are stored in the table.
+	// These bounds are inclusive and do not contain the tableId prefix.
 	keyLowerBound []byte
 	keyUpperBound []byte
-	tableId       []byte
+
+	// tableId is a unique prefix that is used to isolate tables on a shared Badger store.
+	tableId []byte
+
+	// tableKeyRange is a range of keys that are stored in the table. It contains the tableId prefix.
 	tableKeyRange *monstera.KeyRange
 }
 
@@ -100,97 +101,13 @@ type rawListPaginatedResult struct {
 	PreviousPaginationToken *PaginationToken
 }
 
-func (t *table) listPaginated(txn *monstera.Txn, paginationToken *PaginationToken, limit int) (*rawListPaginatedResult, error) {
-	result := &rawListPaginatedResult{
-		Items: make([][]byte, 0),
-	}
-
-	if paginationToken == nil {
-		err := t.listInRange(txn, t.keyLowerBound, t.keyUpperBound, false, func(key []byte, value []byte) (bool, error) {
-			if len(result.Items) == limit {
-				result.NextPaginationToken = &PaginationToken{
-					Key:     key,
-					Reverse: false,
-				}
-				return false, nil
-			} else {
-				result.Items = append(result.Items, value)
-				return true, nil
-			}
-		})
-		if err != nil {
-			return nil, err
-		}
-	} else if !paginationToken.Reverse {
-		err := t.listInRange(txn, t.keyLowerBound, paginationToken.Key, true, func(key []byte, value []byte) (bool, error) {
-			if bytes.Equal(key, paginationToken.Key) {
-				return true, nil
-			}
-
-			result.PreviousPaginationToken = &PaginationToken{
-				Key:     key,
-				Reverse: true,
-			}
-			return false, nil
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		err = t.listInRange(txn, paginationToken.Key, t.keyUpperBound, false, func(key []byte, value []byte) (bool, error) {
-			if len(result.Items) == limit {
-				result.NextPaginationToken = &PaginationToken{
-					Key:     key,
-					Reverse: false,
-				}
-				return false, nil
-			} else {
-				result.Items = append(result.Items, value)
-				return true, nil
-			}
-		})
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		err := t.listInRange(txn, paginationToken.Key, t.keyUpperBound, false, func(key []byte, value []byte) (bool, error) {
-			if bytes.Equal(key, paginationToken.Key) {
-				return true, nil
-			}
-
-			result.NextPaginationToken = &PaginationToken{
-				Key:     key,
-				Reverse: false,
-			}
-			return false, nil
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		err = t.listInRange(txn, t.keyLowerBound, paginationToken.Key, true, func(key []byte, value []byte) (bool, error) {
-			if len(result.Items) == limit {
-				result.PreviousPaginationToken = &PaginationToken{
-					Key:     key,
-					Reverse: true,
-				}
-				return false, nil
-			} else {
-				result.Items = append(result.Items, value)
-				return true, nil
-			}
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return result, nil
-}
-
 func (t *table) listPrefixedPaginated(txn *monstera.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*rawListPaginatedResult, error) {
 	result := &rawListPaginatedResult{
 		Items: make([][]byte, 0),
+	}
+
+	if len(prefix) == 0 {
+		prefix = t.keyLowerBound
 	}
 
 	if paginationToken == nil {
@@ -302,22 +219,20 @@ func (t *table) GetTableKeyRange() monstera.KeyRange {
 	return *t.tableKeyRange
 }
 
-// CompositeKeyTable is table with a composite key: primary key PK and secondary key SK
+// ProtobufTable is table with a composite key: primary key PK and secondary key SK
 // and generic values (of proto.Message type).
 // Get, Set, Delete operations use PK+SK to refer records. List operation uses PK as a prefix.
-type CompositeKeyTable[T ptr[U], U any] struct {
+type ProtobufTable[T ptr[U], U any] struct {
 	table
 }
 
-func NewCompositeKeyTable[T ptr[U], U any](tableId []byte, keyLowerBound []byte, keyUpperBound []byte) *CompositeKeyTable[T, U] {
-	return &CompositeKeyTable[T, U]{
+func NewProtobufTable[T ptr[U], U any](tableId []byte, keyLowerBound []byte, keyUpperBound []byte) *ProtobufTable[T, U] {
+	return &ProtobufTable[T, U]{
 		table: newTable(tableId, keyLowerBound, keyUpperBound),
 	}
 }
 
-func (t *CompositeKeyTable[T, U]) Get(txn *monstera.Txn, pk []byte, sk []byte) (T, error) {
-	key := monstera.ConcatBytes(pk, sk)
-
+func (t *ProtobufTable[T, U]) Get(txn *monstera.Txn, key []byte) (T, error) {
 	value, err := t.get(txn, key)
 	if err != nil {
 		return nil, err
@@ -330,9 +245,7 @@ func (t *CompositeKeyTable[T, U]) Get(txn *monstera.Txn, pk []byte, sk []byte) (
 	return &message, nil
 }
 
-func (t *CompositeKeyTable[T, U]) Set(txn *monstera.Txn, pk []byte, sk []byte, message T) error {
-	key := monstera.ConcatBytes(pk, sk)
-
+func (t *ProtobufTable[T, U]) Set(txn *monstera.Txn, key []byte, message T) error {
 	value, err := proto.Marshal(message)
 	if err != nil {
 		return err
@@ -341,14 +254,13 @@ func (t *CompositeKeyTable[T, U]) Set(txn *monstera.Txn, pk []byte, sk []byte, m
 	return t.set(txn, key, value)
 }
 
-func (t *CompositeKeyTable[T, U]) Delete(txn *monstera.Txn, pk []byte, sk []byte) error {
-	key := monstera.ConcatBytes(pk, sk)
+func (t *ProtobufTable[T, U]) Delete(txn *monstera.Txn, key []byte) error {
 	return t.delete(txn, key)
 }
 
-func (t *CompositeKeyTable[T, U]) ListAll(txn *monstera.Txn, pk []byte) ([]T, error) {
+func (t *ProtobufTable[T, U]) ListAll(txn *monstera.Txn, prefix []byte) ([]T, error) {
 	result := make([]T, 0)
-	err := t.eachPrefix(txn, pk, func(key []byte, value []byte) (bool, error) {
+	err := t.eachPrefix(txn, prefix, func(key []byte, value []byte) (bool, error) {
 		var message U
 		if err := proto.Unmarshal(value, T(&message)); err != nil {
 			return false, err
@@ -364,13 +276,30 @@ func (t *CompositeKeyTable[T, U]) ListAll(txn *monstera.Txn, pk []byte) ([]T, er
 	return result, nil
 }
 
-func (t *CompositeKeyTable[T, U]) ListPaginated(txn *monstera.Txn, pk []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedResult[T, U], error) {
-	rawResult, err := t.listPrefixedPaginated(txn, pk, paginationToken, limit)
+func (t *ProtobufTable[T, U]) ListInRange(txn *monstera.Txn, lowerBound []byte, upperBound []byte, reverse bool, fn func(message T) (bool, error)) error {
+	return t.listInRange(txn, lowerBound, upperBound, reverse, func(key []byte, value []byte) (bool, error) {
+		var message U
+		if err := proto.Unmarshal(value, T(&message)); err != nil {
+			return false, err
+		}
+
+		return fn(&message)
+	})
+}
+
+type ListPaginatedProtobufResult[T ptr[U], U any] struct {
+	Items                   []T
+	NextPaginationToken     *PaginationToken
+	PreviousPaginationToken *PaginationToken
+}
+
+func (t *ProtobufTable[T, U]) ListPaginated(txn *monstera.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedProtobufResult[T, U], error) {
+	rawResult, err := t.listPrefixedPaginated(txn, prefix, paginationToken, limit)
 	if err != nil {
 		return nil, err
 	}
 
-	result := &ListPaginatedResult[T, U]{
+	result := &ListPaginatedProtobufResult[T, U]{
 		Items:                   make([]T, len(rawResult.Items)),
 		NextPaginationToken:     rawResult.NextPaginationToken,
 		PreviousPaginationToken: rawResult.PreviousPaginationToken,
@@ -387,137 +316,214 @@ func (t *CompositeKeyTable[T, U]) ListPaginated(txn *monstera.Txn, pk []byte, pa
 	return result, nil
 }
 
-// SimpleKeyTable is table with a simple key of primary key PK only and generic values (of proto.Message type).
-// Get, Set, Delete operations use PK. List operation lists through ALL keys. ListInRange operation lists only
-// between lowerBound and upperBound.
-type SimpleKeyTable[T ptr[U], U any] struct {
+// StringTable is table with a composite key: primary key PK and secondary key SK
+// and string values.
+// Get, Set, Delete operations use PK+SK to refer records. List operation uses PK as a prefix.
+type StringTable struct {
 	table
 }
 
-func NewSimpleKeyTable[T ptr[U], U any](tableId []byte, keyLowerBound []byte, keyUpperBound []byte) *SimpleKeyTable[T, U] {
-	return &SimpleKeyTable[T, U]{
+func NewStringTable(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) *StringTable {
+	return &StringTable{
 		table: newTable(tableId, keyLowerBound, keyUpperBound),
 	}
 }
 
-func (t *SimpleKeyTable[T, U]) Get(txn *monstera.Txn, pk []byte) (T, error) {
-	value, err := t.get(txn, pk)
+func (t *StringTable) Get(txn *monstera.Txn, key []byte) (string, error) {
+	value, err := t.get(txn, key)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	var message U
-	if err := proto.Unmarshal(value, T(&message)); err != nil {
-		return nil, err
-	}
-	return &message, nil
+	return string(value), nil
 }
 
-func (t *SimpleKeyTable[T, U]) Set(txn *monstera.Txn, pk []byte, message T) error {
-	value, err := proto.Marshal(message)
-	if err != nil {
-		return err
-	}
-
-	return t.set(txn, pk, value)
+func (t *StringTable) Set(txn *monstera.Txn, key []byte, value string) error {
+	return t.set(txn, key, []byte(value))
 }
 
-func (t *SimpleKeyTable[T, U]) Delete(txn *monstera.Txn, pk []byte) error {
-	return t.delete(txn, pk)
+func (t *StringTable) Delete(txn *monstera.Txn, key []byte) error {
+	return t.delete(txn, key)
 }
 
-func (t *SimpleKeyTable[T, U]) ListAll(txn *monstera.Txn) ([]T, error) {
-	result := make([]T, 0)
-	err := t.listInRange(txn, t.keyLowerBound, t.keyUpperBound, false, func(key []byte, value []byte) (bool, error) {
-		var message U
-		if err := proto.Unmarshal(value, T(&message)); err != nil {
-			return false, err
-		}
-		result = append(result, T(&message))
+func (t *StringTable) ListAll(txn *monstera.Txn, prefix []byte) ([]string, error) {
+	result := make([]string, 0)
+	err := t.eachPrefix(txn, prefix, func(key []byte, value []byte) (bool, error) {
+		result = append(result, string(value))
 		return true, nil
 	})
-	return result, err
-}
-
-func (t *SimpleKeyTable[T, U]) ListPaginated(txn *monstera.Txn, paginationToken *PaginationToken, limit int) (*ListPaginatedResult[T, U], error) {
-	rawResult, err := t.listPaginated(txn, paginationToken, limit)
 	if err != nil {
 		return nil, err
-	}
-
-	result := &ListPaginatedResult[T, U]{
-		Items:                   make([]T, len(rawResult.Items)),
-		NextPaginationToken:     rawResult.NextPaginationToken,
-		PreviousPaginationToken: rawResult.PreviousPaginationToken,
-	}
-
-	for i, item := range rawResult.Items {
-		var message U
-		if err := proto.Unmarshal(item, T(&message)); err != nil {
-			return nil, err
-		}
-		result.Items[i] = T(&message)
 	}
 
 	return result, nil
 }
 
-func (t *SimpleKeyTable[T, U]) ListInRange(txn *monstera.Txn, lowerBound []byte, upperBound []byte, reverse bool, fn func(message T) (bool, error)) error {
-	return t.listInRange(txn, lowerBound, upperBound, reverse, eachPrefixProtoFunc(fn))
+func (t *StringTable) ListInRange(txn *monstera.Txn, lowerBound []byte, upperBound []byte, reverse bool, fn func(value string) (bool, error)) error {
+	return t.listInRange(txn, lowerBound, upperBound, reverse, func(key []byte, value []byte) (bool, error) {
+		return fn(string(value))
+	})
 }
 
-// UniqueUint64Index stores unique keys and returns uint64 as values.
-type UniqueUint64Index struct {
+type ListPaginatedStringResult struct {
+	Items                   []string
+	NextPaginationToken     *PaginationToken
+	PreviousPaginationToken *PaginationToken
+}
+
+func (t *StringTable) ListPaginated(txn *monstera.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedStringResult, error) {
+	rawResult, err := t.listPrefixedPaginated(txn, prefix, paginationToken, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &ListPaginatedStringResult{
+		Items:                   make([]string, len(rawResult.Items)),
+		NextPaginationToken:     rawResult.NextPaginationToken,
+		PreviousPaginationToken: rawResult.PreviousPaginationToken,
+	}
+
+	for i, item := range rawResult.Items {
+		result.Items[i] = string(item)
+	}
+
+	return result, nil
+}
+
+// Uint64Table is table with a composite key: primary key PK and secondary key SK
+// and uint64 values.
+// Get, Set, Delete operations use PK+SK to refer records. List operation uses PK as a prefix.
+type Uint64Table struct {
 	table
 }
 
-func NewUniqueUint64Index(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) *UniqueUint64Index {
-	return &UniqueUint64Index{
+func NewUint64Table(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) *Uint64Table {
+	return &Uint64Table{
 		table: newTable(tableId, keyLowerBound, keyUpperBound),
 	}
 }
 
-func (i *UniqueUint64Index) Get(txn *monstera.Txn, pk []byte) (uint64, error) {
-	value, err := i.get(txn, pk)
+func (t *Uint64Table) Get(txn *monstera.Txn, key []byte) (uint64, error) {
+	value, err := t.get(txn, key)
 	if err != nil {
 		return 0, err
 	}
+
 	return bytesToUint64(value), nil
 }
 
-func (i *UniqueUint64Index) Set(txn *monstera.Txn, pk []byte, value uint64) error {
-	return i.set(txn, pk, uint64ToBytes(value))
+func (t *Uint64Table) Set(txn *monstera.Txn, key []byte, value uint64) error {
+	return t.set(txn, key, uint64ToBytes(value))
 }
 
-func (i *UniqueUint64Index) Delete(txn *monstera.Txn, pk []byte) error {
-	return i.delete(txn, pk)
+func (t *Uint64Table) Delete(txn *monstera.Txn, key []byte) error {
+	return t.delete(txn, key)
 }
 
-// UniqueUint32Index stores unique keys and returns uint64 as values.
-type UniqueUint32Index struct {
+func (t *Uint64Table) ListAll(txn *monstera.Txn, prefix []byte) ([]uint64, error) {
+	result := make([]uint64, 0)
+	err := t.eachPrefix(txn, prefix, func(key []byte, value []byte) (bool, error) {
+		result = append(result, bytesToUint64(value))
+		return true, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+type ListPaginatedUint64Result struct {
+	Items                   []uint64
+	NextPaginationToken     *PaginationToken
+	PreviousPaginationToken *PaginationToken
+}
+
+func (t *Uint64Table) ListPaginated(txn *monstera.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedUint64Result, error) {
+	rawResult, err := t.listPrefixedPaginated(txn, prefix, paginationToken, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &ListPaginatedUint64Result{
+		Items:                   make([]uint64, len(rawResult.Items)),
+		NextPaginationToken:     rawResult.NextPaginationToken,
+		PreviousPaginationToken: rawResult.PreviousPaginationToken,
+	}
+
+	for i, item := range rawResult.Items {
+		result.Items[i] = bytesToUint64(item)
+	}
+
+	return result, nil
+}
+
+// Uint32Table is table with a composite key: primary key PK and secondary key SK
+// and uint32 values.
+// Get, Set, Delete operations use PK+SK to refer records. List operation uses PK as a prefix.
+type Uint32Table struct {
 	table
 }
 
-func NewUniqueUint32Index(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) *UniqueUint32Index {
-	return &UniqueUint32Index{
+func NewUint32Table(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) *Uint32Table {
+	return &Uint32Table{
 		table: newTable(tableId, keyLowerBound, keyUpperBound),
 	}
 }
 
-func (i *UniqueUint32Index) Get(txn *monstera.Txn, pk []byte) (uint32, error) {
-	value, err := i.get(txn, pk)
+func (t *Uint32Table) Get(txn *monstera.Txn, key []byte) (uint32, error) {
+	value, err := t.get(txn, key)
 	if err != nil {
 		return 0, err
 	}
+
 	return bytesToUint32(value), nil
 }
 
-func (i *UniqueUint32Index) Set(txn *monstera.Txn, pk []byte, value uint32) error {
-	return i.set(txn, pk, uint32ToBytes(value))
+func (t *Uint32Table) Set(txn *monstera.Txn, key []byte, value uint32) error {
+	return t.set(txn, key, uint32ToBytes(value))
 }
 
-func (i *UniqueUint32Index) Delete(txn *monstera.Txn, pk []byte) error {
-	return i.delete(txn, pk)
+func (t *Uint32Table) Delete(txn *monstera.Txn, key []byte) error {
+	return t.delete(txn, key)
+}
+
+func (t *Uint32Table) ListAll(txn *monstera.Txn, prefix []byte) ([]uint32, error) {
+	result := make([]uint32, 0)
+	err := t.eachPrefix(txn, prefix, func(key []byte, value []byte) (bool, error) {
+		result = append(result, bytesToUint32(value))
+		return true, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+type ListPaginatedUint32Result struct {
+	Items                   []uint32
+	NextPaginationToken     *PaginationToken
+	PreviousPaginationToken *PaginationToken
+}
+
+func (t *Uint32Table) ListPaginated(txn *monstera.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedUint32Result, error) {
+	rawResult, err := t.listPrefixedPaginated(txn, prefix, paginationToken, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &ListPaginatedUint32Result{
+		Items:                   make([]uint32, len(rawResult.Items)),
+		NextPaginationToken:     rawResult.NextPaginationToken,
+		PreviousPaginationToken: rawResult.PreviousPaginationToken,
+	}
+
+	for i, item := range rawResult.Items {
+		result.Items[i] = bytesToUint32(item)
+	}
+
+	return result, nil
 }
 
 // OneToManyUint64Index stores multiple items (uint64) per single key PK (arbitrary []byte).
@@ -549,45 +555,6 @@ func (i *OneToManyUint64Index) Delete(txn *monstera.Txn, pk []byte, item uint64)
 
 func (i *OneToManyUint64Index) NotEmpty(txn *monstera.Txn, pk []byte) (bool, error) {
 	return i.prefixExists(txn, pk)
-}
-
-// CompositeKeyTableUint64 is table with a composite key: primary key PK and secondary key SK
-// and uint64 values.
-// Get, Set, Delete operations use PK+SK to refer records. List operation uses PK as a prefix.
-type CompositeKeyTableUint64 struct {
-	table
-}
-
-func NewCompositeKeyTableUint64(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) *CompositeKeyTableUint64 {
-	return &CompositeKeyTableUint64{
-		table: newTable(tableId, keyLowerBound, keyUpperBound),
-	}
-}
-
-func (t *CompositeKeyTableUint64) Get(txn *monstera.Txn, pk []byte, sk []byte) (uint64, error) {
-	key := monstera.ConcatBytes(pk, sk)
-
-	value, err := t.get(txn, key)
-	if err != nil {
-		return 0, err
-	}
-	return bytesToUint64(value), nil
-}
-
-func (t *CompositeKeyTableUint64) Set(txn *monstera.Txn, pk []byte, sk []byte, value uint64) error {
-	key := monstera.ConcatBytes(pk, sk)
-	return t.set(txn, key, uint64ToBytes(value))
-}
-
-func (t *CompositeKeyTableUint64) Delete(txn *monstera.Txn, pk []byte, sk []byte) error {
-	key := monstera.ConcatBytes(pk, sk)
-	return t.delete(txn, key)
-}
-
-func (t *CompositeKeyTableUint64) List(txn *monstera.Txn, pk []byte, fn func(value uint64) (bool, error)) error {
-	return t.eachPrefix(txn, pk, func(key []byte, value []byte) (bool, error) {
-		return fn(bytesToUint64(value))
-	})
 }
 
 // OneToManySortedIndex stores multiple items (arbitrary []byte) per single key PK (arbitrary []byte).
@@ -655,18 +622,19 @@ func (i *SortedIndex) GetTableKeyRange() monstera.KeyRange {
 	return *i.tableKeyRange
 }
 
-func isWithingRange(key []byte, lowerBound []byte, upperBound []byte) bool {
+// isWithinRange checks if a key is within a given range, both sides inclusive
+func isWithinRange(key []byte, lowerBound []byte, upperBound []byte) bool {
 	return bytes.Compare(key[:len(upperBound)], upperBound) <= 0 &&
 		bytes.Compare(key[:len(lowerBound)], lowerBound) >= 0
 }
 
 func panicIfOutOfRange(key []byte, lowerBound []byte, upperBound []byte) {
-	if !isWithingRange(key, lowerBound, upperBound) {
+	if !isWithinRange(key, lowerBound, upperBound) {
 		panic("key is out of range!")
 	}
 }
 
-// Converts bytes to an integer
+// Converts bytes to uint64
 func bytesToUint64(b []byte) uint64 {
 	return binary.BigEndian.Uint64(b)
 }
@@ -678,22 +646,14 @@ func uint64ToBytes(u uint64) []byte {
 	return buf
 }
 
+// Converts bytes to uint32
 func bytesToUint32(b []byte) uint32 {
 	return binary.BigEndian.Uint32(b)
 }
 
+// Converts uint32 to a byte slice
 func uint32ToBytes(u uint32) []byte {
 	buf := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf, u)
 	return buf
-}
-
-func eachPrefixProtoFunc[T ptr[U], U any](fn func(message T) (bool, error)) func(key []byte, value []byte) (bool, error) {
-	return func(key []byte, value []byte) (bool, error) {
-		var message U
-		if err := proto.Unmarshal(value, T(&message)); err != nil {
-			return false, err
-		}
-		return fn(&message)
-	}
 }

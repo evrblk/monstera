@@ -37,7 +37,7 @@ func TestBadgerStoreView(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []byte("value2"), value)
 
-	// Test Get with non-existent key
+	// Test Get with nonexistent key
 	value, err = viewTxn.Get([]byte("nonexistent"))
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrNotFound)
@@ -421,7 +421,7 @@ func TestBadgerStoreDeleteNonExistent(t *testing.T) {
 	txn := store.Update()
 	defer txn.Discard()
 
-	// Delete non-existent key should not error
+	// Delete nonexistent key should not error
 	err := txn.Delete([]byte("nonexistent"))
 	require.NoError(t, err)
 
@@ -436,9 +436,9 @@ func TestBadgerStoreFlatten(t *testing.T) {
 
 	// Set up some data
 	txn := store.Update()
-	for i := 0; i < 100; i++ {
-		key := []byte(fmt.Sprintf("key%d", i))
-		value := []byte(fmt.Sprintf("value%d", i))
+	for i := range 100 {
+		key := fmt.Appendf(nil, "key%d", i)
+		value := fmt.Appendf(nil, "value%d", i)
 		err := txn.Set(key, value)
 		require.NoError(t, err)
 	}

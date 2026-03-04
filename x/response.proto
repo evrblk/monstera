@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-option go_package = "github.com/evrblk/monstera/x;monsterax";
-
 package com.evrblk.monstera.monsterax;
+
+option go_package = "github.com/evrblk/monstera/x;monsterax";
 
 message Error {
   ErrorCode code = 1;
@@ -25,4 +25,9 @@ enum ErrorCode {
   RESOURCE_EXHAUSTED = 6;
   UNIMPLEMENTED = 7;
   INTERNAL = 8;
+}
+
+message Response {
+  bytes data = 1;
+  Error error = 2;
 }

@@ -86,12 +86,12 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 					Error(),
 				),
 			).BlockFunc(func(g *Group) {
-				g.Id("readRequest").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadRequestProto).Values(
+				g.Id("coreRequest").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadRequestProto).Values(
 					Id("Request").Op(":").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadRequestProto+"_"+read.Name+"Request").Values(
 						Id(read.Name + "Request").Op(":").Id("request"),
 					),
 				)
-				g.List(Id("requestBytes"), Err()).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(Id("readRequest"))
+				g.List(Id("requestBytes"), Err()).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(Id("coreRequest"))
 				g.If(
 					Err().Op("!=").Nil(),
 				).Block(
@@ -137,8 +137,21 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 				)
 				g.Line()
 
-				g.Id("readResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadResponseProto).Values()
-				g.Err().Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("readResponse"))
+				g.Id("wrappedResponse").Op(":=").Op("&").Qual("github.com/evrblk/monstera/x", "Response").Values()
+				g.Id("coreResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadResponseProto).Values()
+				g.Err().Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("wrappedResponse"))
+				g.If(
+					Err().Op("!=").Nil(),
+				).Block(
+					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
+						Qual("github.com/evrblk/monstera/x", "Internal"),
+						Lit("failed to unmarshal response"),
+						Map(String()).String().Values(
+							Lit("error").Op(":").Err().Dot("Error()"),
+						),
+					)),
+				)
+				g.Err().Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("wrappedResponse").Dot("Data"), Id("coreResponse"))
 				g.If(
 					Err().Op("!=").Nil(),
 				).Block(
@@ -152,19 +165,19 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 				)
 				g.Line()
 
-				g.List(Id("response"), Id("ok")).Op(":=").Id("readResponse").Dot("Response").Assert(
+				g.List(Id("response"), Id("ok")).Op(":=").Id("coreResponse").Dot("Response").Assert(
 					Op("*").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadResponseProto+"_"+read.Name+"Response"),
 				)
 				g.If(
 					Id("ok"),
 				).Block(
-					Return(Id("response").Dot(read.Name+"Response"), Id("nilifyIfEmpty").Call(Id("readResponse").Dot("Error"))),
+					Return(Id("response").Dot(read.Name+"Response"), Id("nilifyIfEmpty").Call(Id("wrappedResponse").Dot("Error"))),
 				).Else().Block(
 					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
 						Qual("github.com/evrblk/monstera/x", "Internal"),
 						Lit("invalid response type"),
 						Map(String()).String().Values(
-							Lit("response").Op(":").Id("readResponse").Dot("String()"),
+							Lit("response").Op(":").Id("coreResponse").Dot("String()"),
 						),
 					)),
 				)
@@ -185,12 +198,12 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 					Error(),
 				),
 			).BlockFunc(func(g *Group) {
-				g.Id("updateRequest").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateRequestProto).Values(
+				g.Id("coreRequest").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateRequestProto).Values(
 					Id("Request").Op(":").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateRequestProto+"_"+update.Name+"Request").Values(
 						Id(update.Name + "Request").Op(":").Id("request"),
 					),
 				)
-				g.List(Id("requestBytes"), Err()).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(Id("updateRequest"))
+				g.List(Id("requestBytes"), Err()).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(Id("coreRequest"))
 				g.If(
 					Err().Op("!=").Nil(),
 				).Block(
@@ -234,8 +247,21 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 				)
 				g.Line()
 
-				g.Id("updateResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateResponseProto).Values()
-				g.Err().Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("updateResponse"))
+				g.Id("wrappedResponse").Op(":=").Op("&").Qual("github.com/evrblk/monstera/x", "Response").Values()
+				g.Id("coreResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateResponseProto).Values()
+				g.Err().Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("wrappedResponse"))
+				g.If(
+					Err().Op("!=").Nil(),
+				).Block(
+					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
+						Qual("github.com/evrblk/monstera/x", "Internal"),
+						Lit("failed to unmarshal response"),
+						Map(String()).String().Values(
+							Lit("error").Op(":").Err().Dot("Error()"),
+						),
+					)),
+				)
+				g.Err().Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("wrappedResponse").Dot("Data"), Id("coreResponse"))
 				g.If(
 					Err().Op("!=").Nil(),
 				).Block(
@@ -249,19 +275,19 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 				)
 				g.Line()
 
-				g.List(Id("response"), Id("ok")).Op(":=").Id("updateResponse").Dot("Response").Assert(
+				g.List(Id("response"), Id("ok")).Op(":=").Id("coreResponse").Dot("Response").Assert(
 					Op("*").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateResponseProto+"_"+update.Name+"Response"),
 				)
 				g.If(
 					Id("ok"),
 				).Block(
-					Return(Id("response").Dot(update.Name+"Response"), Id("nilifyIfEmpty").Call(Id("updateResponse").Dot("Error"))),
+					Return(Id("response").Dot(update.Name+"Response"), Id("nilifyIfEmpty").Call(Id("wrappedResponse").Dot("Error"))),
 				).Else().Block(
 					Return(Id("nil"), Qual("github.com/evrblk/monstera/x", "NewErrorWithContext").Call(
 						Qual("github.com/evrblk/monstera/x", "Internal"),
 						Lit("invalid response type"),
 						Map(String()).String().Values(
-							Lit("response").Op(":").Id("updateResponse").Dot("String()"),
+							Lit("response").Op(":").Id("coreResponse").Dot("String()"),
 						),
 					)),
 				)

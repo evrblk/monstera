@@ -2,16 +2,17 @@
 // versions:
 // 	protoc-gen-go v1.36.9
 // 	protoc        v6.33.1
-// source: x/errors.proto
+// source: x/response.proto
 
 package monsterax
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -72,11 +73,11 @@ func (x ErrorCode) String() string {
 }
 
 func (ErrorCode) Descriptor() protoreflect.EnumDescriptor {
-	return file_x_errors_proto_enumTypes[0].Descriptor()
+	return file_x_response_proto_enumTypes[0].Descriptor()
 }
 
 func (ErrorCode) Type() protoreflect.EnumType {
-	return &file_x_errors_proto_enumTypes[0]
+	return &file_x_response_proto_enumTypes[0]
 }
 
 func (x ErrorCode) Number() protoreflect.EnumNumber {
@@ -85,7 +86,7 @@ func (x ErrorCode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ErrorCode.Descriptor instead.
 func (ErrorCode) EnumDescriptor() ([]byte, []int) {
-	return file_x_errors_proto_rawDescGZIP(), []int{0}
+	return file_x_response_proto_rawDescGZIP(), []int{0}
 }
 
 type Error struct {
@@ -99,7 +100,7 @@ type Error struct {
 
 func (x *Error) Reset() {
 	*x = Error{}
-	mi := &file_x_errors_proto_msgTypes[0]
+	mi := &file_x_response_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -111,7 +112,7 @@ func (x *Error) String() string {
 func (*Error) ProtoMessage() {}
 
 func (x *Error) ProtoReflect() protoreflect.Message {
-	mi := &file_x_errors_proto_msgTypes[0]
+	mi := &file_x_response_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -124,7 +125,7 @@ func (x *Error) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Error.ProtoReflect.Descriptor instead.
 func (*Error) Descriptor() ([]byte, []int) {
-	return file_x_errors_proto_rawDescGZIP(), []int{0}
+	return file_x_response_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *Error) GetCode() ErrorCode {
@@ -158,7 +159,7 @@ type ErrorContext struct {
 
 func (x *ErrorContext) Reset() {
 	*x = ErrorContext{}
-	mi := &file_x_errors_proto_msgTypes[1]
+	mi := &file_x_response_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -170,7 +171,7 @@ func (x *ErrorContext) String() string {
 func (*ErrorContext) ProtoMessage() {}
 
 func (x *ErrorContext) ProtoReflect() protoreflect.Message {
-	mi := &file_x_errors_proto_msgTypes[1]
+	mi := &file_x_response_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -183,7 +184,7 @@ func (x *ErrorContext) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorContext.ProtoReflect.Descriptor instead.
 func (*ErrorContext) Descriptor() ([]byte, []int) {
-	return file_x_errors_proto_rawDescGZIP(), []int{1}
+	return file_x_response_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *ErrorContext) GetKey() string {
@@ -200,18 +201,73 @@ func (x *ErrorContext) GetValue() string {
 	return ""
 }
 
-var File_x_errors_proto protoreflect.FileDescriptor
+type Response struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	Error         *Error                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
 
-const file_x_errors_proto_rawDesc = "" +
+func (x *Response) Reset() {
+	*x = Response{}
+	mi := &file_x_response_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Response) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Response) ProtoMessage() {}
+
+func (x *Response) ProtoReflect() protoreflect.Message {
+	mi := &file_x_response_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Response.ProtoReflect.Descriptor instead.
+func (*Response) Descriptor() ([]byte, []int) {
+	return file_x_response_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Response) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *Response) GetError() *Error {
+	if x != nil {
+		return x.Error
+	}
+	return nil
+}
+
+var File_x_response_proto protoreflect.FileDescriptor
+
+const file_x_response_proto_rawDesc = "" +
 	"\n" +
-	"\x0ex/errors.proto\x12\x1dcom.evrblk.monstera.monsterax\"\xa6\x01\n" +
+	"\x10x/response.proto\x12\x1dcom.evrblk.monstera.monsterax\"\xa6\x01\n" +
 	"\x05Error\x12<\n" +
 	"\x04code\x18\x01 \x01(\x0e2(.com.evrblk.monstera.monsterax.ErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12E\n" +
 	"\acontext\x18\x03 \x03(\v2+.com.evrblk.monstera.monsterax.ErrorContextR\acontext\"6\n" +
 	"\fErrorContext\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value*\xa9\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"Z\n" +
+	"\bResponse\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\x12:\n" +
+	"\x05error\x18\x02 \x01(\v2$.com.evrblk.monstera.monsterax.ErrorR\x05error*\xa9\x01\n" +
 	"\tErrorCode\x12\v\n" +
 	"\aINVALID\x10\x00\x12\x06\n" +
 	"\x02OK\x10\x01\x12\x14\n" +
@@ -224,55 +280,57 @@ const file_x_errors_proto_rawDesc = "" +
 	"\bINTERNAL\x10\bB(Z&github.com/evrblk/monstera/x;monsteraxb\x06proto3"
 
 var (
-	file_x_errors_proto_rawDescOnce sync.Once
-	file_x_errors_proto_rawDescData []byte
+	file_x_response_proto_rawDescOnce sync.Once
+	file_x_response_proto_rawDescData []byte
 )
 
-func file_x_errors_proto_rawDescGZIP() []byte {
-	file_x_errors_proto_rawDescOnce.Do(func() {
-		file_x_errors_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_x_errors_proto_rawDesc), len(file_x_errors_proto_rawDesc)))
+func file_x_response_proto_rawDescGZIP() []byte {
+	file_x_response_proto_rawDescOnce.Do(func() {
+		file_x_response_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_x_response_proto_rawDesc), len(file_x_response_proto_rawDesc)))
 	})
-	return file_x_errors_proto_rawDescData
+	return file_x_response_proto_rawDescData
 }
 
-var file_x_errors_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_x_errors_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_x_errors_proto_goTypes = []any{
+var file_x_response_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_x_response_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_x_response_proto_goTypes = []any{
 	(ErrorCode)(0),       // 0: com.evrblk.monstera.monsterax.ErrorCode
 	(*Error)(nil),        // 1: com.evrblk.monstera.monsterax.Error
 	(*ErrorContext)(nil), // 2: com.evrblk.monstera.monsterax.ErrorContext
+	(*Response)(nil),     // 3: com.evrblk.monstera.monsterax.Response
 }
-var file_x_errors_proto_depIdxs = []int32{
+var file_x_response_proto_depIdxs = []int32{
 	0, // 0: com.evrblk.monstera.monsterax.Error.code:type_name -> com.evrblk.monstera.monsterax.ErrorCode
 	2, // 1: com.evrblk.monstera.monsterax.Error.context:type_name -> com.evrblk.monstera.monsterax.ErrorContext
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	1, // 2: com.evrblk.monstera.monsterax.Response.error:type_name -> com.evrblk.monstera.monsterax.Error
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
-func init() { file_x_errors_proto_init() }
-func file_x_errors_proto_init() {
-	if File_x_errors_proto != nil {
+func init() { file_x_response_proto_init() }
+func file_x_response_proto_init() {
+	if File_x_response_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_x_errors_proto_rawDesc), len(file_x_errors_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_x_response_proto_rawDesc), len(file_x_response_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_x_errors_proto_goTypes,
-		DependencyIndexes: file_x_errors_proto_depIdxs,
-		EnumInfos:         file_x_errors_proto_enumTypes,
-		MessageInfos:      file_x_errors_proto_msgTypes,
+		GoTypes:           file_x_response_proto_goTypes,
+		DependencyIndexes: file_x_response_proto_depIdxs,
+		EnumInfos:         file_x_response_proto_enumTypes,
+		MessageInfos:      file_x_response_proto_msgTypes,
 	}.Build()
-	File_x_errors_proto = out.File
-	file_x_errors_proto_goTypes = nil
-	file_x_errors_proto_depIdxs = nil
+	File_x_response_proto = out.File
+	file_x_response_proto_goTypes = nil
+	file_x_response_proto_depIdxs = nil
 }

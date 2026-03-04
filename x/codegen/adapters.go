@@ -123,13 +123,14 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 		Index().Byte(),
 	).BlockFunc(func(g *Group) {
 		if len(core.Updates) > 0 {
-			g.Id("updateRequest").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateRequestProto).Values()
-			g.Id("updateResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateResponseProto).Values()
+			g.Id("wrappedResponse").Op(":=").Op("&").Qual("github.com/evrblk/monstera/x", "Response").Values()
+			g.Id("coreRequest").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateRequestProto).Values()
+			g.Id("coreResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateResponseProto).Values()
 			g.Line()
 
 			g.Err().Op(":=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(
 				Id("request"),
-				Id("updateRequest"),
+				Id("coreRequest"),
 			)
 			g.If(
 				Err().Op("!=").Nil(),
@@ -142,7 +143,7 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 			g.Line()
 
 			g.Switch(
-				Id("req").Op(":=").Id("updateRequest.Request").Assert(Type()),
+				Id("req").Op(":=").Id("coreRequest.Request").Assert(Type()),
 			).BlockFunc(func(g *Group) {
 				for _, update := range core.Updates {
 					g.Case(
@@ -160,10 +161,10 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 							),
 							Id("t1"),
 						),
-						Id("updateResponse").Dot("Response").Op("=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateResponseProto+"_"+update.Name+"Response").Values(
+						Id("coreResponse").Dot("Response").Op("=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateResponseProto+"_"+update.Name+"Response").Values(
 							Id(update.Name+"Response").Op(":").Id("r"),
 						),
-						Id("updateResponse").Dot("Error").Op("=").Qual("github.com/evrblk/monstera/x", "WrapError").Call(
+						Id("wrappedResponse").Dot("Error").Op("=").Qual("github.com/evrblk/monstera/x", "WrapError").Call(
 							Err(),
 						),
 					)
@@ -172,12 +173,25 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 					Panic(Lit("no matching handlers")),
 				)
 			})
+			g.Line()
 
+			g.List(
+				Id("data"),
+				Err(),
+			).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(
+				Id("coreResponse"),
+			)
+			g.If(
+				Err().Op("!=").Nil(),
+			).Block(
+				Panic(Err()),
+			)
+			g.Id("wrappedResponse").Dot("Data").Op("=").Id("data")
 			g.List(
 				Id("response"),
 				Err(),
 			).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(
-				Id("updateResponse"),
+				Id("wrappedResponse"),
 			)
 			g.If(
 				Err().Op("!=").Nil(),
@@ -202,13 +216,14 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 		Index().Byte(),
 	).BlockFunc(func(g *Group) {
 		if len(core.Reads) > 0 {
-			g.Id("readRequest").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadRequestProto).Values()
-			g.Id("readResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadResponseProto).Values()
+			g.Id("wrappedResponse").Op(":=").Op("&").Qual("github.com/evrblk/monstera/x", "Response").Values()
+			g.Id("coreRequest").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadRequestProto).Values()
+			g.Id("coreResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadResponseProto).Values()
 			g.Line()
 
 			g.Err().Op(":=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(
 				Id("request"),
-				Id("readRequest"),
+				Id("coreRequest"),
 			)
 			g.If(
 				Err().Op("!=").Nil(),
@@ -221,7 +236,7 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 			g.Line()
 
 			g.Switch(
-				Id("req").Op(":=").Id("readRequest.Request").Assert(Type()),
+				Id("req").Op(":=").Id("coreRequest.Request").Assert(Type()),
 			).BlockFunc(func(g *Group) {
 				for _, read := range core.Reads {
 					g.Case(
@@ -239,10 +254,10 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 							),
 							Id("t1"),
 						),
-						Id("readResponse").Dot("Response").Op("=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadResponseProto+"_"+read.Name+"Response").Values(
+						Id("coreResponse").Dot("Response").Op("=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadResponseProto+"_"+read.Name+"Response").Values(
 							Id(read.Name+"Response").Op(":").Id("r"),
 						),
-						Id("readResponse").Dot("Error").Op("=").Qual("github.com/evrblk/monstera/x", "WrapError").Call(
+						Id("wrappedResponse").Dot("Error").Op("=").Qual("github.com/evrblk/monstera/x", "WrapError").Call(
 							Err(),
 						),
 					)
@@ -251,12 +266,25 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 					Panic(Lit("no matching handlers")),
 				)
 			})
+			g.Line()
 
+			g.List(
+				Id("data"),
+				Err(),
+			).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(
+				Id("coreResponse"),
+			)
+			g.If(
+				Err().Op("!=").Nil(),
+			).Block(
+				Panic(Err()),
+			)
+			g.Id("wrappedResponse").Dot("Data").Op("=").Id("data")
 			g.List(
 				Id("response"),
 				Err(),
 			).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(
-				Id("readResponse"),
+				Id("wrappedResponse"),
 			)
 			g.If(
 				Err().Op("!=").Nil(),

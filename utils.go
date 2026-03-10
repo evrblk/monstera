@@ -1,6 +1,15 @@
 package monstera
 
-import "encoding/binary"
+import (
+	"crypto/sha256"
+	"encoding/binary"
+)
+
+func GetTruncatedHash(data []byte, size int) []byte {
+	h := sha256.New()
+	h.Write(data)
+	return h.Sum(nil)[0:size]
+}
 
 func ConcatBytes(items ...any) []byte {
 	total := 0

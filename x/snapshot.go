@@ -2,6 +2,7 @@ package monsterax
 
 import (
 	"bytes"
+	"encoding"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -9,7 +10,6 @@ import (
 	"errors"
 
 	"github.com/evrblk/monstera"
-	"google.golang.org/protobuf/proto"
 )
 
 type BadgerStoreSnapshot struct {
@@ -158,9 +158,9 @@ func Snapshot(s *monstera.BadgerStore, ranges []monstera.KeyRange) BadgerStoreSn
 	}
 }
 
-func WriteProtoMessageIntoStream(w io.Writer, msg proto.Message) error {
+func WriteProtoMessageIntoStream(w io.Writer, msg encoding.BinaryMarshaler) error {
 	// Serialize the message to binary format
-	data, err := proto.Marshal(msg)
+	data, err := msg.MarshalBinary()
 	if err != nil {
 		return fmt.Errorf("proto.Marshal: %v", err)
 	}
@@ -196,8 +196,8 @@ func ReadProtoMessageFromStream[T ptr[U], U any](r io.Reader) (T, error) {
 
 	// Unmarshal the data
 	var msg U
-	if err := proto.Unmarshal(data, T(&msg)); err != nil {
-		return nil, fmt.Errorf("proto.Unmarshal: %v", err)
+	if err := T(&msg).UnmarshalBinary(data); err != nil {
+		return nil, fmt.Errorf("UnmarshalBinary: %v", err)
 	}
 
 	return &msg, nil

@@ -61,9 +61,9 @@ type ApplicationCore interface {
 }
 
 type MonsteraReplica struct {
-	ApplicationName string
-	ShardId         string
-	ReplicaId       string
+	applicationName string
+	shardId         string
+	replicaId       string
 
 	core      ApplicationCore
 	hraft     *hraft.Raft
@@ -284,9 +284,9 @@ func NewMonsteraReplica(baseDir string, applicationName string, shardId string, 
 	}
 
 	return &MonsteraReplica{
-		ApplicationName: applicationName,
-		ShardId:         shardId,
-		ReplicaId:       replicaId,
+		applicationName: applicationName,
+		shardId:         shardId,
+		replicaId:       replicaId,
 		core:            core,
 		hraft:           r,
 		hstore:          hstore,

@@ -3,7 +3,6 @@ package monstera
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"log"
 	"math/rand/v2"
@@ -343,12 +342,6 @@ func NewMonsteraClient(clusterConfig *ClusterConfig) *MonsteraClient {
 		pool:          NewMonsteraConnectionPool(),
 		ReplicaStates: make(map[string]*ReplicaState),
 	}
-}
-
-func GetTruncatedHash(data []byte, size int) []byte {
-	h := sha256.New()
-	h.Write(data)
-	return h.Sum(nil)[0:size]
 }
 
 func isErrorRetryableOnTheSameReplica(err error) bool {

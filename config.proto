@@ -1,12 +1,12 @@
 syntax = "proto3";
 
-option go_package = "github.com/evrblk/monstera";
-
 package com.evrblk.monstera;
 
+option go_package = "github.com/evrblk/monstera";
+
 message Metadata {
-  string Key = 1;
-  string Value = 2;
+  string key = 1;
+  string value = 2;
 }
 
 message Node {

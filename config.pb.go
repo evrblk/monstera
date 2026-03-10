@@ -23,8 +23,8 @@ const (
 
 type Metadata struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=Key,proto3" json:"Key,omitempty"`
-	Value         string                 `protobuf:"bytes,2,opt,name=Value,proto3" json:"Value,omitempty"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -419,8 +419,8 @@ const file_config_proto_rawDesc = "" +
 	"\n" +
 	"\fconfig.proto\x12\x13com.evrblk.monstera\"2\n" +
 	"\bMetadata\x12\x10\n" +
-	"\x03Key\x18\x01 \x01(\tR\x03Key\x12\x14\n" +
-	"\x05Value\x18\x02 \x01(\tR\x05Value\"[\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"[\n" +
 	"\x04Node\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x129\n" +
 	"\bmetadata\x18\x02 \x03(\v2\x1d.com.evrblk.monstera.MetadataR\bmetadata\"\xe7\x01\n" +

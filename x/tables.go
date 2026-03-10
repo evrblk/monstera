@@ -2,16 +2,19 @@ package monsterax
 
 import (
 	"bytes"
+	"encoding"
 	"encoding/binary"
 
 	"github.com/evrblk/monstera"
-	"google.golang.org/protobuf/proto"
 )
 
-// ptr is a generic constraint for proto messages (pointers)
+// ptr is a generic constraint for binary-serializable messages (pointers).
+// A protobuf implementation (google, gogo, etc.) or custom type implementing
+// encoding.BinaryMarshaler and encoding.BinaryUnmarshaler satisfies this constraint.
 type ptr[T any] interface {
 	*T
-	proto.Message
+	encoding.BinaryMarshaler
+	encoding.BinaryUnmarshaler
 }
 
 type PaginationToken struct {
@@ -219,34 +222,34 @@ func (t *table) GetTableKeyRange() monstera.KeyRange {
 	return *t.tableKeyRange
 }
 
-// ProtobufTable is table with a composite key: primary key PK and secondary key SK
-// and generic values (of proto.Message type).
+// BinaryTable is table with a composite key: primary key PK and secondary key SK
+// and generic values (of encoding.BinaryMarshaler type).
 // Get, Set, Delete operations use PK+SK to refer records. List operation uses PK as a prefix.
-type ProtobufTable[T ptr[U], U any] struct {
+type BinaryTable[T ptr[U], U any] struct {
 	table
 }
 
-func NewProtobufTable[T ptr[U], U any](tableId []byte, keyLowerBound []byte, keyUpperBound []byte) *ProtobufTable[T, U] {
-	return &ProtobufTable[T, U]{
+func NewBinaryTable[T ptr[U], U any](tableId []byte, keyLowerBound []byte, keyUpperBound []byte) *BinaryTable[T, U] {
+	return &BinaryTable[T, U]{
 		table: newTable(tableId, keyLowerBound, keyUpperBound),
 	}
 }
 
-func (t *ProtobufTable[T, U]) Get(txn *monstera.Txn, key []byte) (T, error) {
+func (t *BinaryTable[T, U]) Get(txn *monstera.Txn, key []byte) (T, error) {
 	value, err := t.get(txn, key)
 	if err != nil {
 		return nil, err
 	}
 
 	var message U
-	if err := proto.Unmarshal(value, T(&message)); err != nil {
+	if err := T(&message).UnmarshalBinary(value); err != nil {
 		return nil, err
 	}
 	return &message, nil
 }
 
-func (t *ProtobufTable[T, U]) Set(txn *monstera.Txn, key []byte, message T) error {
-	value, err := proto.Marshal(message)
+func (t *BinaryTable[T, U]) Set(txn *monstera.Txn, key []byte, message T) error {
+	value, err := message.MarshalBinary()
 	if err != nil {
 		return err
 	}
@@ -254,15 +257,15 @@ func (t *ProtobufTable[T, U]) Set(txn *monstera.Txn, key []byte, message T) erro
 	return t.set(txn, key, value)
 }
 
-func (t *ProtobufTable[T, U]) Delete(txn *monstera.Txn, key []byte) error {
+func (t *BinaryTable[T, U]) Delete(txn *monstera.Txn, key []byte) error {
 	return t.delete(txn, key)
 }
 
-func (t *ProtobufTable[T, U]) ListAll(txn *monstera.Txn, prefix []byte) ([]T, error) {
+func (t *BinaryTable[T, U]) ListAll(txn *monstera.Txn, prefix []byte) ([]T, error) {
 	result := make([]T, 0)
 	err := t.eachPrefix(txn, prefix, func(key []byte, value []byte) (bool, error) {
 		var message U
-		if err := proto.Unmarshal(value, T(&message)); err != nil {
+		if err := T(&message).UnmarshalBinary(value); err != nil {
 			return false, err
 		}
 
@@ -276,10 +279,10 @@ func (t *ProtobufTable[T, U]) ListAll(txn *monstera.Txn, prefix []byte) ([]T, er
 	return result, nil
 }
 
-func (t *ProtobufTable[T, U]) ListInRange(txn *monstera.Txn, lowerBound []byte, upperBound []byte, reverse bool, fn func(message T) (bool, error)) error {
+func (t *BinaryTable[T, U]) ListInRange(txn *monstera.Txn, lowerBound []byte, upperBound []byte, reverse bool, fn func(message T) (bool, error)) error {
 	return t.listInRange(txn, lowerBound, upperBound, reverse, func(key []byte, value []byte) (bool, error) {
 		var message U
-		if err := proto.Unmarshal(value, T(&message)); err != nil {
+		if err := T(&message).UnmarshalBinary(value); err != nil {
 			return false, err
 		}
 
@@ -293,7 +296,7 @@ type ListPaginatedProtobufResult[T ptr[U], U any] struct {
 	PreviousPaginationToken *PaginationToken
 }
 
-func (t *ProtobufTable[T, U]) ListPaginated(txn *monstera.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedProtobufResult[T, U], error) {
+func (t *BinaryTable[T, U]) ListPaginated(txn *monstera.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedProtobufResult[T, U], error) {
 	rawResult, err := t.listPrefixedPaginated(txn, prefix, paginationToken, limit)
 	if err != nil {
 		return nil, err
@@ -307,7 +310,7 @@ func (t *ProtobufTable[T, U]) ListPaginated(txn *monstera.Txn, prefix []byte, pa
 
 	for i, item := range rawResult.Items {
 		var message U
-		if err := proto.Unmarshal(item, T(&message)); err != nil {
+		if err := T(&message).UnmarshalBinary(item); err != nil {
 			return nil, err
 		}
 		result.Items[i] = T(&message)

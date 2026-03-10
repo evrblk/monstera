@@ -332,12 +332,12 @@ func (n *MonsteraNode) UpdateClusterConfig(ctx context.Context, newConfig *Clust
 	replicasToRemove := make(map[string]bool)
 
 	for _, nr := range n.replicas {
-		replicasToRemove[nr.ReplicaId] = true
+		replicasToRemove[nr.replicaId] = true
 		for _, a := range newConfig.Applications {
 			for _, s := range a.Shards {
 				for _, r := range s.Replicas {
-					if r.NodeAddress == n.nodeAddress && r.Id == nr.ReplicaId {
-						delete(replicasToRemove, nr.ReplicaId)
+					if r.NodeAddress == n.nodeAddress && r.Id == nr.replicaId {
+						delete(replicasToRemove, nr.replicaId)
 						goto found
 					}
 				}
@@ -402,7 +402,7 @@ func (n *MonsteraNode) loadCores() error {
 
 func (n *MonsteraNode) bootstrapShards() error {
 	for _, r := range n.replicas {
-		s, err := n.clusterConfig.GetShard(r.ShardId)
+		s, err := n.clusterConfig.GetShard(r.shardId)
 		if err != nil {
 			return err
 		}

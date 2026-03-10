@@ -164,7 +164,7 @@ func (s *MonsteraServer) HealthCheck(ctx context.Context, request *HealthCheckRe
 		}
 
 		replicas[i] = &ReplicaState{
-			ReplicaId: c.ReplicaId,
+			ReplicaId: c.replicaId,
 			RaftState: encodeRaftState(c.GetRaftState()),
 			RaftStats: c.GetRaftStats(),
 			Snapshots: encodeRaftSnapshots(snapshots),

@@ -144,7 +144,7 @@ func NewCluster(clusterConfig *cluster.Config) []localNode {
 
 func NewMonsteraStub(clusterConfig *cluster.Config) *PlaygroundApiMonsteraStub {
 	trans := grpc.NewGrpcTransport(clusterConfig)
-	monsteraClient := monstera.NewMonsteraClient(clusterConfig, trans)
+	monsteraClient := monstera.NewMonsteraClient(clusterConfig, trans, monstera.DefaultClientConfig())
 	return NewPlaygroundApiMonsteraStub(monsteraClient)
 }
 

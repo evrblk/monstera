@@ -16,20 +16,52 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const (
-	maxRetriesOnSingleReplica = 10
-)
+// ClientConfig holds tunable parameters for Client behavior.
+type ClientConfig struct {
+	// MaxRetriesOnSingleReplica is the number of times to retry a request on the
+	// same replica before moving on to the next one.
+	MaxRetriesOnSingleReplica int
+	// HealthCheckTimeout is the per-node timeout for each health check RPC.
+	HealthCheckTimeout time.Duration
+	// RefreshIntervalBase is the minimum wait between health check rounds.
+	RefreshIntervalBase time.Duration
+	// RefreshIntervalJitter is the upper bound of random jitter added to
+	// RefreshIntervalBase to spread health check load across clients.
+	RefreshIntervalJitter time.Duration
+	// ReadRetryDelay is how long to wait before retrying a read on the same replica.
+	ReadRetryDelay time.Duration
+	// UpdateRetryDelay is how long to wait before retrying an update on the same replica.
+	UpdateRetryDelay time.Duration
+}
 
+// DefaultClientConfig returns a ClientConfig with sensible defaults.
+func DefaultClientConfig() ClientConfig {
+	return ClientConfig{
+		MaxRetriesOnSingleReplica: 10,
+		HealthCheckTimeout:        500 * time.Millisecond,
+		RefreshIntervalBase:       5000 * time.Millisecond,
+		RefreshIntervalJitter:     1000 * time.Millisecond,
+		ReadRetryDelay:            100 * time.Millisecond,
+		UpdateRetryDelay:          500 * time.Millisecond,
+	}
+}
+
+// Client is a Monstera cluster client that routes reads and updates to the
+// correct shard replicas and keeps replica leadership state up to date via
+// periodic health checks. It is ok for leadership state to be stale here,
+// because Monstera nodes can forward requests to the current leader.
 type Client struct {
 	mu            sync.RWMutex
 	clusterConfig *cluster.Config
-	ReplicaStates map[string]*transport.ReplicaState
+	replicaStates map[string]*transport.ReplicaState
 
-	trans transport.Transport
+	trans  transport.Transport
+	config ClientConfig
 
 	refresherCancel context.CancelFunc
 }
 
+// Stop cancels the background health-check goroutine and closes the transport.
 func (c *Client) Stop() {
 	log.Printf("Stopping Monstera Client")
 
@@ -40,6 +72,8 @@ func (c *Client) Stop() {
 	c.trans.Close()
 }
 
+// Start launches the background goroutine that periodically polls all nodes
+// for replica health state, used to identify the current leader of each shard.
 func (c *Client) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.refresherCancel = cancel
@@ -47,7 +81,7 @@ func (c *Client) Start() {
 	go func(monstera *Client, ctx context.Context) {
 		for {
 			for _, n := range c.clusterConfig.ListNodes() {
-				tctx, tcancel := context.WithTimeout(ctx, time.Millisecond*500)
+				tctx, tcancel := context.WithTimeout(ctx, c.config.HealthCheckTimeout)
 				states, err := c.trans.HealthCheck(tctx, n.Id)
 				tcancel()
 				if err != nil {
@@ -56,12 +90,12 @@ func (c *Client) Start() {
 
 				c.mu.Lock()
 				for _, s := range states {
-					c.ReplicaStates[s.ReplicaId] = s
+					c.replicaStates[s.ReplicaId] = s
 				}
 				c.mu.Unlock()
 			}
 
-			duration := time.Duration(int32(rand.Int32N(1000))+5000) * time.Millisecond
+			duration := c.config.RefreshIntervalBase + time.Duration(rand.Int64N(int64(c.config.RefreshIntervalJitter)))
 
 			select {
 			case <-ctx.Done():
@@ -73,6 +107,7 @@ func (c *Client) Start() {
 	}(c, ctx)
 }
 
+// Read routes a read request to the shard responsible for shardKey.
 func (c *Client) Read(ctx context.Context, applicationName string, shardKey []byte, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
 	shard, err := c.clusterConfig.FindShardByShardKey(applicationName, shardKey)
 	if err != nil {
@@ -82,6 +117,8 @@ func (c *Client) Read(ctx context.Context, applicationName string, shardKey []by
 	return c.readShard(ctx, applicationName, shard, shardKey, allowReadFromFollowers, payload)
 }
 
+// ReadShard sends a read request directly to the specified shard by ID,
+// bypassing shard-key routing.
 func (c *Client) ReadShard(ctx context.Context, applicationName string, shardId string, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
 	shard, err := c.clusterConfig.GetShard(shardId)
 	if err != nil {
@@ -91,6 +128,8 @@ func (c *Client) ReadShard(ctx context.Context, applicationName string, shardId 
 	return c.readShard(ctx, applicationName, shard, []byte{}, allowReadFromFollowers, payload)
 }
 
+// readShard tries each replica in turn, retrying transient errors on the same
+// replica up to MaxRetriesOnSingleReplica times before moving to the next.
 func (c *Client) readShard(ctx context.Context, applicationName string, shard *cluster.Shard, shardKey []byte, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
 	var replicas []*cluster.Replica
 	if allowReadFromFollowers {
@@ -100,7 +139,7 @@ func (c *Client) readShard(ctx context.Context, applicationName string, shard *c
 	}
 
 	for _, r := range replicas {
-		for range maxRetriesOnSingleReplica {
+		for range c.config.MaxRetriesOnSingleReplica {
 			result, err := c.trans.Read(ctx, r.NodeId, &transport.ReadRequest{
 				ApplicationName:        applicationName,
 				ShardId:                shard.Id,
@@ -112,7 +151,7 @@ func (c *Client) readShard(ctx context.Context, applicationName string, shard *c
 			})
 			if err != nil {
 				if isErrorRetryableOnTheSameReplica(err) {
-					time.Sleep(100 * time.Millisecond) // TODO: make this configurable
+					time.Sleep(c.config.ReadRetryDelay)
 					continue
 				}
 
@@ -134,6 +173,7 @@ func (c *Client) readShard(ctx context.Context, applicationName string, shard *c
 	return nil, fmt.Errorf("all replicas failed")
 }
 
+// Update routes a write request to the shard responsible for shardKey.
 func (c *Client) Update(ctx context.Context, applicationName string, shardKey []byte, payload []byte) ([]byte, error) {
 	shard, err := c.clusterConfig.FindShardByShardKey(applicationName, shardKey)
 	if err != nil {
@@ -143,6 +183,8 @@ func (c *Client) Update(ctx context.Context, applicationName string, shardKey []
 	return c.updateShard(ctx, applicationName, shard, shardKey, payload)
 }
 
+// UpdateShard sends a write request directly to the specified shard by ID,
+// bypassing shard-key routing.
 func (c *Client) UpdateShard(ctx context.Context, applicationName string, shardId string, payload []byte) ([]byte, error) {
 	shard, err := c.clusterConfig.GetShard(shardId)
 	if err != nil {
@@ -152,11 +194,13 @@ func (c *Client) UpdateShard(ctx context.Context, applicationName string, shardI
 	return c.updateShard(ctx, applicationName, shard, []byte{}, payload)
 }
 
+// updateShard tries replicas leader-first, retrying transient errors on the
+// same replica up to MaxRetriesOnSingleReplica times before moving to the next.
 func (c *Client) updateShard(ctx context.Context, applicationName string, shard *cluster.Shard, shardKey []byte, payload []byte) ([]byte, error) {
 	replicas := c.shuffleReplicasAndLeaderFirst(shard.Replicas)
 
 	for _, r := range replicas {
-		for range maxRetriesOnSingleReplica {
+		for range c.config.MaxRetriesOnSingleReplica {
 			result, err := c.trans.Update(ctx, r.NodeId, &transport.UpdateRequest{
 				ApplicationName: applicationName,
 				ShardId:         shard.Id,
@@ -167,7 +211,7 @@ func (c *Client) updateShard(ctx context.Context, applicationName string, shard 
 			})
 			if err != nil {
 				if isErrorRetryableOnTheSameReplica(err) {
-					time.Sleep(500 * time.Millisecond) // TODO: make this configurable
+					time.Sleep(c.config.UpdateRetryDelay)
 					continue
 				}
 
@@ -189,6 +233,7 @@ func (c *Client) updateShard(ctx context.Context, applicationName string, shard 
 	return nil, fmt.Errorf("all replicas failed")
 }
 
+// TriggerSnapshot requests the node hosting replicaId to take a snapshot immediately.
 func (c *Client) TriggerSnapshot(applicationName string, shardId string, replicaId string) error {
 	replica, err := c.clusterConfig.GetReplica(replicaId)
 	if err != nil {
@@ -200,6 +245,7 @@ func (c *Client) TriggerSnapshot(applicationName string, shardId string, replica
 	})
 }
 
+// LeadershipTransfer asks the node hosting replicaId to step down as leader.
 func (c *Client) LeadershipTransfer(applicationName string, shardId string, replicaId string) error {
 	replica, err := c.clusterConfig.GetReplica(replicaId)
 	if err != nil {
@@ -211,6 +257,7 @@ func (c *Client) LeadershipTransfer(applicationName string, shardId string, repl
 	})
 }
 
+// ListShards returns all shards for applicationName sorted by their lower bound.
 func (c *Client) ListShards(applicationName string) ([]*cluster.Shard, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -230,6 +277,7 @@ func (c *Client) ListShards(applicationName string) ([]*cluster.Shard, error) {
 	return sortedShards, nil
 }
 
+// shuffleReplicas returns a randomly ordered copy of replicas.
 func (c *Client) shuffleReplicas(replicas []*cluster.Replica) []*cluster.Replica {
 	result := make([]*cluster.Replica, len(replicas))
 	copy(result, replicas)
@@ -239,6 +287,8 @@ func (c *Client) shuffleReplicas(replicas []*cluster.Replica) []*cluster.Replica
 	return result
 }
 
+// shuffleReplicasAndLeaderFirst returns a copy of replicas with the known
+// leader placed first and the remaining replicas in random order.
 func (c *Client) shuffleReplicasAndLeaderFirst(replicas []*cluster.Replica) []*cluster.Replica {
 	result := make([]*cluster.Replica, len(replicas))
 	result[0] = c.getLeader(replicas)
@@ -255,12 +305,14 @@ func (c *Client) shuffleReplicasAndLeaderFirst(replicas []*cluster.Replica) []*c
 	return result
 }
 
+// getLeader returns the replica currently known to be the leader, or a random
+// replica if no leader is cached yet.
 func (c *Client) getLeader(replicas []*cluster.Replica) *cluster.Replica {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	for _, r := range replicas {
-		s, ok := c.ReplicaStates[r.Id]
+		s, ok := c.replicaStates[r.Id]
 		if ok && s.IsLeader {
 			return r
 		}
@@ -268,14 +320,19 @@ func (c *Client) getLeader(replicas []*cluster.Replica) *cluster.Replica {
 	return replicas[rand.IntN(len(replicas))] // this is a fallback
 }
 
-func NewMonsteraClient(clusterConfig *cluster.Config, trans transport.Transport) *Client {
+// NewMonsteraClient creates a Client. Call Start to begin background health checks.
+func NewMonsteraClient(clusterConfig *cluster.Config, trans transport.Transport, config ClientConfig) *Client {
 	return &Client{
 		clusterConfig: clusterConfig,
 		trans:         trans,
-		ReplicaStates: make(map[string]*transport.ReplicaState),
+		config:        config,
+		replicaStates: make(map[string]*transport.ReplicaState),
 	}
 }
 
+// isErrorRetryableOnTheSameReplica reports whether the error indicates a
+// transient condition (e.g. leader election in progress) that may resolve on
+// the same replica without switching to another.
 func isErrorRetryableOnTheSameReplica(err error) bool {
 	if st, ok := status.FromError(err); ok {
 		if st.Message() == "leader is unknown" {
@@ -286,6 +343,8 @@ func isErrorRetryableOnTheSameReplica(err error) bool {
 	return false
 }
 
+// isErrorForDeadReplica reports whether the error indicates the replica is
+// unreachable, so the caller should move on to the next replica immediately.
 func isErrorForDeadReplica(err error) bool {
 	if st, ok := status.FromError(err); ok {
 		if st.Code() == codes.DeadlineExceeded || st.Code() == codes.Canceled || st.Code() == codes.Unavailable {

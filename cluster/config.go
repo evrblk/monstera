@@ -408,8 +408,6 @@ func (c *Config) CreateApplication(applicationName string, implementation string
 
 	c.Applications = append(c.Applications, application)
 
-	c.Version++ // TODO
-
 	return application, nil
 }
 
@@ -442,8 +440,6 @@ func (c *Config) CreateShard(applicationName string, lowerBound []byte, upperBou
 	}
 
 	application.Shards = append(application.Shards, shard)
-
-	c.Version++ // TODO
 
 	return shard, nil
 }
@@ -500,8 +496,6 @@ func (c *Config) CreateReplica(applicationName string, shardId string, nodeId st
 		NodeId: nodeId,
 	}
 	shard.Replicas = append(shard.Replicas, replica)
-
-	c.Version++ // TODO
 
 	return replica, nil
 }

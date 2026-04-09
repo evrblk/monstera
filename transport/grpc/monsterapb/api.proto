@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package com.evrblk.monstera.monsterapb;
+
+import "cluster/config.proto";
+
+option go_package = "github.com/evrblk/monstera/internal/monsterapb";
+
+service MonsteraApi {
+  rpc Update(UpdateRequest) returns (UpdateResponse) {}
+  rpc Read(ReadRequest) returns (ReadResponse) {}
+
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {}
+
+  rpc LeadershipTransfer(LeadershipTransferRequest) returns (LeadershipTransferResponse) {}
+  rpc TriggerSnapshot(TriggerSnapshotRequest) returns (TriggerSnapshotResponse) {}
+  rpc UpdateClusterConfig(UpdateClusterConfigRequest) returns (UpdateClusterConfigResponse) {}
+
+  rpc RaftMessage(stream RaftMessageRequest) returns (stream RaftMessageResponse) {}
+}
+
+message UpdateRequest {
+  bytes payload = 1;
+  bytes shard_key = 2;
+  string application_name = 3;
+  string shard_id = 4;
+  string replica_id = 5;
+  int32 hops = 6;
+}
+
+message UpdateResponse {
+  bytes payload = 1;
+}
+
+message ReadRequest {
+  bytes payload = 1;
+  bool allow_read_from_followers = 2;
+  bytes shard_key = 3;
+  string application_name = 4;
+  string shard_id = 5;
+  string replica_id = 6;
+  int32 hops = 7;
+}
+
+message ReadResponse {
+  bytes payload = 1;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  repeated ReplicaState replicas = 1;
+}
+
+message TriggerSnapshotRequest {
+  string replica_id = 1;
+}
+
+message TriggerSnapshotResponse {}
+
+message LeadershipTransferRequest {
+  string replica_id = 1;
+}
+
+message LeadershipTransferResponse {}
+
+message ReplicaState {
+  string replica_id = 1;
+  RaftState raft_state = 2;
+  map<string, string> raft_stats = 3;
+  repeated RaftSnapshot snapshots = 4;
+}
+
+message RaftSnapshot {
+  string id = 1;
+  uint64 index = 2;
+  uint64 term = 3;
+  int64 size = 4;
+}
+
+enum RaftState {
+  RAFT_STATE_INVALID = 0;
+  RAFT_STATE_FOLLOWER = 1;
+  RAFT_STATE_LEADER = 2;
+  RAFT_STATE_CANDIDATE = 3;
+  RAFT_STATE_SHUTDOWN = 4;
+}
+
+message UpdateClusterConfigRequest {
+  evrblk.monstera.cluster.Config config = 1;
+}
+
+message UpdateClusterConfigResponse {}
+
+message RaftMessageRequest {
+  string replica_id = 1;
+  int32 message_type = 2;
+  bytes message = 3;
+  int64 message_id = 4;
+}
+
+message RaftMessageResponse {
+  int32 message_type = 1;
+  bytes message = 2;
+  int64 response_to_message_id = 3;
+}

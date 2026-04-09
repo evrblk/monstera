@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/evrblk/monstera/cluster"
+	"github.com/evrblk/monstera/transport"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -18,50 +20,43 @@ const (
 	maxRetriesOnSingleReplica = 10
 )
 
-type MonsteraClient struct {
+type Client struct {
 	mu            sync.RWMutex
-	clusterConfig *ClusterConfig
-	pool          *MonsteraConnectionPool
+	clusterConfig *cluster.Config
+	ReplicaStates map[string]*transport.ReplicaState
 
-	ReplicaStates map[string]*ReplicaState
+	trans transport.Transport
 
 	refresherCancel context.CancelFunc
 }
 
-func (c *MonsteraClient) Stop() {
+func (c *Client) Stop() {
 	log.Printf("Stopping Monstera Client")
 
 	if c.refresherCancel != nil {
 		c.refresherCancel()
 	}
 
-	c.pool.Close()
+	c.trans.Close()
 }
 
-func (c *MonsteraClient) Start() {
+func (c *Client) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.refresherCancel = cancel
 
-	go func(monstera *MonsteraClient, ctx context.Context) {
+	go func(monstera *Client, ctx context.Context) {
 		for {
 			for _, n := range c.clusterConfig.ListNodes() {
-				conn, err := c.pool.GetConnection(n.Address)
-				if err != nil {
-					//log.Println(err)
-					continue
-				}
-
 				tctx, tcancel := context.WithTimeout(ctx, time.Millisecond*500)
-				defer tcancel()
-
-				resp, err := conn.HealthCheck(tctx, &HealthCheckRequest{})
+				states, err := c.trans.HealthCheck(tctx, n.Id)
+				tcancel()
 				if err != nil {
 					continue
 				}
 
 				c.mu.Lock()
-				for _, r := range resp.Replicas {
-					c.ReplicaStates[r.ReplicaId] = r
+				for _, s := range states {
+					c.ReplicaStates[s.ReplicaId] = s
 				}
 				c.mu.Unlock()
 			}
@@ -78,8 +73,8 @@ func (c *MonsteraClient) Start() {
 	}(c, ctx)
 }
 
-func (c *MonsteraClient) Read(ctx context.Context, applicationName string, shardKey []byte, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
-	shard, err := c.clusterConfig.FindShard(applicationName, shardKey)
+func (c *Client) Read(ctx context.Context, applicationName string, shardKey []byte, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
+	shard, err := c.clusterConfig.FindShardByShardKey(applicationName, shardKey)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +82,7 @@ func (c *MonsteraClient) Read(ctx context.Context, applicationName string, shard
 	return c.readShard(ctx, applicationName, shard, shardKey, allowReadFromFollowers, payload)
 }
 
-func (c *MonsteraClient) ReadShard(ctx context.Context, applicationName string, shardId string, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
+func (c *Client) ReadShard(ctx context.Context, applicationName string, shardId string, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
 	shard, err := c.clusterConfig.GetShard(shardId)
 	if err != nil {
 		return nil, err
@@ -96,8 +91,8 @@ func (c *MonsteraClient) ReadShard(ctx context.Context, applicationName string, 
 	return c.readShard(ctx, applicationName, shard, []byte{}, allowReadFromFollowers, payload)
 }
 
-func (c *MonsteraClient) readShard(ctx context.Context, applicationName string, shard *Shard, shardKey []byte, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
-	var replicas []*Replica
+func (c *Client) readShard(ctx context.Context, applicationName string, shard *cluster.Shard, shardKey []byte, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
+	var replicas []*cluster.Replica
 	if allowReadFromFollowers {
 		replicas = c.shuffleReplicas(shard.Replicas)
 	} else {
@@ -105,25 +100,16 @@ func (c *MonsteraClient) readShard(ctx context.Context, applicationName string, 
 	}
 
 	for _, r := range replicas {
-		readRequest := ReadRequest{
-			Payload:                payload,
-			ShardKey:               shardKey,
-			ApplicationName:        applicationName,
-			ShardId:                shard.Id,
-			ReplicaId:              r.Id,
-			AllowReadFromFollowers: allowReadFromFollowers,
-		}
-
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-
-		conn, err := c.getConnection(r.NodeAddress)
-		if err != nil {
-			return nil, err
-		}
-
 		for range maxRetriesOnSingleReplica {
-			resp, err := conn.Read(ctx, &readRequest)
+			result, err := c.trans.Read(ctx, r.NodeId, &transport.ReadRequest{
+				ApplicationName:        applicationName,
+				ShardId:                shard.Id,
+				ReplicaId:              r.Id,
+				ShardKey:               shardKey,
+				Payload:                payload,
+				AllowReadFromFollowers: allowReadFromFollowers,
+				Hops:                   0,
+			})
 			if err != nil {
 				if isErrorRetryableOnTheSameReplica(err) {
 					time.Sleep(100 * time.Millisecond) // TODO: make this configurable
@@ -138,7 +124,7 @@ func (c *MonsteraClient) readShard(ctx context.Context, applicationName string, 
 				return nil, fmt.Errorf("monsteraClient.Read: %v", err)
 			}
 
-			return resp.Payload, nil
+			return result.Payload, nil
 		}
 
 		// All retries failed, or a replica is dead, try next replica
@@ -148,8 +134,8 @@ func (c *MonsteraClient) readShard(ctx context.Context, applicationName string, 
 	return nil, fmt.Errorf("all replicas failed")
 }
 
-func (c *MonsteraClient) Update(ctx context.Context, applicationName string, shardKey []byte, payload []byte) ([]byte, error) {
-	shard, err := c.clusterConfig.FindShard(applicationName, shardKey)
+func (c *Client) Update(ctx context.Context, applicationName string, shardKey []byte, payload []byte) ([]byte, error) {
+	shard, err := c.clusterConfig.FindShardByShardKey(applicationName, shardKey)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +143,7 @@ func (c *MonsteraClient) Update(ctx context.Context, applicationName string, sha
 	return c.updateShard(ctx, applicationName, shard, shardKey, payload)
 }
 
-func (c *MonsteraClient) UpdateShard(ctx context.Context, applicationName string, shardId string, payload []byte) ([]byte, error) {
+func (c *Client) UpdateShard(ctx context.Context, applicationName string, shardId string, payload []byte) ([]byte, error) {
 	shard, err := c.clusterConfig.GetShard(shardId)
 	if err != nil {
 		return nil, err
@@ -166,31 +152,22 @@ func (c *MonsteraClient) UpdateShard(ctx context.Context, applicationName string
 	return c.updateShard(ctx, applicationName, shard, []byte{}, payload)
 }
 
-func (c *MonsteraClient) updateShard(ctx context.Context, applicationName string, shard *Shard, shardKey []byte, payload []byte) ([]byte, error) {
+func (c *Client) updateShard(ctx context.Context, applicationName string, shard *cluster.Shard, shardKey []byte, payload []byte) ([]byte, error) {
 	replicas := c.shuffleReplicasAndLeaderFirst(shard.Replicas)
 
 	for _, r := range replicas {
-		updateRequest := UpdateRequest{
-			Payload:         payload,
-			ShardKey:        shardKey,
-			ApplicationName: applicationName,
-			ShardId:         shard.Id,
-			ReplicaId:       r.Id,
-		}
-
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-
-		conn, err := c.getConnection(r.NodeAddress)
-		if err != nil {
-			return nil, err
-		}
-
 		for range maxRetriesOnSingleReplica {
-			resp, err := conn.Update(ctx, &updateRequest)
+			result, err := c.trans.Update(ctx, r.NodeId, &transport.UpdateRequest{
+				ApplicationName: applicationName,
+				ShardId:         shard.Id,
+				ReplicaId:       r.Id,
+				ShardKey:        shardKey,
+				Payload:         payload,
+				Hops:            0,
+			})
 			if err != nil {
 				if isErrorRetryableOnTheSameReplica(err) {
-					time.Sleep(100 * time.Millisecond) // TODO: make this configurable
+					time.Sleep(500 * time.Millisecond) // TODO: make this configurable
 					continue
 				}
 
@@ -202,7 +179,7 @@ func (c *MonsteraClient) updateShard(ctx context.Context, applicationName string
 				return nil, fmt.Errorf("monsteraClient.Update: %v", err)
 			}
 
-			return resp.Payload, nil
+			return result.Payload, nil
 		}
 
 		// All retries failed, or a replica is dead, try next replica
@@ -212,65 +189,29 @@ func (c *MonsteraClient) updateShard(ctx context.Context, applicationName string
 	return nil, fmt.Errorf("all replicas failed")
 }
 
-func (c *MonsteraClient) TriggerSnapshot(applicationName string, shardId string, replicaId string) error {
-	shard, err := c.clusterConfig.GetShard(shardId)
+func (c *Client) TriggerSnapshot(applicationName string, shardId string, replicaId string) error {
+	replica, err := c.clusterConfig.GetReplica(replicaId)
 	if err != nil {
 		return err
 	}
 
-	var replica *Replica
-	found := false
-	for _, r := range shard.Replicas {
-		if r.Id == replicaId {
-			replica = r
-			found = true
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("replica not found")
-	}
-
-	conn, err := c.getConnection(replica.NodeAddress)
-	if err != nil {
-		return err
-	}
-
-	_, err = conn.TriggerSnapshot(context.Background(), &TriggerSnapshotRequest{ReplicaId: replicaId})
-
-	return err
+	return c.trans.TriggerSnapshot(context.Background(), replica.NodeId, &transport.TriggerSnapshotRequest{
+		ReplicaId: replicaId,
+	})
 }
 
-func (c *MonsteraClient) LeadershipTransfer(applicationName string, shardId string, replicaId string) error {
-	shard, err := c.clusterConfig.GetShard(shardId)
+func (c *Client) LeadershipTransfer(applicationName string, shardId string, replicaId string) error {
+	replica, err := c.clusterConfig.GetReplica(replicaId)
 	if err != nil {
 		return err
 	}
 
-	var replica *Replica
-	found := false
-	for _, r := range shard.Replicas {
-		if r.Id == replicaId {
-			replica = r
-			found = true
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("replica not found")
-	}
-
-	conn, err := c.getConnection(replica.NodeAddress)
-	if err != nil {
-		return err
-	}
-
-	_, err = conn.LeadershipTransfer(context.Background(), &LeadershipTransferRequest{ReplicaId: replicaId})
-
-	return err
+	return c.trans.LeadershipTransfer(context.Background(), replica.NodeId, &transport.LeadershipTransferRequest{
+		ReplicaId: replicaId,
+	})
 }
 
-func (c *MonsteraClient) ListShards(applicationName string) ([]*Shard, error) {
+func (c *Client) ListShards(applicationName string) ([]*cluster.Shard, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -279,7 +220,7 @@ func (c *MonsteraClient) ListShards(applicationName string) ([]*Shard, error) {
 		return nil, err
 	}
 
-	sortedShards := make([]*Shard, len(shards))
+	sortedShards := make([]*cluster.Shard, len(shards))
 	copy(sortedShards, shards)
 
 	sort.Slice(sortedShards, func(i, j int) bool {
@@ -289,17 +230,8 @@ func (c *MonsteraClient) ListShards(applicationName string) ([]*Shard, error) {
 	return sortedShards, nil
 }
 
-func (c *MonsteraClient) getConnection(nodeAddress string) (MonsteraApiClient, error) {
-	conn, err := c.pool.GetConnection(nodeAddress)
-	if err != nil {
-		return nil, fmt.Errorf("pool.GetConnection: %v", err)
-	}
-
-	return conn, nil
-}
-
-func (c *MonsteraClient) shuffleReplicas(replicas []*Replica) []*Replica {
-	result := make([]*Replica, len(replicas))
+func (c *Client) shuffleReplicas(replicas []*cluster.Replica) []*cluster.Replica {
+	result := make([]*cluster.Replica, len(replicas))
 	copy(result, replicas)
 	rand.Shuffle(len(result), func(i, j int) {
 		result[i], result[j] = result[j], result[i]
@@ -307,10 +239,10 @@ func (c *MonsteraClient) shuffleReplicas(replicas []*Replica) []*Replica {
 	return result
 }
 
-func (c *MonsteraClient) shuffleReplicasAndLeaderFirst(replicas []*Replica) []*Replica {
-	result := make([]*Replica, len(replicas))
+func (c *Client) shuffleReplicasAndLeaderFirst(replicas []*cluster.Replica) []*cluster.Replica {
+	result := make([]*cluster.Replica, len(replicas))
 	result[0] = c.getLeader(replicas)
-	otherReplicas := make([]*Replica, 0, len(replicas))
+	otherReplicas := make([]*cluster.Replica, 0, len(replicas))
 	for _, r := range replicas {
 		if r.Id != result[0].Id {
 			otherReplicas = append(otherReplicas, r)
@@ -323,24 +255,24 @@ func (c *MonsteraClient) shuffleReplicasAndLeaderFirst(replicas []*Replica) []*R
 	return result
 }
 
-func (c *MonsteraClient) getLeader(replicas []*Replica) *Replica {
+func (c *Client) getLeader(replicas []*cluster.Replica) *cluster.Replica {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	for _, r := range replicas {
 		s, ok := c.ReplicaStates[r.Id]
-		if ok && s.RaftState == RaftState_RAFT_STATE_LEADER {
+		if ok && s.IsLeader {
 			return r
 		}
 	}
 	return replicas[rand.IntN(len(replicas))] // this is a fallback
 }
 
-func NewMonsteraClient(clusterConfig *ClusterConfig) *MonsteraClient {
-	return &MonsteraClient{
+func NewMonsteraClient(clusterConfig *cluster.Config, trans transport.Transport) *Client {
+	return &Client{
 		clusterConfig: clusterConfig,
-		pool:          NewMonsteraConnectionPool(),
-		ReplicaStates: make(map[string]*ReplicaState),
+		trans:         trans,
+		ReplicaStates: make(map[string]*transport.ReplicaState),
 	}
 }
 

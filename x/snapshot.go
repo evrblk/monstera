@@ -9,12 +9,17 @@ import (
 
 	"errors"
 
-	"github.com/evrblk/monstera"
+	"github.com/evrblk/monstera/store"
 )
 
+type KeyRange struct {
+	Lower []byte
+	Upper []byte
+}
+
 type BadgerStoreSnapshot struct {
-	ranges []monstera.KeyRange
-	txn    *monstera.Txn
+	ranges []KeyRange
+	txn    *store.Txn
 }
 
 func (s BadgerStoreSnapshot) Write(w io.Writer) error {
@@ -89,7 +94,7 @@ func iterateKeyRange(lowerBound, upperBound []byte, iter func(prefix []byte) err
 	return nil
 }
 
-func Restore(s *monstera.BadgerStore, ranges []monstera.KeyRange, reader io.ReadCloser) error {
+func Restore(s *store.BadgerStore, ranges []KeyRange, reader io.ReadCloser) error {
 	// clear DB in all ranges before writing a snapshot
 	for _, r := range ranges {
 		err := iterateKeyRange(r.Lower, r.Upper, func(prefix []byte) error {
@@ -101,7 +106,7 @@ func Restore(s *monstera.BadgerStore, ranges []monstera.KeyRange, reader io.Read
 		}
 	}
 
-	err := s.BatchUpdate(func(batch *monstera.Batch) error {
+	err := s.BatchUpdate(func(batch *store.Batch) error {
 		for {
 			keySize, err := ReadUint32FromStream(reader)
 			if err != nil {
@@ -151,7 +156,7 @@ func Restore(s *monstera.BadgerStore, ranges []monstera.KeyRange, reader io.Read
 	return nil
 }
 
-func Snapshot(s *monstera.BadgerStore, ranges []monstera.KeyRange) BadgerStoreSnapshot {
+func Snapshot(s *store.BadgerStore, ranges []KeyRange) BadgerStoreSnapshot {
 	return BadgerStoreSnapshot{
 		txn:    s.View(),
 		ranges: ranges,

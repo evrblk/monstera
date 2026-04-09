@@ -1,297 +1,151 @@
 package monstera
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"io"
 	"log"
 	"os"
-	"path/filepath"
-	"time"
-
-	"github.com/hashicorp/go-hclog"
+	"sync"
 
 	hraft "github.com/hashicorp/raft"
-	"google.golang.org/protobuf/proto"
+
+	"github.com/evrblk/monstera/internal/raft"
+	"github.com/evrblk/monstera/store"
+	"github.com/evrblk/monstera/transport"
 )
 
-var (
-	errNotALeader = errors.New("updates are only available on a leader")
-)
-
-// ApplicationCore is the interface that must be implemented by clients to be used
-// with Monstera framework.
-type ApplicationCore interface {
-	// Read is used to read a value directly from the application core.
-	// Reads can be performed concurrently with updates, other reads,
-	// and snapshots. Read should panic on internal errors.
-	Read(request []byte) []byte
-
-	// Update is used to update the application core state.
-	// All updates are applied to the application core sequentially,
-	// in the order they are committed to the Raft log. This method is called
-	// by the Raft thread. Update should panic on internal errors.
-	Update(request []byte) []byte
-
-	// Snapshot returns an ApplicationCoreSnapshot used to: support Raft log compaction,
-	// to restore the application core to a previous state, or to bring out-of-date
-	// Raft followers up to a recent log index.
-	//
-	// The Snapshot implementation should return quickly, because Update can not
-	// be called while Snapshot is running. Generally this means Snapshot should
-	// only capture a pointer to the state, and any expensive IO should happen
-	// as part of ApplicationCoreSnapshot.Write.
-	//
-	// Update and Snapshot are always called from the same thread, but Update will
-	// be called concurrently with ApplicationCoreSnapshot.Write. This means the
-	// application core should be implemented to allow for concurrent updates while
-	// a snapshot is happening.
-	Snapshot() ApplicationCoreSnapshot // TODO partition range
-
-	// Restore is used to restore an application core from a snapshot. It is not
-	// called concurrently with any other command. The application core must discard
-	// all previous state before restoring the snapshot.
-	Restore(reader io.ReadCloser) error
-
-	// Close is used to clean up resources used by the application core. Do not
-	// clean up resources that are shared by multiple cores. Close is called
-	// after a shard split or a shard move while Monstera node is running, and
-	// is called for each core after Monstera node is shutdown.
-	Close()
-}
-
-type MonsteraReplica struct {
+// replica manages a single Raft replica for one shard.
+type replica struct {
 	applicationName string
 	shardId         string
 	replicaId       string
 
-	core      ApplicationCore
-	hraft     *hraft.Raft
-	transport *raftGrpcTransport
-	hstore    *HraftBadgerStore
-	hfss      *hraft.FileSnapshotStore
+	core *appCoreAdapter
+	raft *raft.Raft
 
 	logger *log.Logger
 }
 
-type ApplicationCoreSnapshot interface {
-	Write(w io.Writer) error
-	Release()
+func (r *replica) Read(request []byte) (response []byte, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			r.logger.Printf("panic in core.Read, shutting down raft: %v", p)
+			r.raft.Close()
+			err = fmt.Errorf("core.Read panicked: %v", p)
+		}
+	}()
+
+	return r.core.Read(request)
 }
 
-func (b *MonsteraReplica) Read(request []byte) ([]byte, error) {
-	// TODO shutdown raft if Read panics
-	response := b.core.Read(request)
-	return response, nil
+func (r *replica) Update(request []byte) ([]byte, error) {
+	return r.raft.Update(request)
 }
 
-func (b *MonsteraReplica) Update(request []byte) ([]byte, error) {
-	command := &MonsteraCommand{
-		Payload: request,
-	}
-	commandBytes, err := proto.Marshal(command)
-	if err != nil {
-		return nil, err
-	}
+func (r *replica) Close() {
+	// Close the Raft node
+	r.raft.Close()
 
-	f := b.hraft.Apply(commandBytes, 30*time.Second) // TODO timeout
-	if err := f.Error(); err != nil {
-		// TODO retry
-		b.logger.Print(err)
-		return nil, err
-	}
-
-	response, ok := f.Response().([]byte)
-	if !ok {
-		return nil, fmt.Errorf("invalid response type %v", f.Response())
-	}
-
-	return response, nil
+	// Close the application core
+	r.core.Close()
 }
 
-func (b *MonsteraReplica) Close() {
-	// Shutdown the Raft node.
-	f := b.hraft.Shutdown()
-	err := f.Error()
-	if err != nil {
-		b.logger.Printf("Failed to shutdown hraft: %v", err)
-	}
-
-	// Close the application core.
-	b.core.Close()
+func (r *replica) GetRaftStats() map[string]string {
+	return r.raft.GetRaftStats()
 }
 
-func (b *MonsteraReplica) GetRaftStats() map[string]string {
-	return b.hraft.Stats()
+func (r *replica) GetRaftState() raft.RaftState {
+	return r.raft.GetRaftState()
 }
 
-func (b *MonsteraReplica) GetRaftState() hraft.RaftState {
-	return b.hraft.State()
+func (r *replica) IsLeader() bool {
+	return r.raft.GetRaftState() == raft.Leader
 }
 
-func (b *MonsteraReplica) GetRaftLeader() (hraft.ServerAddress, hraft.ServerID) {
-	return b.hraft.LeaderWithID()
+func (r *replica) GetRaftLeader(ctx context.Context) (string, error) {
+	return r.raft.GetRaftLeader(ctx)
 }
 
-func (b *MonsteraReplica) Bootstrap(servers []hraft.Server) {
-	cfg := hraft.Configuration{
-		Servers: servers,
-	}
-	f := b.hraft.BootstrapCluster(cfg)
-	if err := f.Error(); err != nil && err != hraft.ErrCantBootstrap {
-		panic(fmt.Errorf("raft.Raft.BootstrapCluster: %v", err))
-	}
+func (r *replica) WaitForNewLeader(ctx context.Context, excludeId string) (string, error) {
+	return r.raft.WaitForNewLeader(ctx, excludeId)
 }
 
-func (b *MonsteraReplica) AddVoter(replicaId string, address string) error {
-	if b.hraft.State() != hraft.Leader {
-		return errNotALeader
-	}
-
-	future := b.hraft.AddVoter(hraft.ServerID(replicaId), hraft.ServerAddress(address), 0, 10*time.Second)
-	err := future.Error()
-	if err != nil {
-		return err
-	}
-
-	return nil
+func (r *replica) Bootstrap(servers []hraft.Server) error {
+	return r.raft.Bootstrap(servers)
 }
 
-func (b *MonsteraReplica) AppendEntries(request *hraft.AppendEntriesRequest) (*hraft.AppendEntriesResponse, error) {
-	ch := make(chan hraft.RPCResponse, 1)
-	rpc := hraft.RPC{
-		Command:  request,
-		RespChan: ch,
-		Reader:   nil,
-	}
-
-	// If heartbeat
-	if request.Term != 0 && request.PrevLogEntry == 0 && request.PrevLogTerm == 0 && len(request.Entries) == 0 && request.LeaderCommitIndex == 0 {
-		b.transport.Heartbeat(rpc)
-	} else {
-		b.transport.Producer() <- rpc
-	}
-
-	resp := <-ch
-	if resp.Error != nil {
-		return nil, resp.Error
-	}
-	return resp.Response.(*hraft.AppendEntriesResponse), nil
+func (r *replica) IsBootstrapped() bool {
+	return r.raft.IsBootstrapped()
 }
 
-func (b *MonsteraReplica) RequestVote(request *hraft.RequestVoteRequest) (*hraft.RequestVoteResponse, error) {
-	ch := make(chan hraft.RPCResponse, 1)
-	rpc := hraft.RPC{
-		Command:  request,
-		RespChan: ch,
-		Reader:   nil,
-	}
-
-	b.transport.Producer() <- rpc
-
-	resp := <-ch
-	if resp.Error != nil {
-		return nil, resp.Error
-	}
-	return resp.Response.(*hraft.RequestVoteResponse), nil
+func (r *replica) TriggerSnapshot() {
+	r.raft.TriggerSnapshot()
 }
 
-func (b *MonsteraReplica) TimeoutNow(request *hraft.TimeoutNowRequest) (*hraft.TimeoutNowResponse, error) {
-	ch := make(chan hraft.RPCResponse, 1)
-	rpc := hraft.RPC{
-		Command:  request,
-		RespChan: ch,
-		Reader:   nil,
-	}
-
-	b.transport.Producer() <- rpc
-
-	resp := <-ch
-	if resp.Error != nil {
-		return nil, resp.Error
-	}
-	return resp.Response.(*hraft.TimeoutNowResponse), nil
+func (r *replica) RaftMessage(request *transport.RaftMessageRequest) (*transport.RaftMessageResponse, error) {
+	return r.raft.RaftMessage(request)
 }
 
-func (b *MonsteraReplica) InstallSnapshot(request *hraft.InstallSnapshotRequest, data io.Reader) (*hraft.InstallSnapshotResponse, error) {
-	ch := make(chan hraft.RPCResponse, 1)
-	rpc := hraft.RPC{
-		Command:  request,
-		RespChan: ch,
-		Reader:   data,
-	}
-
-	b.transport.Producer() <- rpc
-
-	resp := <-ch
-	if resp.Error != nil {
-		return nil, resp.Error
-	}
-	return resp.Response.(*hraft.InstallSnapshotResponse), nil
+func (r *replica) ListSnapshots() ([]*hraft.SnapshotMeta, error) {
+	return r.raft.ListSnapshots()
 }
 
-func (b *MonsteraReplica) IsBootstrapped() bool {
-	ok, err := hraft.HasExistingState(b.hstore, b.hstore, b.hfss)
-	if err != nil {
-		panic(fmt.Errorf("raft.HasExistingState: %v", err))
-	}
-	return ok
+func (r *replica) LeadershipTransfer() error {
+	return r.raft.LeadershipTransfer()
 }
 
-func (b *MonsteraReplica) TriggerSnapshot() {
-	b.hraft.Snapshot()
+func (r *replica) GetReplicaId() string {
+	return r.replicaId
 }
 
-func (b *MonsteraReplica) ListSnapshots() ([]*hraft.SnapshotMeta, error) {
-	return b.hfss.List()
-}
+func newReplica(baseDir string, applicationName string, shardId string, replicaId string,
+	myAddress string, core ApplicationCore, trans transport.Transport, raftStore *store.BadgerStore, restoreSnapshotOnStart bool) *replica {
+	adapter := &appCoreAdapter{core: core}
 
-func (b *MonsteraReplica) LeadershipTransfer() error {
-	f := b.hraft.LeadershipTransfer()
-	return f.Error()
-}
-
-func NewMonsteraReplica(baseDir string, applicationName string, shardId string, replicaId string,
-	myAddress string, core ApplicationCore, pool *MonsteraConnectionPool, raftStore *BadgerStore, restoreSnapshotOnStart bool) *MonsteraReplica {
-	c := hraft.DefaultConfig()
-	c.LocalID = hraft.ServerID(replicaId)
-	c.Logger = hclog.New(&hclog.LoggerOptions{
-		Name:   replicaId,
-		Level:  hclog.LevelFromString("error"),
-		Output: os.Stdout,
-	})
-	c.NoSnapshotRestoreOnStart = !restoreSnapshotOnStart
-	c.NoLegacyTelemetry = true
-
-	raftDir := filepath.Join(baseDir, replicaId, "raft")
-	if err := os.MkdirAll(raftDir, os.ModePerm); err != nil {
-		panic(err)
-	}
-
-	hstore := NewHraftBadgerStore(raftStore, []byte(replicaId)) // TODO shorten prefix
-
-	hfss, err := hraft.NewFileSnapshotStore(raftDir, 2, os.Stderr)
-	if err != nil {
-		panic(fmt.Errorf("raft.NewFileSnapshotStore(%q, ...): %v", raftDir, err))
-	}
-
-	tm := newTransport(myAddress, pool)
-	fsm := newRaftFSMAdapter(core)
-
-	r, err := hraft.NewRaft(c, fsm, hstore, hstore, hfss, tm)
-	if err != nil {
-		panic(fmt.Errorf("raft.NewRaft: %v", err))
-	}
-
-	return &MonsteraReplica{
+	rep := &replica{
 		applicationName: applicationName,
 		shardId:         shardId,
 		replicaId:       replicaId,
-		core:            core,
-		hraft:           r,
-		hstore:          hstore,
-		hfss:            hfss,
-		transport:       tm,
+		core:            adapter,
 		logger:          log.New(os.Stderr, fmt.Sprintf("[%s]", replicaId), log.LstdFlags),
 	}
+
+	rep.raft = raft.NewRaft(baseDir, myAddress, replicaId, adapter, trans, raftStore, restoreSnapshotOnStart)
+
+	return rep
+}
+
+type appCoreAdapter struct {
+	// coreMu protects core from concurrent reads during snapshot restoration.
+	// Read acquires RLock; Restore acquires Lock.
+	coreMu sync.RWMutex
+	core   ApplicationCore
+}
+
+var _ raft.AppCore = (*appCoreAdapter)(nil)
+
+func (a *appCoreAdapter) Read(request []byte) ([]byte, error) {
+	a.coreMu.RLock()
+	defer a.coreMu.RUnlock()
+	response := a.core.Read(request)
+	return response, nil
+}
+
+func (a *appCoreAdapter) Update(request []byte) []byte {
+	return a.core.Update(request)
+}
+
+func (a *appCoreAdapter) Snapshot() raft.AppCoreSnapshot {
+	return a.core.Snapshot()
+}
+
+func (a *appCoreAdapter) Restore(reader io.ReadCloser) error {
+	a.coreMu.Lock()
+	defer a.coreMu.Unlock()
+	return a.core.Restore(reader)
+}
+
+func (a *appCoreAdapter) Close() {
+	a.core.Close()
 }

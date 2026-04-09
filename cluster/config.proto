@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package com.evrblk.monstera.cluster;
+
+option go_package = "github.com/evrblk/monstera/cluster";
+
+message Metadata {
+  string key = 1;
+  string value = 2;
+}
+
+message Node {
+  string id = 1;
+  string grpc_address = 2;
+  repeated Metadata metadata = 3;
+}
+
+message Application {
+  string name = 1;
+  string implementation = 2;
+  repeated Shard shards = 3;
+  int32 replication_factor = 4;
+  repeated Metadata metadata = 5;
+}
+
+message Shard {
+  string id = 1;
+  bytes lower_bound = 2;
+  bytes upper_bound = 3;
+  string parent_id = 4;
+  repeated Replica replicas = 5;
+  repeated Metadata metadata = 6;
+}
+
+message Replica {
+  string id = 1;
+  string node_id = 2;
+  repeated Metadata metadata = 3;
+}
+
+message Config {
+  repeated Application applications = 1;
+  repeated Node nodes = 2;
+  int64 version = 3;
+  repeated Metadata metadata = 4;
+}

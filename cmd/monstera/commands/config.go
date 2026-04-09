@@ -5,7 +5,7 @@ import (
 	"log"
 	"math/rand/v2"
 
-	"github.com/evrblk/monstera"
+	"github.com/evrblk/monstera/cluster"
 	"github.com/spf13/cobra"
 )
 
@@ -17,16 +17,21 @@ var configCmd = &cobra.Command{
 var initCmdCfg struct {
 	outputConfigPath string
 	nodeAddresses    []string
+	nodeIds          []string
 }
 
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Creates a new cluster config",
 	Run: func(cmd *cobra.Command, args []string) {
-		config := monstera.CreateEmptyConfig()
+		if len(initCmdCfg.nodeAddresses) != len(initCmdCfg.nodeIds) {
+			log.Fatal("node-addresses and node-ids must have the same length")
+		}
 
-		for _, n := range initCmdCfg.nodeAddresses {
-			_, err := config.CreateNode(n)
+		config := cluster.CreateEmptyConfig()
+
+		for i := range initCmdCfg.nodeAddresses {
+			_, err := config.CreateNode(initCmdCfg.nodeIds[i], initCmdCfg.nodeAddresses[i])
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -37,7 +42,7 @@ var initCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 
-		err = monstera.WriteConfigToFile(config, initCmdCfg.outputConfigPath)
+		err = cluster.WriteConfigToFile(config, initCmdCfg.outputConfigPath)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -48,18 +53,19 @@ var addNodeCmdCfg struct {
 	inputConfigPath  string
 	outputConfigPath string
 	nodeAddress      string
+	nodeId           string
 }
 
 var addNodeCmd = &cobra.Command{
 	Use:   "add-node",
 	Short: "Adds node to the cluster config",
 	Run: func(cmd *cobra.Command, args []string) {
-		config, err := monstera.LoadConfigFromFile(addNodeCmdCfg.inputConfigPath)
+		config, err := cluster.LoadConfigFromFile(addNodeCmdCfg.inputConfigPath)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		_, err = config.CreateNode(addNodeCmdCfg.nodeAddress)
+		_, err = config.CreateNode(addNodeCmdCfg.nodeId, addNodeCmdCfg.nodeAddress)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -73,7 +79,7 @@ var addNodeCmd = &cobra.Command{
 		if output == "" {
 			output = addNodeCmdCfg.inputConfigPath
 		}
-		err = monstera.WriteConfigToFile(config, output)
+		err = cluster.WriteConfigToFile(config, output)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -93,7 +99,7 @@ var addApplicationCmd = &cobra.Command{
 	Use:   "add-application",
 	Short: "Adds application to the cluster config",
 	Run: func(cmd *cobra.Command, args []string) {
-		config, err := monstera.LoadConfigFromFile(addApplicationCmdCfg.inputConfigPath)
+		config, err := cluster.LoadConfigFromFile(addApplicationCmdCfg.inputConfigPath)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -105,10 +111,10 @@ var addApplicationCmd = &cobra.Command{
 
 		nodes := make([]string, len(config.Nodes))
 		for i := range config.Nodes {
-			nodes[i] = config.Nodes[i].Address
+			nodes[i] = config.Nodes[i].Id
 		}
 
-		shardSize := monstera.KeyspacePerApplication / addApplicationCmdCfg.shardsCount
+		shardSize := cluster.KeyspacePerApplication / addApplicationCmdCfg.shardsCount
 		for i := 0; i < addApplicationCmdCfg.shardsCount; i++ {
 			lower := uint32(i * shardSize)
 			upper := uint32((i+1)*shardSize - 1)
@@ -145,7 +151,7 @@ var addApplicationCmd = &cobra.Command{
 		if output == "" {
 			output = addApplicationCmdCfg.inputConfigPath
 		}
-		err = monstera.WriteConfigToFile(config, output)
+		err = cluster.WriteConfigToFile(config, output)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -159,8 +165,8 @@ func init() {
 
 	initCmd.PersistentFlags().StringVarP(&initCmdCfg.outputConfigPath, "output", "", "", "Monstera cluster config output path")
 
-	initCmd.PersistentFlags().StringArrayVarP(&initCmdCfg.nodeAddresses, "node", "", nil, "Cluster node addresses (host:port), minimum 3")
-	err := initCmd.MarkPersistentFlagRequired("node")
+	initCmd.PersistentFlags().StringArrayVarP(&initCmdCfg.nodeAddresses, "node-address", "", nil, "Cluster node addresses (host:port), minimum 3")
+	err := initCmd.MarkPersistentFlagRequired("node-address")
 	if err != nil {
 		panic(err)
 	}
@@ -175,8 +181,14 @@ func init() {
 		panic(err)
 	}
 
-	addNodeCmd.PersistentFlags().StringVarP(&addNodeCmdCfg.nodeAddress, "node", "", "", "Cluster node address (host:port)")
-	err = addNodeCmd.MarkPersistentFlagRequired("node")
+	addNodeCmd.PersistentFlags().StringVarP(&addNodeCmdCfg.nodeAddress, "node-address", "", "", "Cluster node address (host:port)")
+	err = addNodeCmd.MarkPersistentFlagRequired("node-address")
+	if err != nil {
+		panic(err)
+	}
+
+	addNodeCmd.PersistentFlags().StringVarP(&addNodeCmdCfg.nodeId, "node-id", "", "", "Cluster node ID")
+	err = addNodeCmd.MarkPersistentFlagRequired("node-id")
 	if err != nil {
 		panic(err)
 	}

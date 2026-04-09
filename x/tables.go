@@ -5,7 +5,8 @@ import (
 	"encoding"
 	"encoding/binary"
 
-	"github.com/evrblk/monstera"
+	"github.com/evrblk/monstera/store"
+	"github.com/evrblk/monstera/utils"
 )
 
 // ptr is a generic constraint for binary-serializable messages (pointers).
@@ -33,13 +34,13 @@ type table struct {
 	tableId []byte
 
 	// tableKeyRange is a range of keys that are stored in the table. It contains the tableId prefix.
-	tableKeyRange *monstera.KeyRange
+	tableKeyRange *KeyRange
 }
 
 func newTable(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) table {
-	tableKeyRange := &monstera.KeyRange{
-		Lower: monstera.ConcatBytes(tableId, keyLowerBound),
-		Upper: monstera.ConcatBytes(tableId, keyUpperBound),
+	tableKeyRange := &KeyRange{
+		Lower: utils.ConcatBytes(tableId, keyLowerBound),
+		Upper: utils.ConcatBytes(tableId, keyUpperBound),
 	}
 
 	return table{
@@ -50,35 +51,35 @@ func newTable(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) table 
 	}
 }
 
-func (t *table) get(txn *monstera.Txn, key []byte) ([]byte, error) {
+func (t *table) get(txn *store.Txn, key []byte) ([]byte, error) {
 	return txn.Get(t.getFullKey(key))
 }
 
-func (t *table) set(txn *monstera.Txn, key []byte, value []byte) error {
+func (t *table) set(txn *store.Txn, key []byte, value []byte) error {
 	return txn.Set(t.getFullKey(key), value)
 }
 
-func (t *table) delete(txn *monstera.Txn, key []byte) error {
+func (t *table) delete(txn *store.Txn, key []byte) error {
 	return txn.Delete(t.getFullKey(key))
 }
 
-func (t *table) prefixExists(txn *monstera.Txn, prefix []byte) (bool, error) {
+func (t *table) prefixExists(txn *store.Txn, prefix []byte) (bool, error) {
 	return txn.PrefixExists(t.getFullKey(prefix))
 }
 
-func (t *table) eachPrefix(txn *monstera.Txn, prefix []byte, fn func(key []byte, value []byte) (bool, error)) error {
+func (t *table) eachPrefix(txn *store.Txn, prefix []byte, fn func(key []byte, value []byte) (bool, error)) error {
 	return txn.EachPrefix(t.getFullKey(prefix), func(key []byte, value []byte) (bool, error) {
 		return fn(key[len(t.tableId):], value)
 	})
 }
 
-func (t *table) eachPrefixKeys(txn *monstera.Txn, prefix []byte, fn func(key []byte) (bool, error)) error {
+func (t *table) eachPrefixKeys(txn *store.Txn, prefix []byte, fn func(key []byte) (bool, error)) error {
 	return txn.EachPrefixKeys(t.getFullKey(prefix), func(key []byte) (bool, error) {
 		return fn(key[len(t.tableId):])
 	})
 }
 
-func (t *table) listInRange(txn *monstera.Txn, lowerBound []byte, upperBound []byte, reverse bool, fn func(key []byte, value []byte) (bool, error)) error {
+func (t *table) listInRange(txn *store.Txn, lowerBound []byte, upperBound []byte, reverse bool, fn func(key []byte, value []byte) (bool, error)) error {
 	var lower []byte
 	if lowerBound != nil {
 		lower = t.getFullKey(lowerBound)
@@ -104,7 +105,7 @@ type rawListPaginatedResult struct {
 	PreviousPaginationToken *PaginationToken
 }
 
-func (t *table) listPrefixedPaginated(txn *monstera.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*rawListPaginatedResult, error) {
+func (t *table) listPrefixedPaginated(txn *store.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*rawListPaginatedResult, error) {
 	result := &rawListPaginatedResult{
 		Items: make([][]byte, 0),
 	}
@@ -213,12 +214,12 @@ func (t *table) listPrefixedPaginated(txn *monstera.Txn, prefix []byte, paginati
 }
 
 func (t *table) getFullKey(key []byte) []byte {
-	fullKey := monstera.ConcatBytes(t.tableId, key)
+	fullKey := utils.ConcatBytes(t.tableId, key)
 	panicIfOutOfRange(fullKey, t.tableKeyRange.Lower, t.tableKeyRange.Upper)
 	return fullKey
 }
 
-func (t *table) GetTableKeyRange() monstera.KeyRange {
+func (t *table) GetTableKeyRange() KeyRange {
 	return *t.tableKeyRange
 }
 
@@ -235,7 +236,7 @@ func NewBinaryTable[T ptr[U], U any](tableId []byte, keyLowerBound []byte, keyUp
 	}
 }
 
-func (t *BinaryTable[T, U]) Get(txn *monstera.Txn, key []byte) (T, error) {
+func (t *BinaryTable[T, U]) Get(txn *store.Txn, key []byte) (T, error) {
 	value, err := t.get(txn, key)
 	if err != nil {
 		return nil, err
@@ -248,7 +249,7 @@ func (t *BinaryTable[T, U]) Get(txn *monstera.Txn, key []byte) (T, error) {
 	return &message, nil
 }
 
-func (t *BinaryTable[T, U]) Set(txn *monstera.Txn, key []byte, message T) error {
+func (t *BinaryTable[T, U]) Set(txn *store.Txn, key []byte, message T) error {
 	value, err := message.MarshalBinary()
 	if err != nil {
 		return err
@@ -257,11 +258,11 @@ func (t *BinaryTable[T, U]) Set(txn *monstera.Txn, key []byte, message T) error 
 	return t.set(txn, key, value)
 }
 
-func (t *BinaryTable[T, U]) Delete(txn *monstera.Txn, key []byte) error {
+func (t *BinaryTable[T, U]) Delete(txn *store.Txn, key []byte) error {
 	return t.delete(txn, key)
 }
 
-func (t *BinaryTable[T, U]) ListAll(txn *monstera.Txn, prefix []byte) ([]T, error) {
+func (t *BinaryTable[T, U]) ListAll(txn *store.Txn, prefix []byte) ([]T, error) {
 	result := make([]T, 0)
 	err := t.eachPrefix(txn, prefix, func(key []byte, value []byte) (bool, error) {
 		var message U
@@ -279,7 +280,7 @@ func (t *BinaryTable[T, U]) ListAll(txn *monstera.Txn, prefix []byte) ([]T, erro
 	return result, nil
 }
 
-func (t *BinaryTable[T, U]) ListInRange(txn *monstera.Txn, lowerBound []byte, upperBound []byte, reverse bool, fn func(message T) (bool, error)) error {
+func (t *BinaryTable[T, U]) ListInRange(txn *store.Txn, lowerBound []byte, upperBound []byte, reverse bool, fn func(message T) (bool, error)) error {
 	return t.listInRange(txn, lowerBound, upperBound, reverse, func(key []byte, value []byte) (bool, error) {
 		var message U
 		if err := T(&message).UnmarshalBinary(value); err != nil {
@@ -296,7 +297,7 @@ type ListPaginatedProtobufResult[T ptr[U], U any] struct {
 	PreviousPaginationToken *PaginationToken
 }
 
-func (t *BinaryTable[T, U]) ListPaginated(txn *monstera.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedProtobufResult[T, U], error) {
+func (t *BinaryTable[T, U]) ListPaginated(txn *store.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedProtobufResult[T, U], error) {
 	rawResult, err := t.listPrefixedPaginated(txn, prefix, paginationToken, limit)
 	if err != nil {
 		return nil, err
@@ -332,7 +333,7 @@ func NewStringTable(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) 
 	}
 }
 
-func (t *StringTable) Get(txn *monstera.Txn, key []byte) (string, error) {
+func (t *StringTable) Get(txn *store.Txn, key []byte) (string, error) {
 	value, err := t.get(txn, key)
 	if err != nil {
 		return "", err
@@ -341,15 +342,15 @@ func (t *StringTable) Get(txn *monstera.Txn, key []byte) (string, error) {
 	return string(value), nil
 }
 
-func (t *StringTable) Set(txn *monstera.Txn, key []byte, value string) error {
+func (t *StringTable) Set(txn *store.Txn, key []byte, value string) error {
 	return t.set(txn, key, []byte(value))
 }
 
-func (t *StringTable) Delete(txn *monstera.Txn, key []byte) error {
+func (t *StringTable) Delete(txn *store.Txn, key []byte) error {
 	return t.delete(txn, key)
 }
 
-func (t *StringTable) ListAll(txn *monstera.Txn, prefix []byte) ([]string, error) {
+func (t *StringTable) ListAll(txn *store.Txn, prefix []byte) ([]string, error) {
 	result := make([]string, 0)
 	err := t.eachPrefix(txn, prefix, func(key []byte, value []byte) (bool, error) {
 		result = append(result, string(value))
@@ -362,7 +363,7 @@ func (t *StringTable) ListAll(txn *monstera.Txn, prefix []byte) ([]string, error
 	return result, nil
 }
 
-func (t *StringTable) ListInRange(txn *monstera.Txn, lowerBound []byte, upperBound []byte, reverse bool, fn func(value string) (bool, error)) error {
+func (t *StringTable) ListInRange(txn *store.Txn, lowerBound []byte, upperBound []byte, reverse bool, fn func(value string) (bool, error)) error {
 	return t.listInRange(txn, lowerBound, upperBound, reverse, func(key []byte, value []byte) (bool, error) {
 		return fn(string(value))
 	})
@@ -374,7 +375,7 @@ type ListPaginatedStringResult struct {
 	PreviousPaginationToken *PaginationToken
 }
 
-func (t *StringTable) ListPaginated(txn *monstera.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedStringResult, error) {
+func (t *StringTable) ListPaginated(txn *store.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedStringResult, error) {
 	rawResult, err := t.listPrefixedPaginated(txn, prefix, paginationToken, limit)
 	if err != nil {
 		return nil, err
@@ -406,7 +407,7 @@ func NewUint64Table(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) 
 	}
 }
 
-func (t *Uint64Table) Get(txn *monstera.Txn, key []byte) (uint64, error) {
+func (t *Uint64Table) Get(txn *store.Txn, key []byte) (uint64, error) {
 	value, err := t.get(txn, key)
 	if err != nil {
 		return 0, err
@@ -415,15 +416,15 @@ func (t *Uint64Table) Get(txn *monstera.Txn, key []byte) (uint64, error) {
 	return bytesToUint64(value), nil
 }
 
-func (t *Uint64Table) Set(txn *monstera.Txn, key []byte, value uint64) error {
+func (t *Uint64Table) Set(txn *store.Txn, key []byte, value uint64) error {
 	return t.set(txn, key, uint64ToBytes(value))
 }
 
-func (t *Uint64Table) Delete(txn *monstera.Txn, key []byte) error {
+func (t *Uint64Table) Delete(txn *store.Txn, key []byte) error {
 	return t.delete(txn, key)
 }
 
-func (t *Uint64Table) ListAll(txn *monstera.Txn, prefix []byte) ([]uint64, error) {
+func (t *Uint64Table) ListAll(txn *store.Txn, prefix []byte) ([]uint64, error) {
 	result := make([]uint64, 0)
 	err := t.eachPrefix(txn, prefix, func(key []byte, value []byte) (bool, error) {
 		result = append(result, bytesToUint64(value))
@@ -442,7 +443,7 @@ type ListPaginatedUint64Result struct {
 	PreviousPaginationToken *PaginationToken
 }
 
-func (t *Uint64Table) ListPaginated(txn *monstera.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedUint64Result, error) {
+func (t *Uint64Table) ListPaginated(txn *store.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedUint64Result, error) {
 	rawResult, err := t.listPrefixedPaginated(txn, prefix, paginationToken, limit)
 	if err != nil {
 		return nil, err
@@ -474,7 +475,7 @@ func NewUint32Table(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) 
 	}
 }
 
-func (t *Uint32Table) Get(txn *monstera.Txn, key []byte) (uint32, error) {
+func (t *Uint32Table) Get(txn *store.Txn, key []byte) (uint32, error) {
 	value, err := t.get(txn, key)
 	if err != nil {
 		return 0, err
@@ -483,15 +484,15 @@ func (t *Uint32Table) Get(txn *monstera.Txn, key []byte) (uint32, error) {
 	return bytesToUint32(value), nil
 }
 
-func (t *Uint32Table) Set(txn *monstera.Txn, key []byte, value uint32) error {
+func (t *Uint32Table) Set(txn *store.Txn, key []byte, value uint32) error {
 	return t.set(txn, key, uint32ToBytes(value))
 }
 
-func (t *Uint32Table) Delete(txn *monstera.Txn, key []byte) error {
+func (t *Uint32Table) Delete(txn *store.Txn, key []byte) error {
 	return t.delete(txn, key)
 }
 
-func (t *Uint32Table) ListAll(txn *monstera.Txn, prefix []byte) ([]uint32, error) {
+func (t *Uint32Table) ListAll(txn *store.Txn, prefix []byte) ([]uint32, error) {
 	result := make([]uint32, 0)
 	err := t.eachPrefix(txn, prefix, func(key []byte, value []byte) (bool, error) {
 		result = append(result, bytesToUint32(value))
@@ -510,7 +511,7 @@ type ListPaginatedUint32Result struct {
 	PreviousPaginationToken *PaginationToken
 }
 
-func (t *Uint32Table) ListPaginated(txn *monstera.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedUint32Result, error) {
+func (t *Uint32Table) ListPaginated(txn *store.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedUint32Result, error) {
 	rawResult, err := t.listPrefixedPaginated(txn, prefix, paginationToken, limit)
 	if err != nil {
 		return nil, err
@@ -540,23 +541,23 @@ func NewOneToManyUint64Index(tableId []byte, keyLowerBound []byte, keyUpperBound
 	}
 }
 
-func (i *OneToManyUint64Index) List(txn *monstera.Txn, pk []byte, fn func(item uint64) (bool, error)) error {
+func (i *OneToManyUint64Index) List(txn *store.Txn, pk []byte, fn func(item uint64) (bool, error)) error {
 	return i.eachPrefixKeys(txn, pk, func(key []byte) (bool, error) {
 		return fn(bytesToUint64(key[len(pk):]))
 	})
 }
 
-func (i *OneToManyUint64Index) Add(txn *monstera.Txn, pk []byte, item uint64) error {
-	key := monstera.ConcatBytes(pk, item)
+func (i *OneToManyUint64Index) Add(txn *store.Txn, pk []byte, item uint64) error {
+	key := utils.ConcatBytes(pk, item)
 	return i.set(txn, key, nil)
 }
 
-func (i *OneToManyUint64Index) Delete(txn *monstera.Txn, pk []byte, item uint64) error {
-	key := monstera.ConcatBytes(pk, item)
+func (i *OneToManyUint64Index) Delete(txn *store.Txn, pk []byte, item uint64) error {
+	key := utils.ConcatBytes(pk, item)
 	return i.delete(txn, key)
 }
 
-func (i *OneToManyUint64Index) NotEmpty(txn *monstera.Txn, pk []byte) (bool, error) {
+func (i *OneToManyUint64Index) NotEmpty(txn *store.Txn, pk []byte) (bool, error) {
 	return i.prefixExists(txn, pk)
 }
 
@@ -571,28 +572,28 @@ func NewOneToManySortedIndex(tableId []byte, keyLowerBound []byte, keyUpperBound
 	}
 }
 
-func (i *OneToManySortedIndex) ListAll(txn *monstera.Txn, pk []byte, fn func(item []byte) (bool, error)) error {
+func (i *OneToManySortedIndex) ListAll(txn *store.Txn, pk []byte, fn func(item []byte) (bool, error)) error {
 	return i.eachPrefixKeys(txn, pk, func(key []byte) (bool, error) {
 		return fn(key[len(pk):])
 	})
 }
 
-func (i *OneToManySortedIndex) ListInRange(txn *monstera.Txn, pk []byte, lowerBound []byte, upperBound []byte, fn func(item []byte) (bool, error)) error {
-	lower := monstera.ConcatBytes(pk, lowerBound)
-	upper := monstera.ConcatBytes(pk, upperBound)
+func (i *OneToManySortedIndex) ListInRange(txn *store.Txn, pk []byte, lowerBound []byte, upperBound []byte, fn func(item []byte) (bool, error)) error {
+	lower := utils.ConcatBytes(pk, lowerBound)
+	upper := utils.ConcatBytes(pk, upperBound)
 
 	return i.listInRange(txn, lower, upper, false, func(key []byte, value []byte) (bool, error) {
 		return fn(key)
 	})
 }
 
-func (i *OneToManySortedIndex) Add(txn *monstera.Txn, pk []byte, item []byte) error {
-	key := monstera.ConcatBytes(pk, item)
+func (i *OneToManySortedIndex) Add(txn *store.Txn, pk []byte, item []byte) error {
+	key := utils.ConcatBytes(pk, item)
 	return i.set(txn, key, nil)
 }
 
-func (i *OneToManySortedIndex) Delete(txn *monstera.Txn, pk []byte, item []byte) error {
-	key := monstera.ConcatBytes(pk, item)
+func (i *OneToManySortedIndex) Delete(txn *store.Txn, pk []byte, item []byte) error {
+	key := utils.ConcatBytes(pk, item)
 	return i.delete(txn, key)
 }
 
@@ -607,21 +608,21 @@ func NewSortedIndex(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) 
 	}
 }
 
-func (i *SortedIndex) ListInRange(txn *monstera.Txn, lowerBound []byte, upperBound []byte, fn func(item []byte) (bool, error)) error {
+func (i *SortedIndex) ListInRange(txn *store.Txn, lowerBound []byte, upperBound []byte, fn func(item []byte) (bool, error)) error {
 	return i.listInRange(txn, lowerBound, upperBound, false, func(key []byte, value []byte) (bool, error) {
 		return fn(key[len(i.tableId):])
 	})
 }
 
-func (i *SortedIndex) Add(txn *monstera.Txn, item []byte) error {
+func (i *SortedIndex) Add(txn *store.Txn, item []byte) error {
 	return i.set(txn, item, nil)
 }
 
-func (i *SortedIndex) Delete(txn *monstera.Txn, item []byte) error {
+func (i *SortedIndex) Delete(txn *store.Txn, item []byte) error {
 	return i.delete(txn, item)
 }
 
-func (i *SortedIndex) GetTableKeyRange() monstera.KeyRange {
+func (i *SortedIndex) GetTableKeyRange() KeyRange {
 	return *i.tableKeyRange
 }
 

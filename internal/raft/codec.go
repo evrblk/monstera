@@ -1,8 +1,9 @@
 package raft
 
 import (
-	"github.com/evrblk/monstera/internal/raft/raftpb"
 	hraft "github.com/hashicorp/raft"
+
+	"github.com/evrblk/monstera/internal/raft/raftpb"
 )
 
 // LogCodec abstracts serialization of Raft log entries to/from bytes.

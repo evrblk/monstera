@@ -7,10 +7,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/evrblk/monstera/store"
 	hraft "github.com/hashicorp/raft"
 	raftbench "github.com/hashicorp/raft/bench"
 	"github.com/stretchr/testify/require"
+
+	"github.com/evrblk/monstera/store"
 )
 
 // gobLogCodec is a test-only LogCodec that uses encoding/gob.

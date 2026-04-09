@@ -8,12 +8,13 @@ import (
 	"net"
 	"os"
 
+	hraft "github.com/hashicorp/raft"
+	"google.golang.org/grpc"
+
 	"github.com/evrblk/monstera"
 	"github.com/evrblk/monstera/internal/raft"
 	"github.com/evrblk/monstera/transport"
 	"github.com/evrblk/monstera/transport/grpc/monsterapb"
-	hraft "github.com/hashicorp/raft"
-	"google.golang.org/grpc"
 )
 
 type GrpcServer struct {

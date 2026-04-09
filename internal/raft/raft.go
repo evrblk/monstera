@@ -182,7 +182,7 @@ func (r *Raft) Bootstrap(servers []hraft.Server) error {
 
 func (r *Raft) RaftMessage(request *transport.RaftMessageRequest) (*transport.RaftMessageResponse, error) {
 	switch request.MessageType {
-	case MessageType_AppendEntriesRequest:
+	case AppendEntriesRequest:
 		msg := &raftpb.AppendEntriesRequest{}
 		if err := msg.UnmarshalVT(request.Message); err != nil {
 			return nil, err
@@ -196,11 +196,11 @@ func (r *Raft) RaftMessage(request *transport.RaftMessageRequest) (*transport.Ra
 			return nil, err
 		}
 		return &transport.RaftMessageResponse{
-			MessageType: MessageType_AppendEntriesResponse,
+			MessageType: AppendEntriesResponse,
 			Message:     data,
 		}, nil
 
-	case MessageType_RequestVoteRequest:
+	case RequestVoteRequest:
 		msg := &raftpb.RequestVoteRequest{}
 		if err := msg.UnmarshalVT(request.Message); err != nil {
 			return nil, err
@@ -214,11 +214,11 @@ func (r *Raft) RaftMessage(request *transport.RaftMessageRequest) (*transport.Ra
 			return nil, err
 		}
 		return &transport.RaftMessageResponse{
-			MessageType: MessageType_RequestVoteResponse,
+			MessageType: RequestVoteResponse,
 			Message:     data,
 		}, nil
 
-	case MessageType_TimeoutNowRequest:
+	case TimeoutNowRequest:
 		msg := &raftpb.TimeoutNowRequest{}
 		if err := msg.UnmarshalVT(request.Message); err != nil {
 			return nil, err
@@ -232,18 +232,18 @@ func (r *Raft) RaftMessage(request *transport.RaftMessageRequest) (*transport.Ra
 			return nil, err
 		}
 		return &transport.RaftMessageResponse{
-			MessageType: MessageType_TimeoutNowResponse,
+			MessageType: TimeoutNowResponse,
 			Message:     data,
 		}, nil
 
-	case MessageType_InstallSnapshotInitRequest:
+	case InstallSnapshotInitRequest:
 		msg := &raftpb.InstallSnapshotInitRequest{}
 		if err := msg.UnmarshalVT(request.Message); err != nil {
 			return nil, err
 		}
 		return r.handleInstallSnapshotInitMessage(msg)
 
-	case MessageType_InstallSnapshotChunkRequest:
+	case InstallSnapshotChunkRequest:
 		msg := &raftpb.InstallSnapshotChunkRequest{}
 		if err := msg.UnmarshalVT(request.Message); err != nil {
 			return nil, err
@@ -279,7 +279,7 @@ func (r *Raft) handleInstallSnapshotInitMessage(msg *raftpb.InstallSnapshotInitR
 		return r.finishSnapshotSession(session)
 	}
 
-	return &transport.RaftMessageResponse{MessageType: MessageType_InstallSnapshotInitResponse}, nil
+	return &transport.RaftMessageResponse{MessageType: InstallSnapshotInitResponse}, nil
 }
 
 // handleInstallSnapshotChunkMessage writes data to the active session.
@@ -307,7 +307,7 @@ func (r *Raft) handleInstallSnapshotChunkMessage(msg *raftpb.InstallSnapshotChun
 		return r.finishSnapshotSession(session)
 	}
 
-	return &transport.RaftMessageResponse{MessageType: MessageType_InstallSnapshotChunkResponse}, nil
+	return &transport.RaftMessageResponse{MessageType: InstallSnapshotChunkResponse}, nil
 }
 
 func (r *Raft) finishSnapshotSession(session *snapshotSession) (*transport.RaftMessageResponse, error) {
@@ -324,7 +324,7 @@ func (r *Raft) finishSnapshotSession(session *snapshotSession) (*transport.RaftM
 		return nil, err
 	}
 	return &transport.RaftMessageResponse{
-		MessageType: MessageType_InstallSnapshotChunkResponse,
+		MessageType: InstallSnapshotChunkResponse,
 		Message:     data,
 	}, nil
 }
@@ -410,6 +410,8 @@ func NewRaft(baseDir string, myAddress string, replicaId string, core AppCore, t
 	}) // TODO: pass logger
 	cfg.NoSnapshotRestoreOnStart = !restoreSnapshotOnStart
 	cfg.NoLegacyTelemetry = true
+	cfg.ElectionTimeout = 2 * time.Second
+	cfg.HeartbeatTimeout = 2 * time.Second
 
 	raftDir := filepath.Join(baseDir, replicaId, "raft")
 	if err := os.MkdirAll(raftDir, os.ModePerm); err != nil {

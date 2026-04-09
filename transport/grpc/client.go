@@ -6,10 +6,11 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"google.golang.org/grpc"
+
 	"github.com/evrblk/monstera/cluster"
 	"github.com/evrblk/monstera/transport"
 	"github.com/evrblk/monstera/transport/grpc/monsterapb"
-	"google.golang.org/grpc"
 )
 
 // GrpcTransport is the gRPC-backed implementation of transport.Transport.

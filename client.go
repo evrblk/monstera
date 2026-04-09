@@ -10,10 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/evrblk/monstera/cluster"
-	"github.com/evrblk/monstera/transport"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/evrblk/monstera/cluster"
+	"github.com/evrblk/monstera/transport"
 )
 
 // ClientConfig holds tunable parameters for Client behavior.

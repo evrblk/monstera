@@ -6,26 +6,29 @@ import (
 	"sync"
 	"time"
 
+	hraft "github.com/hashicorp/raft"
+
 	"github.com/evrblk/monstera/internal/raft/raftpb"
 	"github.com/evrblk/monstera/transport"
-	hraft "github.com/hashicorp/raft"
 )
+
+type MessageType = int32
 
 const (
-	MessageType_AppendEntriesRequest         int32 = 1
-	MessageType_AppendEntriesResponse        int32 = 2
-	MessageType_RequestVoteRequest           int32 = 3
-	MessageType_RequestVoteResponse          int32 = 4
-	MessageType_TimeoutNowRequest            int32 = 5
-	MessageType_TimeoutNowResponse           int32 = 6
-	MessageType_InstallSnapshotInitRequest   int32 = 7
-	MessageType_InstallSnapshotInitResponse  int32 = 8
-	MessageType_InstallSnapshotChunkRequest  int32 = 9
-	MessageType_InstallSnapshotChunkResponse int32 = 10
+	AppendEntriesRequest         MessageType = 1
+	AppendEntriesResponse        MessageType = 2
+	RequestVoteRequest           MessageType = 3
+	RequestVoteResponse          MessageType = 4
+	TimeoutNowRequest            MessageType = 5
+	TimeoutNowResponse           MessageType = 6
+	InstallSnapshotInitRequest   MessageType = 7
+	InstallSnapshotInitResponse  MessageType = 8
+	InstallSnapshotChunkRequest  MessageType = 9
+	InstallSnapshotChunkResponse MessageType = 10
 )
 
-// RaftTransport implements hraft.Transport.
-// All outbound Raft RPCs are dispatched through Monstera transport.
+// RaftTransport implements [hraft.Transport].
+// All outbound Raft RPCs are dispatched through Monstera [transport.Transport].
 type RaftTransport struct {
 	rpcChan         chan hraft.RPC
 	localAddress    hraft.ServerAddress
@@ -64,7 +67,7 @@ func (r *RaftTransport) AppendEntries(id hraft.ServerID, target hraft.ServerAddr
 
 	ret, err := r.trans.RaftMessage(ctx, string(target), &transport.RaftMessageRequest{
 		Message:     data,
-		MessageType: MessageType_AppendEntriesRequest,
+		MessageType: AppendEntriesRequest,
 		ReplicaId:   string(id),
 	})
 	if err != nil {
@@ -93,7 +96,7 @@ func (r *RaftTransport) RequestVote(id hraft.ServerID, target hraft.ServerAddres
 
 	ret, err := r.trans.RaftMessage(ctx, string(target), &transport.RaftMessageRequest{
 		Message:     data,
-		MessageType: MessageType_RequestVoteRequest,
+		MessageType: RequestVoteRequest,
 		ReplicaId:   string(id),
 	})
 	if err != nil {
@@ -122,7 +125,7 @@ func (r *RaftTransport) TimeoutNow(id hraft.ServerID, target hraft.ServerAddress
 
 	ret, err := r.trans.RaftMessage(ctx, string(target), &transport.RaftMessageRequest{
 		Message:     data,
-		MessageType: MessageType_TimeoutNowRequest,
+		MessageType: TimeoutNowRequest,
 		ReplicaId:   string(id),
 	})
 	if err != nil {
@@ -149,7 +152,7 @@ func (r *RaftTransport) InstallSnapshot(id hraft.ServerID, target hraft.ServerAd
 	}
 	lastRet, err := r.trans.RaftMessage(ctx, string(target), &transport.RaftMessageRequest{
 		Message:     msgData,
-		MessageType: MessageType_InstallSnapshotInitRequest,
+		MessageType: InstallSnapshotInitRequest,
 		ReplicaId:   string(id),
 	})
 	if err != nil {
@@ -171,7 +174,7 @@ func (r *RaftTransport) InstallSnapshot(id hraft.ServerID, target hraft.ServerAd
 		}
 		lastRet, err = r.trans.RaftMessage(ctx, string(target), &transport.RaftMessageRequest{
 			Message:     chunkData,
-			MessageType: MessageType_InstallSnapshotChunkRequest,
+			MessageType: InstallSnapshotChunkRequest,
 			ReplicaId:   string(id),
 		})
 		if err != nil {
@@ -263,7 +266,7 @@ func (r *raftPipelineAPI) receiver() {
 	for af := range r.inflightCh {
 		ret, err := r.trans.RaftMessage(r.ctx, r.targetNodeId, &transport.RaftMessageRequest{
 			Message:     af.data,
-			MessageType: MessageType_AppendEntriesRequest,
+			MessageType: AppendEntriesRequest,
 			ReplicaId:   r.targetReplicaId,
 		})
 		if err != nil {

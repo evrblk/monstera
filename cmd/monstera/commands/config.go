@@ -5,8 +5,9 @@ import (
 	"log"
 	"math/rand/v2"
 
-	"github.com/evrblk/monstera/cluster"
 	"github.com/spf13/cobra"
+
+	"github.com/evrblk/monstera/cluster"
 )
 
 var configCmd = &cobra.Command{
@@ -25,7 +26,7 @@ var initCmd = &cobra.Command{
 	Short: "Creates a new cluster config",
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(initCmdCfg.nodeAddresses) != len(initCmdCfg.nodeIds) {
-			log.Fatal("node-addresses and node-ids must have the same length")
+			log.Fatal("node-address and node-id must have the same length")
 		}
 
 		config := cluster.CreateEmptyConfig()
@@ -69,6 +70,8 @@ var addNodeCmd = &cobra.Command{
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		config.IncrementVersion()
 
 		err = config.Validate()
 		if err != nil {
@@ -142,6 +145,8 @@ var addApplicationCmd = &cobra.Command{
 			}
 		}
 
+		config.IncrementVersion()
+
 		err = config.Validate()
 		if err != nil {
 			log.Fatal(err)
@@ -161,61 +166,40 @@ var addApplicationCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(configCmd)
 
+	// config init
 	configCmd.AddCommand(initCmd)
-
 	initCmd.PersistentFlags().StringVarP(&initCmdCfg.outputConfigPath, "output", "", "", "Monstera cluster config output path")
-
+	panicIfNotNil(initCmd.MarkPersistentFlagRequired("output"))
 	initCmd.PersistentFlags().StringArrayVarP(&initCmdCfg.nodeAddresses, "node-address", "", nil, "Cluster node addresses (host:port), minimum 3")
-	err := initCmd.MarkPersistentFlagRequired("node-address")
-	if err != nil {
-		panic(err)
-	}
+	panicIfNotNil(initCmd.MarkPersistentFlagRequired("node-address"))
+	initCmd.PersistentFlags().StringArrayVarP(&initCmdCfg.nodeIds, "node-id", "", nil, "Cluster node IDs, minimum 3")
+	panicIfNotNil(initCmd.MarkPersistentFlagRequired("node-id"))
 
+	// config add-node
 	configCmd.AddCommand(addNodeCmd)
-
 	addNodeCmd.PersistentFlags().StringVarP(&addNodeCmdCfg.outputConfigPath, "output", "", "", "Monstera cluster config output path")
-
 	addNodeCmd.PersistentFlags().StringVarP(&addNodeCmdCfg.inputConfigPath, "config", "", "", "Monstera cluster config input path")
-	err = addNodeCmd.MarkPersistentFlagRequired("config")
-	if err != nil {
-		panic(err)
-	}
-
+	panicIfNotNil(addNodeCmd.MarkPersistentFlagRequired("config"))
 	addNodeCmd.PersistentFlags().StringVarP(&addNodeCmdCfg.nodeAddress, "node-address", "", "", "Cluster node address (host:port)")
-	err = addNodeCmd.MarkPersistentFlagRequired("node-address")
-	if err != nil {
-		panic(err)
-	}
-
+	panicIfNotNil(addNodeCmd.MarkPersistentFlagRequired("node-address"))
 	addNodeCmd.PersistentFlags().StringVarP(&addNodeCmdCfg.nodeId, "node-id", "", "", "Cluster node ID")
-	err = addNodeCmd.MarkPersistentFlagRequired("node-id")
-	if err != nil {
-		panic(err)
-	}
+	panicIfNotNil(addNodeCmd.MarkPersistentFlagRequired("node-id"))
 
+	// config add-application
 	configCmd.AddCommand(addApplicationCmd)
-
 	addApplicationCmd.PersistentFlags().StringVarP(&addApplicationCmdCfg.outputConfigPath, "output", "", "", "Monstera cluster config output path")
-
 	addApplicationCmd.PersistentFlags().StringVarP(&addApplicationCmdCfg.inputConfigPath, "config", "", "", "Monstera cluster config input path")
-	err = addApplicationCmd.MarkPersistentFlagRequired("config")
-	if err != nil {
-		panic(err)
-	}
-
+	panicIfNotNil(addApplicationCmd.MarkPersistentFlagRequired("config"))
 	addApplicationCmd.PersistentFlags().StringVarP(&addApplicationCmdCfg.applicationName, "name", "", "", "Application name")
-	err = addApplicationCmd.MarkPersistentFlagRequired("name")
-	if err != nil {
-		panic(err)
-	}
-
+	panicIfNotNil(addApplicationCmd.MarkPersistentFlagRequired("name"))
 	addApplicationCmd.PersistentFlags().StringVarP(&addApplicationCmdCfg.implementation, "implementation", "", "", "Application implementation")
-	err = addApplicationCmd.MarkPersistentFlagRequired("implementation")
+	panicIfNotNil(addApplicationCmd.MarkPersistentFlagRequired("implementation"))
+	addApplicationCmd.PersistentFlags().IntVarP(&addApplicationCmdCfg.replicationFactor, "replication-factor", "", 3, "Replication factor")
+	addApplicationCmd.PersistentFlags().IntVarP(&addApplicationCmdCfg.shardsCount, "shards-count", "", 16, "Shards count (power of 2)")
+}
+
+func panicIfNotNil(err error) {
 	if err != nil {
 		panic(err)
 	}
-
-	addApplicationCmd.PersistentFlags().IntVarP(&addApplicationCmdCfg.replicationFactor, "replication-factor", "", 3, "Replication factor")
-
-	addApplicationCmd.PersistentFlags().IntVarP(&addApplicationCmdCfg.shardsCount, "shards-count", "", 16, "Shards count (power of 2)")
 }

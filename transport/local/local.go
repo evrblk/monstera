@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/evrblk/monstera"
+	"github.com/evrblk/monstera/internal/raft"
 	"github.com/evrblk/monstera/transport"
 )
 
@@ -57,22 +58,6 @@ func (t *LocalTransport) Update(ctx context.Context, nodeId string, request *tra
 	return node.Update(ctx, request)
 }
 
-func (t *LocalTransport) TriggerSnapshot(ctx context.Context, nodeId string, request *transport.TriggerSnapshotRequest) error {
-	node, err := t.getNode(nodeId)
-	if err != nil {
-		return err
-	}
-	return node.TriggerSnapshot(request.ReplicaId)
-}
-
-func (t *LocalTransport) LeadershipTransfer(ctx context.Context, nodeId string, request *transport.LeadershipTransferRequest) error {
-	node, err := t.getNode(nodeId)
-	if err != nil {
-		return err
-	}
-	return node.LeadershipTransfer(request.ReplicaId)
-}
-
 func (t *LocalTransport) HealthCheck(ctx context.Context, nodeId string) ([]*transport.ReplicaState, error) {
 	node, err := t.getNode(nodeId)
 	if err != nil {
@@ -82,9 +67,23 @@ func (t *LocalTransport) HealthCheck(ctx context.Context, nodeId string) ([]*tra
 	replicas := node.ListReplicas()
 	states := make([]*transport.ReplicaState, len(replicas))
 	for i, r := range replicas {
+		var raftState transport.RaftState
+		switch s := r.GetRaftState(); s {
+		case raft.Follower:
+			raftState = transport.RaftStateFollower
+		case raft.Candidate:
+			raftState = transport.RaftStateCandidate
+		case raft.Leader:
+			raftState = transport.RaftStateLeader
+		case raft.Shutdown:
+			raftState = transport.RaftStateDead
+		default:
+			return nil, fmt.Errorf("unknown raft state: %v", s)
+		}
+
 		states[i] = &transport.ReplicaState{
 			ReplicaId: r.GetReplicaId(),
-			IsLeader:  r.IsLeader(),
+			RaftState: raftState,
 		}
 	}
 	return states, nil

@@ -349,8 +349,6 @@ func (c *Config) CreateNode(id string, grpcAddress string) (*Node, error) {
 
 	c.Nodes = append(c.Nodes, node)
 
-	c.Version++ // TODO
-
 	return node, nil
 }
 
@@ -385,7 +383,14 @@ func (c *Config) ListShards(applicationName string) ([]*Shard, error) {
 		return nil, errApplicationNotFound
 	}
 
-	return application.Shards, nil
+	sortedShards := make([]*Shard, len(application.Shards))
+	copy(sortedShards, application.Shards)
+
+	sort.Slice(sortedShards, func(i, j int) bool {
+		return bytes.Compare(sortedShards[i].LowerBound, sortedShards[j].LowerBound) < 0
+	})
+
+	return sortedShards, nil
 }
 
 func (c *Config) CreateApplication(applicationName string, implementation string, replicationFactor int32) (*Application, error) {
@@ -549,6 +554,10 @@ func (c *Config) GetReplica(replicaId string) (*Replica, error) {
 	}
 
 	return nil, errReplicaNotFound
+}
+
+func (c *Config) IncrementVersion() {
+	c.Version++
 }
 
 // ValidateTransition checks if the transition from old to new config is valid according to the following invariants:

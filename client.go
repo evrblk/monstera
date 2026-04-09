@@ -1,12 +1,10 @@
 package monstera
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log"
 	"math/rand/v2"
-	"sort"
 	"sync"
 	"time"
 
@@ -234,50 +232,6 @@ func (c *Client) updateShard(ctx context.Context, applicationName string, shard 
 	return nil, fmt.Errorf("all replicas failed")
 }
 
-// TriggerSnapshot requests the node hosting replicaId to take a snapshot immediately.
-func (c *Client) TriggerSnapshot(applicationName string, shardId string, replicaId string) error {
-	replica, err := c.clusterConfig.GetReplica(replicaId)
-	if err != nil {
-		return err
-	}
-
-	return c.trans.TriggerSnapshot(context.Background(), replica.NodeId, &transport.TriggerSnapshotRequest{
-		ReplicaId: replicaId,
-	})
-}
-
-// LeadershipTransfer asks the node hosting replicaId to step down as leader.
-func (c *Client) LeadershipTransfer(applicationName string, shardId string, replicaId string) error {
-	replica, err := c.clusterConfig.GetReplica(replicaId)
-	if err != nil {
-		return err
-	}
-
-	return c.trans.LeadershipTransfer(context.Background(), replica.NodeId, &transport.LeadershipTransferRequest{
-		ReplicaId: replicaId,
-	})
-}
-
-// ListShards returns all shards for applicationName sorted by their lower bound.
-func (c *Client) ListShards(applicationName string) ([]*cluster.Shard, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	shards, err := c.clusterConfig.ListShards(applicationName)
-	if err != nil {
-		return nil, err
-	}
-
-	sortedShards := make([]*cluster.Shard, len(shards))
-	copy(sortedShards, shards)
-
-	sort.Slice(sortedShards, func(i, j int) bool {
-		return bytes.Compare(sortedShards[i].LowerBound, sortedShards[j].LowerBound) < 0
-	})
-
-	return sortedShards, nil
-}
-
 // shuffleReplicas returns a randomly ordered copy of replicas.
 func (c *Client) shuffleReplicas(replicas []*cluster.Replica) []*cluster.Replica {
 	result := make([]*cluster.Replica, len(replicas))
@@ -314,7 +268,7 @@ func (c *Client) getLeader(replicas []*cluster.Replica) *cluster.Replica {
 
 	for _, r := range replicas {
 		s, ok := c.replicaStates[r.Id]
-		if ok && s.IsLeader {
+		if ok && s.RaftState == transport.RaftStateLeader {
 			return r
 		}
 	}

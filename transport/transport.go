@@ -16,14 +16,6 @@ type Transport interface {
 	// to be, or redirect to, the current Raft leader for the target shard.
 	Update(ctx context.Context, nodeId string, request *UpdateRequest) (*UpdateResponse, error)
 
-	// TriggerSnapshot instructs the specified node to initiate a Raft snapshot for
-	// the given replica.
-	TriggerSnapshot(ctx context.Context, nodeId string, request *TriggerSnapshotRequest) error
-
-	// LeadershipTransfer asks the specified node to step down and transfer Raft
-	// leadership for the given replica to another peer.
-	LeadershipTransfer(ctx context.Context, nodeId string, request *LeadershipTransferRequest) error
-
 	// HealthCheck returns the observed state of all replicas hosted on the
 	// specified node, including which replica is currently the leader.
 	HealthCheck(ctx context.Context, nodeId string) ([]*ReplicaState, error)
@@ -74,20 +66,19 @@ type UpdateResponse struct {
 	Payload []byte
 }
 
-// TriggerSnapshotRequest identifies the replica for which a snapshot should be taken.
-type TriggerSnapshotRequest struct {
-	ReplicaId string
-}
+type RaftState = int32
 
-// LeadershipTransferRequest identifies the replica that should transfer leadership.
-type LeadershipTransferRequest struct {
-	ReplicaId string
-}
+const (
+	RaftStateFollower RaftState = iota
+	RaftStateCandidate
+	RaftStateLeader
+	RaftStateDead
+)
 
 // ReplicaState holds the observed state of a replica.
 type ReplicaState struct {
 	ReplicaId string
-	IsLeader  bool
+	RaftState RaftState
 }
 
 // RaftMessageRequest wraps a raw Raft protocol message destined for a specific replica.

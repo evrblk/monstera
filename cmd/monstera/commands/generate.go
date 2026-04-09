@@ -5,8 +5,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/evrblk/monstera/x/codegen"
 	"github.com/spf13/cobra"
+
+	"github.com/evrblk/monstera/x/codegen"
 )
 
 var codeGenerateCmd = &cobra.Command{

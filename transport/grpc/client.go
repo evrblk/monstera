@@ -89,9 +89,23 @@ func (t *GrpcTransport) HealthCheck(ctx context.Context, nodeId string) ([]*tran
 
 	states := make([]*transport.ReplicaState, len(resp.Replicas))
 	for i, r := range resp.Replicas {
+		var raftState transport.RaftState
+		switch s := r.RaftState; s {
+		case monsterapb.RaftState_RAFT_STATE_FOLLOWER:
+			raftState = transport.RaftStateFollower
+		case monsterapb.RaftState_RAFT_STATE_CANDIDATE:
+			raftState = transport.RaftStateCandidate
+		case monsterapb.RaftState_RAFT_STATE_LEADER:
+			raftState = transport.RaftStateLeader
+		case monsterapb.RaftState_RAFT_STATE_SHUTDOWN:
+			raftState = transport.RaftStateDead
+		default:
+			return nil, fmt.Errorf("unknown raft state: %v", s)
+		}
+
 		states[i] = &transport.ReplicaState{
 			ReplicaId: r.ReplicaId,
-			IsLeader:  r.RaftState == monsterapb.RaftState_RAFT_STATE_LEADER,
+			RaftState: raftState,
 		}
 	}
 	return states, nil
@@ -142,30 +156,6 @@ func (t *GrpcTransport) Update(ctx context.Context, nodeId string, request *tran
 	return &transport.UpdateResponse{
 		Payload: resp.Payload,
 	}, nil
-}
-
-func (t *GrpcTransport) TriggerSnapshot(ctx context.Context, nodeId string, request *transport.TriggerSnapshotRequest) error {
-	conn, err := t.getConnection(nodeId)
-	if err != nil {
-		return err
-	}
-
-	_, err = conn.TriggerSnapshot(ctx, &monsterapb.TriggerSnapshotRequest{
-		ReplicaId: request.ReplicaId,
-	})
-	return err
-}
-
-func (t *GrpcTransport) LeadershipTransfer(ctx context.Context, nodeId string, request *transport.LeadershipTransferRequest) error {
-	conn, err := t.getConnection(nodeId)
-	if err != nil {
-		return err
-	}
-
-	_, err = conn.LeadershipTransfer(ctx, &monsterapb.LeadershipTransferRequest{
-		ReplicaId: request.ReplicaId,
-	})
-	return err
 }
 
 func (t *GrpcTransport) RaftMessage(ctx context.Context, nodeId string, request *transport.RaftMessageRequest) (*transport.RaftMessageResponse, error) {

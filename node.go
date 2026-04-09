@@ -448,10 +448,14 @@ func isUnavailableError(err error) bool {
 
 func NewNode(baseDir string, nodeId string, clusterConfig *cluster.Config, coreDescriptors ApplicationCoreDescriptors, nodeConfig NodeConfig, trans transport.Transport) (*Node, error) {
 	var raftStore *store.BadgerStore
+	var err error
 	if nodeConfig.UseInMemoryRaftStore {
-		raftStore = store.NewBadgerInMemoryStore()
+		raftStore, err = store.NewBadgerInMemoryStore()
 	} else {
-		raftStore = store.NewBadgerStore(filepath.Join(baseDir, "raft"))
+		raftStore, err = store.NewBadgerStore(filepath.Join(baseDir, "raft"))
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	for _, a := range clusterConfig.GetApplications() {

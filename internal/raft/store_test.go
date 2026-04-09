@@ -32,7 +32,9 @@ func (c *gobLogCodec) Decode(data []byte, out *hraft.Log) error {
 
 func newTestStore(t testing.TB, prefix string) *HraftBadgerStore {
 	t.Helper()
-	return NewHraftBadgerStore(store.NewBadgerInMemoryStore(), []byte(prefix), &gobLogCodec{})
+	store, err := store.NewBadgerInMemoryStore()
+	require.NoError(t, err)
+	return NewHraftBadgerStore(store, []byte(prefix), &gobLogCodec{})
 }
 
 func testRaftLog(idx uint64, data string) *hraft.Log {
@@ -437,7 +439,9 @@ func TestHraftBadgerStoreSetUint64AndGetUint64(t *testing.T) {
 }
 
 func TestHraftBadgerStoreNewWithExistingData(t *testing.T) {
-	badgerStore := store.NewBadgerInMemoryStore()
+	badgerStore, err := store.NewBadgerInMemoryStore()
+	require.NoError(t, err)
+
 	codec := &gobLogCodec{}
 	keyPrefix := []byte("test")
 
@@ -450,7 +454,7 @@ func TestHraftBadgerStoreNewWithExistingData(t *testing.T) {
 		testRaftLog(4, "log4"),
 		testRaftLog(5, "log5"),
 	}
-	err := hraftStore1.StoreLogs(logs)
+	err = hraftStore1.StoreLogs(logs)
 	require.NoError(t, err)
 
 	err = hraftStore1.Set([]byte("key1"), []byte("value1"))
@@ -502,7 +506,9 @@ func TestHraftBadgerStoreNewWithExistingData(t *testing.T) {
 }
 
 func TestHraftBadgerStoreNewWithDifferentKeyPrefix(t *testing.T) {
-	badgerStore := store.NewBadgerInMemoryStore()
+	badgerStore, err := store.NewBadgerInMemoryStore()
+	require.NoError(t, err)
+
 	codec := &gobLogCodec{}
 
 	hraftStore1 := NewHraftBadgerStore(badgerStore, []byte("prefix1"), codec)
@@ -511,7 +517,7 @@ func TestHraftBadgerStoreNewWithDifferentKeyPrefix(t *testing.T) {
 		testRaftLog(1, "log1"),
 		testRaftLog(2, "log2"),
 	}
-	err := hraftStore1.StoreLogs(logs)
+	err = hraftStore1.StoreLogs(logs)
 	require.NoError(t, err)
 
 	err = hraftStore1.Set([]byte("key1"), []byte("value1"))
@@ -567,7 +573,9 @@ func TestHraftBadgerStoreNewWithDifferentKeyPrefix(t *testing.T) {
 }
 
 func TestHraftBadgerStoreNewWithEmptyStore(t *testing.T) {
-	badgerStore := store.NewBadgerInMemoryStore()
+	badgerStore, err := store.NewBadgerInMemoryStore()
+	require.NoError(t, err)
+
 	keyPrefix := []byte("test")
 
 	hraftStore := NewHraftBadgerStore(badgerStore, keyPrefix, &gobLogCodec{})
@@ -601,7 +609,10 @@ func BenchmarkHraftBadgerStoreFirstIndex(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(dir)
+	if err != nil {
+		b.Error(err)
+	}
 	defer badgerStore.Close()
 	hraftStore := NewHraftBadgerStore(badgerStore, []byte("test"), &gobLogCodec{})
 
@@ -614,7 +625,10 @@ func BenchmarkHraftBadgerStoreLastIndex(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(dir)
+	if err != nil {
+		b.Error(err)
+	}
 	defer badgerStore.Close()
 	hraftStore := NewHraftBadgerStore(badgerStore, []byte("test"), &gobLogCodec{})
 
@@ -627,7 +641,10 @@ func BenchmarkHraftBadgerStoreGetLog(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(dir)
+	if err != nil {
+		b.Error(err)
+	}
 	defer badgerStore.Close()
 	hraftStore := NewHraftBadgerStore(badgerStore, []byte("test"), &gobLogCodec{})
 
@@ -640,7 +657,10 @@ func BenchmarkHraftBadgerStoreStoreLog(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(dir)
+	if err != nil {
+		b.Error(err)
+	}
 	defer badgerStore.Close()
 	hraftStore := NewHraftBadgerStore(badgerStore, []byte("test"), &gobLogCodec{})
 
@@ -653,7 +673,10 @@ func BenchmarkHraftBadgerStoreStoreLogs(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(dir)
+	if err != nil {
+		b.Error(err)
+	}
 	defer badgerStore.Close()
 	hraftStore := NewHraftBadgerStore(badgerStore, []byte("test"), &gobLogCodec{})
 
@@ -666,7 +689,10 @@ func BenchmarkHraftBadgerStoreDeleteRange(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(dir)
+	if err != nil {
+		b.Error(err)
+	}
 	defer badgerStore.Close()
 	hraftStore := NewHraftBadgerStore(badgerStore, []byte("test"), &gobLogCodec{})
 
@@ -679,7 +705,10 @@ func BenchmarkHraftBadgerStoreGet(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(dir)
+	if err != nil {
+		b.Error(err)
+	}
 	defer badgerStore.Close()
 	hraftStore := NewHraftBadgerStore(badgerStore, []byte("test"), &gobLogCodec{})
 
@@ -692,7 +721,10 @@ func BenchmarkHraftBadgerStoreSet(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(dir)
+	if err != nil {
+		b.Error(err)
+	}
 	defer badgerStore.Close()
 	hraftStore := NewHraftBadgerStore(badgerStore, []byte("test"), &gobLogCodec{})
 
@@ -705,7 +737,10 @@ func BenchmarkHraftBadgerStoreSetUint64(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(dir)
+	if err != nil {
+		b.Error(err)
+	}
 	defer badgerStore.Close()
 	hraftStore := NewHraftBadgerStore(badgerStore, []byte("test"), &gobLogCodec{})
 
@@ -718,7 +753,10 @@ func BenchmarkHraftBadgerStoreGetUint64(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(dir)
+	if err != nil {
+		b.Error(err)
+	}
 	defer badgerStore.Close()
 	hraftStore := NewHraftBadgerStore(badgerStore, []byte("test"), &gobLogCodec{})
 

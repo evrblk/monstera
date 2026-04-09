@@ -7,13 +7,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBadgerStoreView(t *testing.T) {
-	store := NewBadgerInMemoryStore()
+func TestBadgerStore_View(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
 	defer store.Close()
 
 	// Set up some test data
 	txn := store.Update()
-	err := txn.Set([]byte("key1"), []byte("value1"))
+	err = txn.Set([]byte("key1"), []byte("value1"))
 	require.NoError(t, err)
 	err = txn.Set([]byte("key2"), []byte("value2"))
 	require.NoError(t, err)
@@ -94,15 +95,16 @@ func TestBadgerStoreView(t *testing.T) {
 	require.Contains(t, rangeValues, "value2")
 }
 
-func TestBadgerStoreUpdate(t *testing.T) {
-	store := NewBadgerInMemoryStore()
+func TestBadgerStore_Update(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
 	defer store.Close()
 
 	// Test Update transaction
 	txn := store.Update()
 
 	// Test Set method
-	err := txn.Set([]byte("key1"), []byte("value1"))
+	err = txn.Set([]byte("key1"), []byte("value1"))
 	require.NoError(t, err)
 
 	err = txn.Set([]byte("key2"), []byte("value2"))
@@ -139,13 +141,14 @@ func TestBadgerStoreUpdate(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
-func TestBadgerStoreUpdateConflict(t *testing.T) {
-	store := NewBadgerInMemoryStore()
+func TestBadgerStore_UpdateConflict(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
 	defer store.Close()
 
 	// Set initial data
 	txn1 := store.Update()
-	err := txn1.Set([]byte("key1"), []byte("value1"))
+	err = txn1.Set([]byte("key1"), []byte("value1"))
 	require.NoError(t, err)
 	err = txn1.Commit()
 	require.NoError(t, err)
@@ -177,12 +180,13 @@ func TestBadgerStoreUpdateConflict(t *testing.T) {
 	require.ErrorIs(t, err, ErrConflict)
 }
 
-func TestBadgerStoreBatchUpdate(t *testing.T) {
-	store := NewBadgerInMemoryStore()
+func TestBadgerStore_BatchUpdate(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
 	defer store.Close()
 
 	// Test BatchUpdate
-	err := store.BatchUpdate(func(batch *Batch) error {
+	err = store.BatchUpdate(func(batch *Batch) error {
 		err := batch.Set([]byte("batch:key1"), []byte("batch:value1"))
 		if err != nil {
 			return err
@@ -220,12 +224,13 @@ func TestBadgerStoreBatchUpdate(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
-func TestBadgerStoreBatchUpdateError(t *testing.T) {
-	store := NewBadgerInMemoryStore()
+func TestBadgerStore_BatchUpdateError(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
 	defer store.Close()
 
 	// Test BatchUpdate with error
-	err := store.BatchUpdate(func(batch *Batch) error {
+	err = store.BatchUpdate(func(batch *Batch) error {
 		err := batch.Set([]byte("key1"), []byte("value1"))
 		if err != nil {
 			return err
@@ -247,13 +252,14 @@ func TestBadgerStoreBatchUpdateError(t *testing.T) {
 	require.Nil(t, value)
 }
 
-func TestBadgerStoreDropPrefix(t *testing.T) {
-	store := NewBadgerInMemoryStore()
+func TestBadgerStore_DropPrefix(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
 	defer store.Close()
 
 	// Set up test data with different prefixes
 	txn := store.Update()
-	err := txn.Set([]byte("prefix1:key1"), []byte("value1"))
+	err = txn.Set([]byte("prefix1:key1"), []byte("value1"))
 	require.NoError(t, err)
 	err = txn.Set([]byte("prefix1:key2"), []byte("value2"))
 	require.NoError(t, err)
@@ -323,8 +329,9 @@ func TestBadgerStoreDropPrefix(t *testing.T) {
 	require.Equal(t, []byte("value5"), value)
 }
 
-func TestBadgerStoreEachPrefixEarlyReturn(t *testing.T) {
-	store := NewBadgerInMemoryStore()
+func TestBadgerStore_EachPrefixEarlyReturn(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
 	defer store.Close()
 
 	// Set up test data
@@ -335,7 +342,7 @@ func TestBadgerStoreEachPrefixEarlyReturn(t *testing.T) {
 		err := txn.Set(key, value)
 		require.NoError(t, err)
 	}
-	err := txn.Commit()
+	err = txn.Commit()
 	require.NoError(t, err)
 
 	// Test EachPrefix with early return
@@ -352,8 +359,9 @@ func TestBadgerStoreEachPrefixEarlyReturn(t *testing.T) {
 	require.Equal(t, 3, count)
 }
 
-func TestBadgerStoreEachRangeWithBounds(t *testing.T) {
-	store := NewBadgerInMemoryStore()
+func TestBadgerStore_EachRangeWithBounds(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
 	defer store.Close()
 
 	// Set up test data
@@ -363,7 +371,7 @@ func TestBadgerStoreEachRangeWithBounds(t *testing.T) {
 		err := txn.Set([]byte(key), []byte("value"+key))
 		require.NoError(t, err)
 	}
-	err := txn.Commit()
+	err = txn.Commit()
 	require.NoError(t, err)
 
 	// Test EachRange with bounds
@@ -384,8 +392,9 @@ func TestBadgerStoreEachRangeWithBounds(t *testing.T) {
 	require.Equal(t, "f", rangeKeys[4])
 }
 
-func TestBadgerStoreEachRangeNoUpperBound(t *testing.T) {
-	store := NewBadgerInMemoryStore()
+func TestBadgerStore_EachRangeNoUpperBound(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
 	defer store.Close()
 
 	// Set up test data
@@ -395,7 +404,7 @@ func TestBadgerStoreEachRangeNoUpperBound(t *testing.T) {
 		err := txn.Set([]byte(key), []byte("value"+key))
 		require.NoError(t, err)
 	}
-	err := txn.Commit()
+	err = txn.Commit()
 	require.NoError(t, err)
 
 	// Test EachRange without upper bound
@@ -414,15 +423,16 @@ func TestBadgerStoreEachRangeNoUpperBound(t *testing.T) {
 	require.Equal(t, "e", rangeKeys[2])
 }
 
-func TestBadgerStoreDeleteNonExistent(t *testing.T) {
-	store := NewBadgerInMemoryStore()
+func TestBadgerStore_DeleteNonExistent(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
 	defer store.Close()
 
 	txn := store.Update()
 	defer txn.Discard()
 
 	// Delete nonexistent key should not error
-	err := txn.Delete([]byte("nonexistent"))
+	err = txn.Delete([]byte("nonexistent"))
 	require.NoError(t, err)
 
 	// Commit should succeed
@@ -430,8 +440,131 @@ func TestBadgerStoreDeleteNonExistent(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestBadgerStoreFlatten(t *testing.T) {
-	store := NewBadgerInMemoryStore()
+func TestNewBadgerStore_DiskBased(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewBadgerStore(dir)
+	require.NoError(t, err)
+
+	// Write and read back to confirm the store works.
+	txn := store.Update()
+	err = txn.Set([]byte("key"), []byte("value"))
+	require.NoError(t, err)
+	err = txn.Commit()
+	require.NoError(t, err)
+
+	viewTxn := store.View()
+	value, err := viewTxn.Get([]byte("key"))
+	viewTxn.Discard()
+	require.NoError(t, err)
+	require.Equal(t, []byte("value"), value)
+
+	// Close must stop the GC goroutine cleanly.
+	store.Close()
+}
+
+func TestBadgerStore_EachRange_Reverse(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
+	defer store.Close()
+
+	txn := store.Update()
+	for _, key := range []string{"a", "b", "c", "d", "e"} {
+		err := txn.Set([]byte(key), []byte("value"+key))
+		require.NoError(t, err)
+	}
+	err = txn.Commit()
+	require.NoError(t, err)
+
+	viewTxn := store.View()
+	defer viewTxn.Discard()
+
+	var keys []string
+	err = viewTxn.EachRange([]byte("b"), []byte("e\x00"), true, func(key []byte, _ []byte) (bool, error) {
+		keys = append(keys, string(key))
+		return true, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"e", "d", "c", "b"}, keys)
+}
+
+func TestBadgerStore_EachRange_ReverseEarlyReturn(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
+	defer store.Close()
+
+	txn := store.Update()
+	for _, key := range []string{"a", "b", "c", "d", "e"} {
+		err := txn.Set([]byte(key), []byte("value"+key))
+		require.NoError(t, err)
+	}
+	err = txn.Commit()
+	require.NoError(t, err)
+
+	viewTxn := store.View()
+	defer viewTxn.Discard()
+
+	var keys []string
+	err = viewTxn.EachRange([]byte("a"), []byte("e\x00"), true, func(key []byte, _ []byte) (bool, error) {
+		keys = append(keys, string(key))
+		return len(keys) < 2, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"e", "d"}, keys)
+}
+
+func TestBadgerStore_EachRange_ForwardEarlyReturn(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
+	defer store.Close()
+
+	txn := store.Update()
+	for _, key := range []string{"a", "b", "c", "d", "e"} {
+		err := txn.Set([]byte(key), []byte("value"+key))
+		require.NoError(t, err)
+	}
+	err = txn.Commit()
+	require.NoError(t, err)
+
+	viewTxn := store.View()
+	defer viewTxn.Discard()
+
+	var keys []string
+	err = viewTxn.EachRange([]byte("a"), []byte("e"), false, func(key []byte, _ []byte) (bool, error) {
+		keys = append(keys, string(key))
+		return len(keys) < 2, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"a", "b"}, keys)
+}
+
+func TestBadgerStore_EachPrefixKeys_EarlyReturn(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
+	defer store.Close()
+
+	txn := store.Update()
+	for i := 1; i <= 5; i++ {
+		err := txn.Set(fmt.Appendf(nil, "p:%d", i), []byte("v"))
+		require.NoError(t, err)
+	}
+	err = txn.Commit()
+	require.NoError(t, err)
+
+	viewTxn := store.View()
+	defer viewTxn.Discard()
+
+	var count int
+	err = viewTxn.EachPrefixKeys([]byte("p:"), func(_ []byte) (bool, error) {
+		count++
+		return count < 2, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, count)
+}
+
+func TestBadgerStore_Flatten(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
 	defer store.Close()
 
 	// Set up some data
@@ -442,7 +575,7 @@ func TestBadgerStoreFlatten(t *testing.T) {
 		err := txn.Set(key, value)
 		require.NoError(t, err)
 	}
-	err := txn.Commit()
+	err = txn.Commit()
 	require.NoError(t, err)
 
 	// Test Flatten

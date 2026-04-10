@@ -232,6 +232,10 @@ func (c *Client) updateShard(ctx context.Context, applicationName string, shard 
 	return nil, fmt.Errorf("all replicas failed")
 }
 
+func (c *Client) ListShards(applicationName string) ([]*cluster.Shard, error) {
+	return c.clusterConfig.ListShards(applicationName)
+}
+
 // shuffleReplicas returns a randomly ordered copy of replicas.
 func (c *Client) shuffleReplicas(replicas []*cluster.Replica) []*cluster.Replica {
 	result := make([]*cluster.Replica, len(replicas))

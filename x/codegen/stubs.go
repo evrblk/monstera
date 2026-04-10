@@ -63,7 +63,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 
 	// type <Stub>
 	f.Type().Id(stubType).Struct(
-		Id("monsteraClient").Op("*").Qual("github.com/evrblk/monstera", "MonsteraClient"),
+		Id("monsteraClient").Op("*").Qual("github.com/evrblk/monstera", "Client"),
 		Id("shardKeyCalculator").Id(shardCalculatorType),
 	)
 	apiName := stub.Name + "CoreApi"
@@ -316,7 +316,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 
 	// func New<Stub>
 	f.Func().Id("New"+stubType).Params(
-		Id("monsteraClient").Op("*").Qual("github.com/evrblk/monstera", "MonsteraClient"),
+		Id("monsteraClient").Op("*").Qual("github.com/evrblk/monstera", "Client"),
 		Id("shardKeyCalculator").Qual(monsteraYaml.GoCode.OutputPackage, shardCalculatorType),
 	).Params(
 		Op("*").Id(stubType),
@@ -530,7 +530,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 		}
 		g.Line()
 
-		g.Id("shardSize").Op(":=").Qual("github.com/evrblk/monstera", "KeyspacePerApplication").Op("/").Id("shardsPerApp")
+		g.Id("shardSize").Op(":=").Qual("github.com/evrblk/monstera/cluster", "KeyspacePerApplication").Op("/").Id("shardsPerApp")
 
 		g.For(Id("i").Op(":=").Lit(0), Id("i").Op("<").Id("shardsPerApp"), Id("i").Op("++")).BlockFunc(func(g *Group) {
 			g.Id("lower").Op(":=").Uint32().Call(Id("i").Op("*").Id("shardSize"))
@@ -541,7 +541,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 			g.Qual("encoding/binary", "BigEndian").Dot("PutUint32").Call(Id("upperBound"), Id("upper"))
 			g.Line()
 
-			g.List(Id("sl"), Id("su")).Op(":=").Qual("github.com/evrblk/monstera", "ShortenBounds").Call(Id("lowerBound"), Id("upperBound"))
+			g.List(Id("sl"), Id("su")).Op(":=").Qual("github.com/evrblk/monstera/cluster", "ShortenBounds").Call(Id("lowerBound"), Id("upperBound"))
 			g.Line()
 
 			for _, core := range cores {

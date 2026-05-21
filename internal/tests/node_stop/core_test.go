@@ -23,14 +23,14 @@ func TestPlaygroundCore_Read(t *testing.T) {
 	key := uint64(123)
 	keyBytes := createKeyBytes(key)
 
-	result := core.Read(keyBytes)
+	result := core.Read(keyBytes).Data
 	require.Empty(t, result, "Expected empty result for nonexistent key")
 
 	// Test reading existing key
 	value := "test value"
 	core.state[key] = value
 
-	result = core.Read(keyBytes)
+	result = core.Read(keyBytes).Data
 	require.Equal(t, value, string(result), "Expected %s, got %s", value, string(result))
 }
 
@@ -43,7 +43,7 @@ func TestPlaygroundCore_Update(t *testing.T) {
 
 	request := createRequestBytes(key, value)
 
-	result := core.Update(request)
+	result := core.Update(request).Data
 
 	// Check return value
 	require.Equal(t, value, string(result), "Expected return value %s, got %s", value, string(result))
@@ -55,7 +55,7 @@ func TestPlaygroundCore_Update(t *testing.T) {
 	newValue := "updated value"
 	request = createRequestBytes(key, newValue)
 
-	result = core.Update(request)
+	result = core.Update(request).Data
 
 	require.Equal(t, newValue, string(result), "Expected return value %s, got %s", newValue, string(result))
 	require.Equal(t, newValue, core.state[key], "Expected state value %s, got %s", newValue, core.state[key])
@@ -157,13 +157,13 @@ func TestPlaygroundCore_Integration(t *testing.T) {
 	// Update
 	request := createRequestBytes(key, value)
 
-	result := core.Update(request)
+	result := core.Update(request).Data
 	require.Equal(t, value, string(result), "Update failed: expected %s, got %s", value, string(result))
 
 	// Read
 	keyBytes := createKeyBytes(key)
 
-	result = core.Read(keyBytes)
+	result = core.Read(keyBytes).Data
 	require.Equal(t, value, string(result), "Read failed: expected %s, got %s", value, string(result))
 
 	// Snapshot
@@ -183,7 +183,7 @@ func TestPlaygroundCore_Integration(t *testing.T) {
 	require.NoError(t, err, "Failed to restore snapshot")
 
 	// Verify restored state
-	result = newCore.Read(keyBytes)
+	result = newCore.Read(keyBytes).Data
 	require.Equal(t, value, string(result), "Restored read failed: expected %s, got %s", value, string(result))
 }
 
@@ -222,7 +222,7 @@ func TestPlaygroundCore_MultipleUpdates(t *testing.T) {
 	for key, value := range testData {
 		request := createRequestBytes(key, value)
 
-		result := core.Update(request)
+		result := core.Update(request).Data
 		require.Equal(t, value, string(result), "Update failed for key %d: expected %s, got %s", key, value, string(result))
 	}
 
@@ -230,7 +230,7 @@ func TestPlaygroundCore_MultipleUpdates(t *testing.T) {
 	for key, expectedValue := range testData {
 		keyBytes := createKeyBytes(key)
 
-		result := core.Read(keyBytes)
+		result := core.Read(keyBytes).Data
 		require.Equal(t, expectedValue, string(result), "Read failed for key %d: expected %s, got %s", key, expectedValue, string(result))
 	}
 }

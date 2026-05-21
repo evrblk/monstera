@@ -132,19 +132,19 @@ func (n *Node) Read(ctx context.Context, request *transport.ReadRequest) (*trans
 	}
 
 	if request.AllowReadFromFollowers {
-		payload, err := r.Read(request.Payload)
+		readResponse, err := r.Read(request.Payload)
 		if err != nil {
 			return nil, err
 		}
-		return &transport.ReadResponse{Payload: payload}, nil
+		return &transport.ReadResponse{Payload: readResponse.Data}, nil
 	}
 
 	if r.IsLeader() {
-		payload, err := r.Read(request.Payload)
+		readResponse, err := r.Read(request.Payload)
 		if err != nil {
 			return nil, err
 		}
-		return &transport.ReadResponse{Payload: payload}, nil
+		return &transport.ReadResponse{Payload: readResponse.Data}, nil
 	}
 
 	if request.Hops >= n.nodeConfig.MaxHops {
@@ -203,11 +203,13 @@ func (n *Node) Update(ctx context.Context, request *transport.UpdateRequest) (*t
 	}
 
 	if r.IsLeader() {
-		payload, err := r.Update(request.Payload)
+		updateResponse, err := r.Update(request.Payload)
 		if err != nil {
 			return nil, err
 		}
-		return &transport.UpdateResponse{Payload: payload}, nil
+		return &transport.UpdateResponse{
+			Payload: updateResponse.Data,
+		}, nil
 	}
 
 	if request.Hops >= n.nodeConfig.MaxHops {

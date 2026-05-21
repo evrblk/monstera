@@ -873,50 +873,6 @@ func (x *InstallSnapshotChunkResponse) GetSuccess() bool {
 	return false
 }
 
-type MonsteraCommand struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Payload       []byte                 `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *MonsteraCommand) Reset() {
-	*x = MonsteraCommand{}
-	mi := &file_internal_raft_raftpb_raft_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *MonsteraCommand) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*MonsteraCommand) ProtoMessage() {}
-
-func (x *MonsteraCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_raft_raftpb_raft_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use MonsteraCommand.ProtoReflect.Descriptor instead.
-func (*MonsteraCommand) Descriptor() ([]byte, []int) {
-	return file_internal_raft_raftpb_raft_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *MonsteraCommand) GetPayload() []byte {
-	if x != nil {
-		return x.Payload
-	}
-	return nil
-}
-
 var File_internal_raft_raftpb_raft_proto protoreflect.FileDescriptor
 
 const file_internal_raft_raftpb_raft_proto_rawDesc = "" +
@@ -996,9 +952,7 @@ const file_internal_raft_raftpb_raft_proto_rawDesc = "" +
 	"\n" +
 	"rpc_header\x18\x01 \x01(\v2\x1f.evrblk.monstera.raft.RPCHeaderR\trpcHeader\x12\x12\n" +
 	"\x04term\x18\x02 \x01(\x04R\x04term\x12\x18\n" +
-	"\asuccess\x18\x03 \x01(\bR\asuccess\"+\n" +
-	"\x0fMonsteraCommand\x12\x18\n" +
-	"\apayload\x18\x01 \x01(\fR\apayloadB1Z/github.com/evrblk/monstera/internal/raft/raftpbb\x06proto3"
+	"\asuccess\x18\x03 \x01(\bR\asuccessB1Z/github.com/evrblk/monstera/internal/raft/raftpbb\x06proto3"
 
 var (
 	file_internal_raft_raftpb_raft_proto_rawDescOnce sync.Once
@@ -1013,7 +967,7 @@ func file_internal_raft_raftpb_raft_proto_rawDescGZIP() []byte {
 }
 
 var file_internal_raft_raftpb_raft_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_internal_raft_raftpb_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_internal_raft_raftpb_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_internal_raft_raftpb_raft_proto_goTypes = []any{
 	(Log_LogType)(0),                     // 0: evrblk.monstera.raft.Log.LogType
 	(*RPCHeader)(nil),                    // 1: evrblk.monstera.raft.RPCHeader
@@ -1028,7 +982,6 @@ var file_internal_raft_raftpb_raft_proto_goTypes = []any{
 	(*InstallSnapshotInitResponse)(nil),  // 10: evrblk.monstera.raft.InstallSnapshotInitResponse
 	(*InstallSnapshotChunkRequest)(nil),  // 11: evrblk.monstera.raft.InstallSnapshotChunkRequest
 	(*InstallSnapshotChunkResponse)(nil), // 12: evrblk.monstera.raft.InstallSnapshotChunkResponse
-	(*MonsteraCommand)(nil),              // 13: evrblk.monstera.raft.MonsteraCommand
 }
 var file_internal_raft_raftpb_raft_proto_depIdxs = []int32{
 	0,  // 0: evrblk.monstera.raft.Log.type:type_name -> evrblk.monstera.raft.Log.LogType
@@ -1059,7 +1012,7 @@ func file_internal_raft_raftpb_raft_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_raft_raftpb_raft_proto_rawDesc), len(file_internal_raft_raftpb_raft_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   13,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

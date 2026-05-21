@@ -3,6 +3,7 @@ package codegen
 import (
 	"fmt"
 	"log"
+	"slices"
 
 	. "github.com/dave/jennifer/jen"
 )
@@ -61,11 +62,31 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 	stubType := stub.Name + "CoreApiMonsteraStub"
 	shardCalculatorType := stub.Name + "MonsteraShardKeyCalculator"
 
+	protos := make([]string, 0)
+	for _, core := range cores {
+		if !slices.Contains(protos, core.ReadRequestProto) {
+			protos = append(protos, core.ReadRequestProto)
+		}
+		if !slices.Contains(protos, core.ReadResponseProto) {
+			protos = append(protos, core.ReadResponseProto)
+		}
+		if !slices.Contains(protos, core.UpdateRequestProto) {
+			protos = append(protos, core.UpdateRequestProto)
+		}
+		if !slices.Contains(protos, core.UpdateResponseProto) {
+			protos = append(protos, core.UpdateResponseProto)
+		}
+	}
+
 	// type <Stub>
-	f.Type().Id(stubType).Struct(
-		Id("monsteraClient").Op("*").Qual("github.com/evrblk/monstera", "Client"),
-		Id("shardKeyCalculator").Id(shardCalculatorType),
-	)
+	f.Type().Id(stubType).StructFunc(func(g *Group) {
+		g.Id("monsteraClient").Op("*").Qual("github.com/evrblk/monstera", "Client")
+		g.Id("shardKeyCalculator").Id(shardCalculatorType)
+
+		for _, proto := range protos {
+			g.Id(firstCharToLower(proto) + "Codec").Id(proto + "Codec")
+		}
+	})
 	apiName := stub.Name + "CoreApi"
 	f.Var().Id("_").Qual(monsteraYaml.GoCode.OutputPackage, apiName).Op("=").Op("&").Id(stubType).Values()
 	f.Line()
@@ -91,7 +112,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 						Id(read.Name + "Request").Op(":").Id("request"),
 					),
 				)
-				g.List(Id("requestBytes"), Err()).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(Id("coreRequest"))
+				g.List(Id("requestBytes"), Err()).Op(":=").Id("s").Dot(firstCharToLower(core.ReadRequestProto) + "Codec").Dot("Encode").Call(Id("coreRequest"))
 				g.If(
 					Err().Op("!=").Nil(),
 				).Block(
@@ -139,7 +160,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 
 				g.Id("wrappedResponse").Op(":=").Op("&").Qual("github.com/evrblk/monstera/x", "Response").Values()
 				g.Id("coreResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadResponseProto).Values()
-				g.Err().Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("wrappedResponse"))
+				g.Err().Op("=").Id("wrappedResponse").Dot("UnmarshalVT").Call(Id("responseBytes"))
 				g.If(
 					Err().Op("!=").Nil(),
 				).Block(
@@ -151,7 +172,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 						),
 					)),
 				)
-				g.Err().Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("wrappedResponse").Dot("Data"), Id("coreResponse"))
+				g.Err().Op("=").Id("s").Dot(firstCharToLower(core.ReadResponseProto)+"Codec").Dot("Decode").Call(Id("wrappedResponse").Dot("Data"), Id("coreResponse"))
 				g.If(
 					Err().Op("!=").Nil(),
 				).Block(
@@ -203,7 +224,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 						Id(update.Name + "Request").Op(":").Id("request"),
 					),
 				)
-				g.List(Id("requestBytes"), Err()).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(Id("coreRequest"))
+				g.List(Id("requestBytes"), Err()).Op(":=").Id("s").Dot(firstCharToLower(core.UpdateRequestProto) + "Codec").Dot("Encode").Call(Id("coreRequest"))
 				g.If(
 					Err().Op("!=").Nil(),
 				).Block(
@@ -249,7 +270,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 
 				g.Id("wrappedResponse").Op(":=").Op("&").Qual("github.com/evrblk/monstera/x", "Response").Values()
 				g.Id("coreResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateResponseProto).Values()
-				g.Err().Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("responseBytes"), Id("wrappedResponse"))
+				g.Err().Op("=").Id("wrappedResponse").Dot("UnmarshalVT").Call(Id("responseBytes"))
 				g.If(
 					Err().Op("!=").Nil(),
 				).Block(
@@ -261,7 +282,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 						),
 					)),
 				)
-				g.Err().Op("=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(Id("wrappedResponse").Dot("Data"), Id("coreResponse"))
+				g.Err().Op("=").Id("s").Dot(firstCharToLower(core.UpdateResponseProto)+"Codec").Dot("Decode").Call(Id("wrappedResponse").Dot("Data"), Id("coreResponse"))
 				g.If(
 					Err().Op("!=").Nil(),
 				).Block(
@@ -315,17 +336,23 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, mo
 	f.Line()
 
 	// func New<Stub>
-	f.Func().Id("New"+stubType).Params(
-		Id("monsteraClient").Op("*").Qual("github.com/evrblk/monstera", "Client"),
-		Id("shardKeyCalculator").Qual(monsteraYaml.GoCode.OutputPackage, shardCalculatorType),
-	).Params(
+	f.Func().Id("New" + stubType).ParamsFunc(func(g *Group) {
+		g.Id("monsteraClient").Op("*").Qual("github.com/evrblk/monstera", "Client")
+		g.Id("shardKeyCalculator").Qual(monsteraYaml.GoCode.OutputPackage, shardCalculatorType)
+		for _, proto := range protos {
+			g.Id(firstCharToLower(proto) + "Codec").Id(proto + "Codec")
+		}
+	}).Params(
 		Op("*").Id(stubType),
 	).Block(
 		Return(
-			Op("&").Id(stubType).Values(
-				Id("monsteraClient").Op(":").Id("monsteraClient"),
-				Id("shardKeyCalculator").Op(":").Id("shardKeyCalculator"),
-			)),
+			Op("&").Id(stubType).ValuesFunc(func(g *Group) {
+				g.Id("monsteraClient").Op(":").Id("monsteraClient")
+				g.Id("shardKeyCalculator").Op(":").Id("shardKeyCalculator")
+				for _, proto := range protos {
+					g.Id(firstCharToLower(proto) + "Codec").Op(":").Id(firstCharToLower(proto) + "Codec")
+				}
+			})),
 	)
 	f.Line()
 

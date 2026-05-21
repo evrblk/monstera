@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package evrblk.monstera.replication;
+
+option go_package = "github.com/evrblk/monstera/internal/replication/replicationpb";
+
+message MonsteraCommand {
+  bytes payload = 1;
+  CommandType type = 2;
+}
+
+enum CommandType {
+  COMMAND_TYPE_INVALID = 0;
+  COMMAND_TYPE_UPDATE = 1;
+}

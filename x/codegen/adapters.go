@@ -12,16 +12,26 @@ func GenerateAdapters(monsteraYaml *MonsteraYaml) string {
 	f.ImportAlias("github.com/evrblk/monstera/x", "monsterax")
 
 	// Core metrics
-	f.Var().Id("monsteraCoreMethodDuration").Op("=").Qual("github.com/prometheus/client_golang/prometheus", "NewHistogramVec").Call(
-		Qual("github.com/prometheus/client_golang/prometheus", "HistogramOpts").Values(Dict{
-			Id("Name"):                            Lit("monstera_core_method_duration_seconds"),
-			Id("Help"):                            Lit("Monstera core method duration"),
-			Id("NativeHistogramBucketFactor"):     Lit(1.1),
-			Id("NativeHistogramMaxBucketNumber"):  Lit(100),
-			Id("NativeHistogramMinResetDuration"): Qual("time", "Hour"),
-		},
+	f.Var().Defs(
+		Id("monsteraCoreMethodDuration").Op("=").Qual("github.com/prometheus/client_golang/prometheus", "NewHistogramVec").Call(
+			Qual("github.com/prometheus/client_golang/prometheus", "HistogramOpts").Values(Dict{
+				Id("Name"):                            Lit("monstera_core_method_duration_seconds"),
+				Id("Help"):                            Lit("Monstera core method duration"),
+				Id("NativeHistogramBucketFactor"):     Lit(1.1),
+				Id("NativeHistogramMaxBucketNumber"):  Lit(100),
+				Id("NativeHistogramMinResetDuration"): Qual("time", "Hour"),
+			},
+			),
+			Op("[]").String().Values(Lit("core"), Lit("method"), Lit("shard"), Lit("replica")),
 		),
-		Op("[]").String().Values(Lit("core"), Lit("method"), Lit("shard"), Lit("replica")),
+		Id("monsteraCoreMethodCount").Op("=").Qual("github.com/prometheus/client_golang/prometheus", "NewCounterVec").Call(
+			Qual("github.com/prometheus/client_golang/prometheus", "CounterOpts").Values(Dict{
+				Id("Name"): Lit("monstera_core_method_count"),
+				Id("Help"): Lit("Monstera core method count"),
+			},
+			),
+			Op("[]").String().Values(Lit("core"), Lit("method"), Lit("shard"), Lit("replica")),
+		),
 	)
 	f.Line()
 
@@ -41,6 +51,11 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 		Id("replicaId").String(),
 		Line(),
 		Id(coreVarName).Qual(monsteraYaml.GoCode.OutputPackage, apiName),
+		Line(),
+		Id("readRequestCodec").Id(core.ReadRequestProto+"Codec"),
+		Id("readResponseCodec").Id(core.ReadResponseProto+"Codec"),
+		Id("updateRequestCodec").Id(core.UpdateRequestProto+"Codec"),
+		Id("updateResponseCodec").Id(core.UpdateResponseProto+"Codec"),
 	)
 
 	// ApplicationCore interface var
@@ -53,13 +68,21 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 		Id("shardId").String(),
 		Id("replicaId").String(),
 		Id(coreVarName).Qual(monsteraYaml.GoCode.OutputPackage, apiName),
+		Id("readRequestCodec").Id(core.ReadRequestProto+"Codec"),
+		Id("readResponseCodec").Id(core.ReadResponseProto+"Codec"),
+		Id("updateRequestCodec").Id(core.UpdateRequestProto+"Codec"),
+		Id("updateResponseCodec").Id(core.UpdateResponseProto+"Codec"),
 	).Params(
 		Op("*").Id(adapterName),
 	).Block(
 		Return(Op("&").Id(adapterName).Values(Dict{
-			Id("shardId"):   Id("shardId"),
-			Id("replicaId"): Id("replicaId"),
-			Id(coreVarName): Id(coreVarName),
+			Id("shardId"):             Id("shardId"),
+			Id("replicaId"):           Id("replicaId"),
+			Id(coreVarName):           Id(coreVarName),
+			Id("readRequestCodec"):    Id("readRequestCodec"),
+			Id("readResponseCodec"):   Id("readResponseCodec"),
+			Id("updateRequestCodec"):  Id("updateRequestCodec"),
+			Id("updateResponseCodec"): Id("updateResponseCodec"),
 		})),
 	)
 	f.Line()
@@ -79,6 +102,12 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 			),
 			Qual("time", "Now").Call(),
 		),
+		Id("monsteraCoreMethodCount").Dot("WithLabelValues").Call(
+			Lit(core.Name),
+			Lit("Snapshot"),
+			Id("a").Dot("shardId"),
+			Id("a").Dot("replicaId"),
+		).Dot("Inc").Call(),
 		Line(),
 		Return(Id("a").Dot(coreVarName).Dot("Snapshot").Call()),
 	)
@@ -101,6 +130,12 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 			),
 			Qual("time", "Now").Call(),
 		),
+		Id("monsteraCoreMethodCount").Dot("WithLabelValues").Call(
+			Lit(core.Name),
+			Lit("Restore"),
+			Id("a").Dot("shardId"),
+			Id("a").Dot("replicaId"),
+		).Dot("Inc").Call(),
 		Line(),
 		Return(Id("a").Dot(coreVarName).Dot("Restore").Call(Id("r"))),
 	)
@@ -120,7 +155,7 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 	).Id("Update").Params(
 		Id("request").Index().Byte(),
 	).Params(
-		Index().Byte(),
+		Qual("github.com/evrblk/monstera", "UpdateResponse"),
 	).BlockFunc(func(g *Group) {
 		if len(core.Updates) > 0 {
 			g.Id("wrappedResponse").Op(":=").Op("&").Qual("github.com/evrblk/monstera/x", "Response").Values()
@@ -128,7 +163,7 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 			g.Id("coreResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateResponseProto).Values()
 			g.Line()
 
-			g.Err().Op(":=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(
+			g.Err().Op(":=").Id("a").Dot("updateRequestCodec").Dot("Decode").Call(
 				Id("request"),
 				Id("coreRequest"),
 			)
@@ -161,6 +196,12 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 							),
 							Id("t1"),
 						),
+						Id("monsteraCoreMethodCount").Dot("WithLabelValues").Call(
+							Lit(core.Name),
+							Lit(update.Name),
+							Id("a").Dot("shardId"),
+							Id("a").Dot("replicaId"),
+						).Dot("Inc").Call(),
 						Id("coreResponse").Dot("Response").Op("=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.UpdateResponseProto+"_"+update.Name+"Response").Values(
 							Id(update.Name+"Response").Op(":").Id("r"),
 						),
@@ -178,7 +219,7 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 			g.List(
 				Id("data"),
 				Err(),
-			).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(
+			).Op(":=").Id("a").Dot("updateResponseCodec").Dot("Encode").Call(
 				Id("coreResponse"),
 			)
 			g.If(
@@ -188,15 +229,18 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 			)
 			g.Id("wrappedResponse").Dot("Data").Op("=").Id("data")
 			g.List(
-				Id("response"),
+				Id("data"),
 				Err(),
-			).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(
-				Id("wrappedResponse"),
-			)
+			).Op("=").Id("wrappedResponse").Dot("MarshalVT").Call()
 			g.If(
 				Err().Op("!=").Nil(),
 			).Block(
 				Panic(Err()),
+			)
+			g.Id("response").Op(":=").Qual("github.com/evrblk/monstera", "UpdateResponse").Values(
+				Dict{
+					Id("Data"): Id("data"),
+				},
 			)
 			g.Line()
 
@@ -213,7 +257,7 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 	).Id("Read").Params(
 		Id("request").Index().Byte(),
 	).Params(
-		Index().Byte(),
+		Qual("github.com/evrblk/monstera", "ReadResponse"),
 	).BlockFunc(func(g *Group) {
 		if len(core.Reads) > 0 {
 			g.Id("wrappedResponse").Op(":=").Op("&").Qual("github.com/evrblk/monstera/x", "Response").Values()
@@ -221,7 +265,7 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 			g.Id("coreResponse").Op(":=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadResponseProto).Values()
 			g.Line()
 
-			g.Err().Op(":=").Qual("google.golang.org/protobuf/proto", "Unmarshal").Call(
+			g.Err().Op(":=").Id("a").Dot("readRequestCodec").Dot("Decode").Call(
 				Id("request"),
 				Id("coreRequest"),
 			)
@@ -254,6 +298,12 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 							),
 							Id("t1"),
 						),
+						Id("monsteraCoreMethodCount").Dot("WithLabelValues").Call(
+							Lit(core.Name),
+							Lit(read.Name),
+							Id("a").Dot("shardId"),
+							Id("a").Dot("replicaId"),
+						).Dot("Inc").Call(),
 						Id("coreResponse").Dot("Response").Op("=").Op("&").Qual(monsteraYaml.GoCode.CorePbPackage, core.ReadResponseProto+"_"+read.Name+"Response").Values(
 							Id(read.Name+"Response").Op(":").Id("r"),
 						),
@@ -271,7 +321,7 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 			g.List(
 				Id("data"),
 				Err(),
-			).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(
+			).Op(":=").Id("a").Dot("readResponseCodec").Dot("Encode").Call(
 				Id("coreResponse"),
 			)
 			g.If(
@@ -281,15 +331,18 @@ func generateAdapter(f *File, core *MonsteraCore, monsteraYaml *MonsteraYaml) {
 			)
 			g.Id("wrappedResponse").Dot("Data").Op("=").Id("data")
 			g.List(
-				Id("response"),
+				Id("data"),
 				Err(),
-			).Op(":=").Qual("google.golang.org/protobuf/proto", "Marshal").Call(
-				Id("wrappedResponse"),
-			)
+			).Op("=").Id("wrappedResponse").Dot("MarshalVT").Call()
 			g.If(
 				Err().Op("!=").Nil(),
 			).Block(
 				Panic(Err()),
+			)
+			g.Id("response").Op(":=").Qual("github.com/evrblk/monstera", "ReadResponse").Values(
+				Dict{
+					Id("Data"): Id("data"),
+				},
 			)
 			g.Line()
 

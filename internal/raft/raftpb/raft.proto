@@ -81,8 +81,7 @@ message InstallSnapshotInitRequest {
   int64 size = 9;
 }
 
-message InstallSnapshotInitResponse {
-}
+message InstallSnapshotInitResponse {}
 
 // All further InstallSnapshotRequest messages with data only.
 message InstallSnapshotChunkRequest {
@@ -93,8 +92,4 @@ message InstallSnapshotChunkResponse {
   RPCHeader rpc_header = 1;
   uint64 term = 2;
   bool success = 3;
-}
-
-message MonsteraCommand {
-  bytes payload = 1;
 }

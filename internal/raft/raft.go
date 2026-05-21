@@ -55,11 +55,10 @@ type snapshotSession struct {
 
 // Raft wraps the HashiCorp Raft implementation with a Badger store backend.
 type Raft struct {
-	hraft        *hraft.Raft
-	hstore       *HraftBadgerStore
-	hfss         *hraft.FileSnapshotStore
-	commandCodec CommandCodec
-	transport    *RaftTransport
+	hraft     *hraft.Raft
+	hstore    *HraftBadgerStore
+	hfss      *hraft.FileSnapshotStore
+	transport *RaftTransport
 
 	snapshotSession   *snapshotSession
 	snapshotSessionMu sync.Mutex
@@ -85,25 +84,15 @@ func (r *Raft) IsBootstrapped() bool {
 	return ok
 }
 
-func (r *Raft) Update(request []byte) ([]byte, error) {
-	commandBytes, err := r.commandCodec.Encode(request)
-	if err != nil {
-		return nil, err
-	}
-
-	f := r.hraft.Apply(commandBytes, 30*time.Second) // TODO timeout
+func (r *Raft) Update(request []byte) (any, error) {
+	f := r.hraft.Apply(request, 30*time.Second) // TODO timeout
 	if err := f.Error(); err != nil {
 		// TODO retry
 		// TODO what if FSM panics?
 		return nil, err
 	}
 
-	response, ok := f.Response().([]byte)
-	if !ok {
-		return nil, fmt.Errorf("invalid response type %v", f.Response())
-	}
-
-	return response, nil
+	return f.Response(), nil
 }
 
 func (r *Raft) Close() error {
@@ -419,7 +408,6 @@ func NewRaft(baseDir string, myAddress string, replicaId string, core AppCore, t
 	}
 
 	logCodec := &protoLogCodec{}
-	cmdCodec := &protoCommandCodec{}
 
 	hstore := NewHraftBadgerStore(raftStore, []byte(replicaId), logCodec)
 
@@ -430,7 +418,7 @@ func NewRaft(baseDir string, myAddress string, replicaId string, core AppCore, t
 
 	transport := NewRaftTransport(myAddress, trans)
 
-	fsm := NewFSMAdapter(core, cmdCodec)
+	fsm := NewFSMAdapter(core)
 
 	r, err := hraft.NewRaft(cfg, fsm, hstore, hstore, hfss, transport)
 	if err != nil {
@@ -438,10 +426,9 @@ func NewRaft(baseDir string, myAddress string, replicaId string, core AppCore, t
 	}
 
 	return &Raft{
-		hraft:        r,
-		hstore:       hstore,
-		hfss:         hfss,
-		transport:    transport,
-		commandCodec: cmdCodec,
+		hraft:     r,
+		hstore:    hstore,
+		hfss:      hfss,
+		transport: transport,
 	}
 }

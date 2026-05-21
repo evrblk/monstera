@@ -11,6 +11,8 @@ import (
 	hraft "github.com/hashicorp/raft"
 
 	"github.com/evrblk/monstera/internal/raft"
+	"github.com/evrblk/monstera/internal/replication"
+	"github.com/evrblk/monstera/internal/replication/replicationpb"
 	"github.com/evrblk/monstera/store"
 	"github.com/evrblk/monstera/transport"
 )
@@ -21,13 +23,14 @@ type replica struct {
 	shardId         string
 	replicaId       string
 
-	core *appCoreAdapter
-	raft *raft.Raft
+	core         *appCoreAdapter
+	raft         *raft.Raft
+	commandCodec replication.CommandCodec
 
 	logger *log.Logger
 }
 
-func (r *replica) Read(request []byte) (response []byte, err error) {
+func (r *replica) Read(request []byte) (response ReadResponse, err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			r.logger.Printf("panic in core.Read, shutting down raft: %v", p)
@@ -36,11 +39,27 @@ func (r *replica) Read(request []byte) (response []byte, err error) {
 		}
 	}()
 
-	return r.core.Read(request)
+	return r.core.Read(request), nil
 }
 
-func (r *replica) Update(request []byte) ([]byte, error) {
-	return r.raft.Update(request)
+func (r *replica) Update(request []byte) (UpdateResponse, error) {
+	cmdBytes, err := r.commandCodec.Encode(&replicationpb.MonsteraCommand{
+		Payload: request,
+		Type:    replicationpb.CommandType_COMMAND_TYPE_UPDATE,
+	})
+	if err != nil {
+		return UpdateResponse{}, err
+	}
+
+	response, err := r.raft.Update(cmdBytes)
+	updateResponse, ok := response.(UpdateResponse)
+	if !ok {
+		return UpdateResponse{}, fmt.Errorf("invalid response type %v", updateResponse)
+	}
+
+	// TODO emit events
+
+	return updateResponse, nil
 }
 
 func (r *replica) Close() {
@@ -101,13 +120,18 @@ func (r *replica) GetReplicaId() string {
 
 func newReplica(baseDir string, applicationName string, shardId string, replicaId string,
 	myAddress string, core ApplicationCore, trans transport.Transport, raftStore *store.BadgerStore, restoreSnapshotOnStart bool) *replica {
-	adapter := &appCoreAdapter{core: core}
+	commandCodec := &replication.ProtoCommandCodec{}
+	adapter := &appCoreAdapter{
+		core:         core,
+		commandCodec: commandCodec,
+	}
 
 	rep := &replica{
 		applicationName: applicationName,
 		shardId:         shardId,
 		replicaId:       replicaId,
 		core:            adapter,
+		commandCodec:    commandCodec,
 		logger:          log.New(os.Stderr, fmt.Sprintf("[%s]", replicaId), log.LstdFlags),
 	}
 
@@ -119,21 +143,32 @@ func newReplica(baseDir string, applicationName string, shardId string, replicaI
 type appCoreAdapter struct {
 	// coreMu protects core from concurrent reads during snapshot restoration.
 	// Read acquires RLock; Restore acquires Lock.
-	coreMu sync.RWMutex
-	core   ApplicationCore
+	coreMu       sync.RWMutex
+	core         ApplicationCore
+	commandCodec replication.CommandCodec
 }
 
 var _ raft.AppCore = (*appCoreAdapter)(nil)
 
-func (a *appCoreAdapter) Read(request []byte) ([]byte, error) {
+func (a *appCoreAdapter) Read(request []byte) ReadResponse {
 	a.coreMu.RLock()
 	defer a.coreMu.RUnlock()
-	response := a.core.Read(request)
-	return response, nil
+
+	return a.core.Read(request)
 }
 
-func (a *appCoreAdapter) Update(request []byte) []byte {
-	return a.core.Update(request)
+func (a *appCoreAdapter) Apply(request []byte) any {
+	cmd, err := a.commandCodec.Decode(request)
+	if err != nil {
+		panic(err)
+	}
+
+	switch cmd.Type {
+	case replicationpb.CommandType_COMMAND_TYPE_UPDATE:
+		return a.core.Update(cmd.Payload)
+	default:
+		panic(fmt.Sprintf("unknown command type: %v", cmd.Type))
+	}
 }
 
 func (a *appCoreAdapter) Snapshot() raft.AppCoreSnapshot {

@@ -23,7 +23,7 @@ type PaginationToken struct {
 	Reverse bool
 }
 
-// table helps working with a KV store without worrying about tableId prefixes.
+// table helps to work with a KV store without worrying about tableId prefixes.
 type table struct {
 	// keyLowerBound and keyUpperBound are used to define the range of keys that are stored in the table.
 	// These bounds are inclusive and do not contain the tableId prefix.
@@ -38,6 +38,10 @@ type table struct {
 }
 
 func newTable(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) table {
+	if len(tableId) == 0 {
+		panic("tableId must not be empty")
+	}
+
 	tableKeyRange := &KeyRange{
 		Lower: utils.ConcatBytes(tableId, keyLowerBound),
 		Upper: utils.ConcatBytes(tableId, keyUpperBound),
@@ -100,14 +104,16 @@ func (t *table) listInRange(txn *store.Txn, lowerBound []byte, upperBound []byte
 }
 
 type rawListPaginatedResult struct {
-	Items                   [][]byte
+	Values                  [][]byte
+	Keys                    [][]byte
 	NextPaginationToken     *PaginationToken
 	PreviousPaginationToken *PaginationToken
 }
 
 func (t *table) listPrefixedPaginated(txn *store.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*rawListPaginatedResult, error) {
 	result := &rawListPaginatedResult{
-		Items: make([][]byte, 0),
+		Values: make([][]byte, 0),
+		Keys:   make([][]byte, 0),
 	}
 
 	if len(prefix) == 0 {
@@ -116,14 +122,15 @@ func (t *table) listPrefixedPaginated(txn *store.Txn, prefix []byte, paginationT
 
 	if paginationToken == nil {
 		err := t.eachPrefix(txn, prefix, func(key []byte, value []byte) (bool, error) {
-			if len(result.Items) == limit {
+			if len(result.Values) == limit {
 				result.NextPaginationToken = &PaginationToken{
-					Key:     key,
+					Key:     bytes.Clone(key),
 					Reverse: false,
 				}
 				return false, nil
 			} else {
-				result.Items = append(result.Items, value)
+				result.Values = append(result.Values, value)
+				result.Keys = append(result.Keys, bytes.Clone(key))
 				return true, nil
 			}
 		})
@@ -141,7 +148,7 @@ func (t *table) listPrefixedPaginated(txn *store.Txn, prefix []byte, paginationT
 			}
 
 			result.PreviousPaginationToken = &PaginationToken{
-				Key:     key,
+				Key:     bytes.Clone(key),
 				Reverse: true,
 			}
 			return false, nil
@@ -155,14 +162,15 @@ func (t *table) listPrefixedPaginated(txn *store.Txn, prefix []byte, paginationT
 				return false, nil
 			}
 
-			if len(result.Items) == limit {
+			if len(result.Values) == limit {
 				result.NextPaginationToken = &PaginationToken{
-					Key:     key,
+					Key:     bytes.Clone(key),
 					Reverse: false,
 				}
 				return false, nil
 			} else {
-				result.Items = append(result.Items, value)
+				result.Values = append(result.Values, value)
+				result.Keys = append(result.Keys, bytes.Clone(key))
 				return true, nil
 			}
 		})
@@ -180,7 +188,7 @@ func (t *table) listPrefixedPaginated(txn *store.Txn, prefix []byte, paginationT
 			}
 
 			result.NextPaginationToken = &PaginationToken{
-				Key:     key,
+				Key:     bytes.Clone(key),
 				Reverse: false,
 			}
 			return false, nil
@@ -194,14 +202,15 @@ func (t *table) listPrefixedPaginated(txn *store.Txn, prefix []byte, paginationT
 				return false, nil
 			}
 
-			if len(result.Items) == limit {
+			if len(result.Values) == limit {
 				result.PreviousPaginationToken = &PaginationToken{
-					Key:     key,
+					Key:     bytes.Clone(key),
 					Reverse: true,
 				}
 				return false, nil
 			} else {
-				result.Items = append(result.Items, value)
+				result.Values = append(result.Values, value)
+				result.Keys = append(result.Keys, bytes.Clone(key))
 				return true, nil
 			}
 		})
@@ -304,14 +313,14 @@ func (t *BinaryTable[T, U]) ListPaginated(txn *store.Txn, prefix []byte, paginat
 	}
 
 	result := &ListPaginatedProtobufResult[T, U]{
-		Items:                   make([]T, len(rawResult.Items)),
+		Items:                   make([]T, len(rawResult.Values)),
 		NextPaginationToken:     rawResult.NextPaginationToken,
 		PreviousPaginationToken: rawResult.PreviousPaginationToken,
 	}
 
-	for i, item := range rawResult.Items {
+	for i, value := range rawResult.Values {
 		var message U
-		if err := T(&message).UnmarshalBinary(item); err != nil {
+		if err := T(&message).UnmarshalBinary(value); err != nil {
 			return nil, err
 		}
 		result.Items[i] = T(&message)
@@ -382,13 +391,13 @@ func (t *StringTable) ListPaginated(txn *store.Txn, prefix []byte, paginationTok
 	}
 
 	result := &ListPaginatedStringResult{
-		Items:                   make([]string, len(rawResult.Items)),
+		Items:                   make([]string, len(rawResult.Values)),
 		NextPaginationToken:     rawResult.NextPaginationToken,
 		PreviousPaginationToken: rawResult.PreviousPaginationToken,
 	}
 
-	for i, item := range rawResult.Items {
-		result.Items[i] = string(item)
+	for i, value := range rawResult.Values {
+		result.Items[i] = string(value)
 	}
 
 	return result, nil
@@ -450,13 +459,13 @@ func (t *Uint64Table) ListPaginated(txn *store.Txn, prefix []byte, paginationTok
 	}
 
 	result := &ListPaginatedUint64Result{
-		Items:                   make([]uint64, len(rawResult.Items)),
+		Items:                   make([]uint64, len(rawResult.Values)),
 		NextPaginationToken:     rawResult.NextPaginationToken,
 		PreviousPaginationToken: rawResult.PreviousPaginationToken,
 	}
 
-	for i, item := range rawResult.Items {
-		result.Items[i] = bytesToUint64(item)
+	for i, value := range rawResult.Values {
+		result.Items[i] = bytesToUint64(value)
 	}
 
 	return result, nil
@@ -518,13 +527,13 @@ func (t *Uint32Table) ListPaginated(txn *store.Txn, prefix []byte, paginationTok
 	}
 
 	result := &ListPaginatedUint32Result{
-		Items:                   make([]uint32, len(rawResult.Items)),
+		Items:                   make([]uint32, len(rawResult.Values)),
 		NextPaginationToken:     rawResult.NextPaginationToken,
 		PreviousPaginationToken: rawResult.PreviousPaginationToken,
 	}
 
-	for i, item := range rawResult.Items {
-		result.Items[i] = bytesToUint32(item)
+	for i, value := range rawResult.Values {
+		result.Items[i] = bytesToUint32(value)
 	}
 
 	return result, nil
@@ -545,6 +554,25 @@ func (i *OneToManyUint64Index) List(txn *store.Txn, pk []byte, fn func(item uint
 	return i.eachPrefixKeys(txn, pk, func(key []byte) (bool, error) {
 		return fn(bytesToUint64(key[len(pk):]))
 	})
+}
+
+func (t *OneToManyUint64Index) ListPaginated(txn *store.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedUint64Result, error) {
+	rawResult, err := t.listPrefixedPaginated(txn, prefix, paginationToken, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &ListPaginatedUint64Result{
+		Items:                   make([]uint64, len(rawResult.Keys)),
+		NextPaginationToken:     rawResult.NextPaginationToken,
+		PreviousPaginationToken: rawResult.PreviousPaginationToken,
+	}
+
+	for i, key := range rawResult.Keys {
+		result.Items[i] = bytesToUint64(key[len(prefix):])
+	}
+
+	return result, nil
 }
 
 func (i *OneToManyUint64Index) Add(txn *store.Txn, pk []byte, item uint64) error {
@@ -587,6 +615,31 @@ func (i *OneToManySortedIndex) ListInRange(txn *store.Txn, pk []byte, lowerBound
 	})
 }
 
+type ListPaginatedBytesResult struct {
+	Items                   [][]byte
+	NextPaginationToken     *PaginationToken
+	PreviousPaginationToken *PaginationToken
+}
+
+func (t *OneToManySortedIndex) ListPaginated(txn *store.Txn, prefix []byte, paginationToken *PaginationToken, limit int) (*ListPaginatedBytesResult, error) {
+	rawResult, err := t.listPrefixedPaginated(txn, prefix, paginationToken, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &ListPaginatedBytesResult{
+		Items:                   make([][]byte, len(rawResult.Keys)),
+		NextPaginationToken:     rawResult.NextPaginationToken,
+		PreviousPaginationToken: rawResult.PreviousPaginationToken,
+	}
+
+	for i, key := range rawResult.Keys {
+		result.Items[i] = key[len(prefix):]
+	}
+
+	return result, nil
+}
+
 func (i *OneToManySortedIndex) Add(txn *store.Txn, pk []byte, item []byte) error {
 	key := utils.ConcatBytes(pk, item)
 	return i.set(txn, key, nil)
@@ -595,6 +648,10 @@ func (i *OneToManySortedIndex) Add(txn *store.Txn, pk []byte, item []byte) error
 func (i *OneToManySortedIndex) Delete(txn *store.Txn, pk []byte, item []byte) error {
 	key := utils.ConcatBytes(pk, item)
 	return i.delete(txn, key)
+}
+
+func (i *OneToManySortedIndex) NotEmpty(txn *store.Txn, pk []byte) (bool, error) {
+	return i.prefixExists(txn, pk)
 }
 
 // SortedIndex stores multiple sorted items (arbitrary []byte) without any PK (global index)
@@ -610,7 +667,7 @@ func NewSortedIndex(tableId []byte, keyLowerBound []byte, keyUpperBound []byte) 
 
 func (i *SortedIndex) ListInRange(txn *store.Txn, lowerBound []byte, upperBound []byte, fn func(item []byte) (bool, error)) error {
 	return i.listInRange(txn, lowerBound, upperBound, false, func(key []byte, value []byte) (bool, error) {
-		return fn(key[len(i.tableId):])
+		return fn(key)
 	})
 }
 
@@ -620,6 +677,10 @@ func (i *SortedIndex) Add(txn *store.Txn, item []byte) error {
 
 func (i *SortedIndex) Delete(txn *store.Txn, item []byte) error {
 	return i.delete(txn, item)
+}
+
+func (i *SortedIndex) NotEmpty(txn *store.Txn, pk []byte) (bool, error) {
+	return i.prefixExists(txn, pk)
 }
 
 func (i *SortedIndex) GetTableKeyRange() KeyRange {

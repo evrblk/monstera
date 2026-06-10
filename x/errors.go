@@ -49,19 +49,6 @@ func NewError(code ErrorCode, message string) *Error {
 	}
 }
 
-func WrapError(err error) *Error {
-	if err != nil {
-		berr := &Error{}
-		if errors.As(err, &berr) {
-			return berr
-		} else {
-			return NewError(Internal, err.Error())
-		}
-	} else {
-		return nil
-	}
-}
-
 func ErrorToGRPC(err error) error {
 	if err != nil {
 		berr := &Error{}

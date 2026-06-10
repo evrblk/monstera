@@ -11,14 +11,16 @@ import (
 type ApplicationCore interface {
 	// Read is used to read a value directly from the application core.
 	// Reads can be performed concurrently with updates, other reads,
-	// and snapshots. Read must panic on internal errors.
-	Read(request []byte) ReadResponse
+	// and snapshots. Read must return internal errors, but all application
+	// errors should be returned as part of the ReadResponse.
+	Read(request []byte) (*ReadResponse, error)
 
 	// Update is used to update the application core state.
 	// All updates are applied to the application core sequentially,
 	// in the order they are committed to the Raft log. This method is called
-	// by the Raft thread. Update must panic on internal errors.
-	Update(request []byte) UpdateResponse
+	// by the Raft thread. Update must return internal errors, but all application
+	// errors should be returned as part of the UpdateResponse.
+	Update(request []byte) (*UpdateResponse, error)
 
 	// Snapshot returns an ApplicationCoreSnapshot used to support Raft log
 	// compaction, state restoration, and follower catch-up.

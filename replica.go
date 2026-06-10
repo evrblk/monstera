@@ -30,7 +30,7 @@ type replica struct {
 	logger *log.Logger
 }
 
-func (r *replica) Read(request []byte) (response ReadResponse, err error) {
+func (r *replica) Read(request []byte) (response *ReadResponse, err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			r.logger.Printf("panic in core.Read, shutting down raft: %v", p)
@@ -42,19 +42,19 @@ func (r *replica) Read(request []byte) (response ReadResponse, err error) {
 	return r.core.Read(request), nil
 }
 
-func (r *replica) Update(request []byte) (UpdateResponse, error) {
+func (r *replica) Update(request []byte) (*UpdateResponse, error) {
 	cmdBytes, err := r.commandCodec.Encode(&replicationpb.MonsteraCommand{
 		Payload: request,
 		Type:    replicationpb.CommandType_COMMAND_TYPE_UPDATE,
 	})
 	if err != nil {
-		return UpdateResponse{}, err
+		return nil, err
 	}
 
 	response, err := r.raft.Update(cmdBytes)
-	updateResponse, ok := response.(UpdateResponse)
+	updateResponse, ok := response.(*UpdateResponse)
 	if !ok {
-		return UpdateResponse{}, fmt.Errorf("invalid response type %v", updateResponse)
+		return nil, fmt.Errorf("invalid response type %v", updateResponse)
 	}
 
 	// TODO emit events
@@ -150,11 +150,17 @@ type appCoreAdapter struct {
 
 var _ raft.AppCore = (*appCoreAdapter)(nil)
 
-func (a *appCoreAdapter) Read(request []byte) ReadResponse {
+func (a *appCoreAdapter) Read(request []byte) *ReadResponse {
 	a.coreMu.RLock()
 	defer a.coreMu.RUnlock()
 
-	return a.core.Read(request)
+	resp, err := a.core.Read(request)
+	if err != nil {
+		panic(err)
+	}
+	return &ReadResponse{
+		Data: resp.Data,
+	}
 }
 
 func (a *appCoreAdapter) Apply(request []byte) any {
@@ -165,7 +171,11 @@ func (a *appCoreAdapter) Apply(request []byte) any {
 
 	switch cmd.Type {
 	case replicationpb.CommandType_COMMAND_TYPE_UPDATE:
-		return a.core.Update(cmd.Payload)
+		resp, err := a.core.Update(cmd.Payload)
+		if err != nil {
+			panic(err)
+		}
+		return resp
 	default:
 		panic(fmt.Sprintf("unknown command type: %v", cmd.Type))
 	}

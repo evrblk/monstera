@@ -29,25 +29,25 @@ func (c *PlaygroundCore) Restore(snapshot io.ReadCloser) error {
 	return nil
 }
 
-func (c *PlaygroundCore) Read(request []byte) monstera.ReadResponse {
+func (c *PlaygroundCore) Read(request []byte) (*monstera.ReadResponse, error) {
 	r, ok := c.state[binary.BigEndian.Uint64(request)]
 	if !ok {
-		return monstera.ReadResponse{
+		return &monstera.ReadResponse{
 			Data: []byte{},
-		}
+		}, nil
 	}
-	return monstera.ReadResponse{
+	return &monstera.ReadResponse{
 		Data: []byte(r),
-	}
+	}, nil
 }
 
-func (c *PlaygroundCore) Update(request []byte) monstera.UpdateResponse {
+func (c *PlaygroundCore) Update(request []byte) (*monstera.UpdateResponse, error) {
 	key := binary.BigEndian.Uint64(request[:8])
 	value := string(request[8:])
 	c.state[key] = value
-	return monstera.UpdateResponse{
+	return &monstera.UpdateResponse{
 		Data: []byte(value),
-	}
+	}, nil
 }
 
 func (c *PlaygroundCore) Snapshot() monstera.ApplicationCoreSnapshot {

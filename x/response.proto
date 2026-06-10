@@ -31,3 +31,8 @@ message Response {
   bytes data = 1;
   Error error = 2;
 }
+
+message Request {
+  int32 method_number = 1;
+  bytes data = 2;
+}

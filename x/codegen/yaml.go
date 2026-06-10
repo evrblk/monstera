@@ -14,18 +14,14 @@ type MonsteraYaml struct {
 }
 
 type GoCode struct {
-	OutputPackage string `yaml:"output_package"`
-	CorePbPackage string `yaml:"corepb_package"`
+	OutputPackage    string `yaml:"output_package"`
+	CoreTypesPackage string `yaml:"core_types_package"`
 }
 
 type MonsteraCore struct {
-	Name                string          `yaml:"name"`
-	Reads               []*ReadMethod   `yaml:"reads"`
-	Updates             []*UpdateMethod `yaml:"updates"`
-	UpdateRequestProto  string          `yaml:"update_request_proto"`
-	UpdateResponseProto string          `yaml:"update_response_proto"`
-	ReadRequestProto    string          `yaml:"read_request_proto"`
-	ReadResponseProto   string          `yaml:"read_response_proto"`
+	Name          string          `yaml:"name"`
+	ReadMethods   []*ReadMethod   `yaml:"read_methods"`
+	UpdateMethods []*UpdateMethod `yaml:"update_methods"`
 }
 
 type MonsteraStub struct {
@@ -34,14 +30,16 @@ type MonsteraStub struct {
 }
 
 type ReadMethod struct {
-	Name                   string `yaml:"method"`
+	Name                   string `yaml:"name"`
 	AllowReadFromFollowers bool   `yaml:"allow_read_from_followers"`
 	Sharded                bool   `yaml:"sharded"`
+	Number                 int    `yaml:"method_number"`
 }
 
 type UpdateMethod struct {
-	Name    string `yaml:"method"`
+	Name    string `yaml:"name"`
 	Sharded bool   `yaml:"sharded"`
+	Number  int    `yaml:"method_number"`
 }
 
 func LoadMonsteraYaml(path string) (*MonsteraYaml, error) {
@@ -57,15 +55,4 @@ func LoadMonsteraYaml(path string) (*MonsteraYaml, error) {
 	}
 
 	return monsteraYaml, nil
-}
-
-func getAllMethods(core *MonsteraCore) []string {
-	result := make([]string, 0, len(core.Reads)+len(core.Updates))
-	for _, read := range core.Reads {
-		result = append(result, read.Name)
-	}
-	for _, update := range core.Updates {
-		result = append(result, update.Name)
-	}
-	return result
 }

@@ -22,7 +22,7 @@ embedded database. By eliminating network calls and limited query languages for 
 you are able to solve problems which are known to be hard in distributed systems with just a few lines of your 
 favorite programming language as you would do it on a whiteboard.
 
-Go to [official documentation](https://everblack.dev/docs/monstera) to learn more.
+Go to [documentation](/docs/overview.md) to learn more.
 
 ## Example
 

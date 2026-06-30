@@ -48,22 +48,33 @@ type ReadResponse[T response] struct {
 	ApplicationError *Error
 }
 
-// UpdateRequest wraps the payload of a sharded mutating RPC.
+// UpdateRequest wraps the payload of a sharded mutating RPC. Now is the request
+// timestamp in Unix nanoseconds, carried on the wire by Request.now; the
+// application core should read it instead of calling time.Now() at apply time so
+// the update applies deterministically on every replica.
 type UpdateRequest[T request] struct {
 	Payload T
+	Now     int64
 }
 
-// ReadRequest wraps the payload of a sharded read-only RPC.
+// ReadRequest wraps the payload of a sharded read-only RPC. Now is the request
+// timestamp in Unix nanoseconds (Request.now) used to evaluate effective state
+// (e.g. expirations) as of that instant.
 type ReadRequest[T request] struct {
 	Payload T
+	Now     int64
 }
 
-// UpdateUnshardedRequest wraps the payload of an unsharded mutating RPC.
+// UpdateUnshardedRequest wraps the payload of an unsharded mutating RPC. See
+// UpdateRequest for the meaning of Now.
 type UpdateUnshardedRequest[T unshardedRequest] struct {
 	Payload T
+	Now     int64
 }
 
-// ReadUnshardedRequest wraps the payload of an unsharded read-only RPC.
+// ReadUnshardedRequest wraps the payload of an unsharded read-only RPC. See
+// ReadRequest for the meaning of Now.
 type ReadUnshardedRequest[T unshardedRequest] struct {
 	Payload T
+	Now     int64
 }

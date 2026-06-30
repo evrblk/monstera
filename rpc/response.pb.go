@@ -21,19 +21,34 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// ErrorCode is the transport-neutral classification of an application Error.
 type ErrorCode int32
 
 const (
-	ErrorCode_INVALID            ErrorCode = 0
-	ErrorCode_OK                 ErrorCode = 1
-	ErrorCode_INVALID_REQUEST    ErrorCode = 2
-	ErrorCode_DEADLINE_EXCEEDED  ErrorCode = 3
-	ErrorCode_NOT_FOUND          ErrorCode = 4
-	ErrorCode_ALREADY_EXISTS     ErrorCode = 5
+	// INVALID is the proto zero value; together with OK it means "no error"
+	// (nilifyIfEmpty treats both as a nil error).
+	ErrorCode_INVALID ErrorCode = 0
+	// OK indicates success / no error.
+	ErrorCode_OK ErrorCode = 1
+	// INVALID_REQUEST: the request was malformed or invalid for the current state.
+	ErrorCode_INVALID_REQUEST ErrorCode = 2
+	// DEADLINE_EXCEEDED: the operation did not complete in time.
+	ErrorCode_DEADLINE_EXCEEDED ErrorCode = 3
+	// NOT_FOUND: the requested resource does not exist.
+	ErrorCode_NOT_FOUND ErrorCode = 4
+	// ALREADY_EXISTS: a resource with the same client-provided identity (e.g. a
+	// name) already exists.
+	ErrorCode_ALREADY_EXISTS ErrorCode = 5
+	// RESOURCE_EXHAUSTED: a quota or limit has been reached.
 	ErrorCode_RESOURCE_EXHAUSTED ErrorCode = 6
-	ErrorCode_UNIMPLEMENTED      ErrorCode = 7
-	ErrorCode_INTERNAL           ErrorCode = 8
-	ErrorCode_ID_COLLISION       ErrorCode = 9
+	// UNIMPLEMENTED: the requested method is not implemented.
+	ErrorCode_UNIMPLEMENTED ErrorCode = 7
+	// INTERNAL: an unexpected server-side failure.
+	ErrorCode_INTERNAL ErrorCode = 8
+	// ID_COLLISION: a randomly generated id already exists; the caller should
+	// regenerate the id and retry. This is internal and never surfaced to clients
+	// (ErrorToGRPC collapses it to INTERNAL).
+	ErrorCode_ID_COLLISION ErrorCode = 9
 )
 
 // Enum value maps for ErrorCode.
@@ -91,11 +106,18 @@ func (ErrorCode) EnumDescriptor() ([]byte, []int) {
 	return file_rpc_response_proto_rawDescGZIP(), []int{0}
 }
 
+// Error is a deterministic application (domain) error produced by an application
+// core and carried back in Response.error. It is transport-neutral; the front
+// server maps it to a gRPC status via ErrorToGRPC.
 type Error struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Code          ErrorCode              `protobuf:"varint,1,opt,name=code,proto3,enum=com.evrblk.monstera.rpc.ErrorCode" json:"code,omitempty"`
-	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	Context       []*ErrorContext        `protobuf:"bytes,3,rep,name=context,proto3" json:"context,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// code is the transport-neutral error classification.
+	Code ErrorCode `protobuf:"varint,1,opt,name=code,proto3,enum=com.evrblk.monstera.rpc.ErrorCode" json:"code,omitempty"`
+	// message is a human-readable description of the error.
+	Message string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	// context holds structured key/value details about the error (e.g. the
+	// offending field or limit), surfaced to clients as errdetails.ErrorInfo.
+	Context       []*ErrorContext `protobuf:"bytes,3,rep,name=context,proto3" json:"context,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -151,6 +173,8 @@ func (x *Error) GetContext() []*ErrorContext {
 	return nil
 }
 
+// ErrorContext is a single key/value pair of structured context attached to an
+// Error.
 type ErrorContext struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -203,10 +227,14 @@ func (x *ErrorContext) GetValue() string {
 	return ""
 }
 
+// Response is the envelope returned by an application core for an RPC.
 type Response struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
-	Error         *Error                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// data is the marshaled response payload.
+	Data []byte `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	// error is the application error, set when the RPC failed at the domain level
+	// (nil/INVALID/OK code means success).
+	Error         *Error `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -255,10 +283,18 @@ func (x *Response) GetError() *Error {
 	return nil
 }
 
+// Request is the envelope sent to an application core for an RPC.
 type Request struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	MethodNumber  int32                  `protobuf:"varint,1,opt,name=method_number,json=methodNumber,proto3" json:"method_number,omitempty"`
-	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// method_number selects which core method to dispatch to.
+	MethodNumber int32 `protobuf:"varint,1,opt,name=method_number,json=methodNumber,proto3" json:"method_number,omitempty"`
+	// data is the marshaled request payload for the selected method.
+	Data []byte `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	// now is the request timestamp in Unix nanoseconds. For updates it is stamped
+	// by the leader before the entry is appended to the Raft log, so every replica
+	// applies the same value deterministically; the application core must read it
+	// here rather than calling time.Now() at apply time.
+	Now           int64 `protobuf:"varint,3,opt,name=now,proto3" json:"now,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -307,6 +343,13 @@ func (x *Request) GetData() []byte {
 	return nil
 }
 
+func (x *Request) GetNow() int64 {
+	if x != nil {
+		return x.Now
+	}
+	return 0
+}
+
 var File_rpc_response_proto protoreflect.FileDescriptor
 
 const file_rpc_response_proto_rawDesc = "" +
@@ -321,10 +364,11 @@ const file_rpc_response_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value\"T\n" +
 	"\bResponse\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x124\n" +
-	"\x05error\x18\x02 \x01(\v2\x1e.com.evrblk.monstera.rpc.ErrorR\x05error\"B\n" +
+	"\x05error\x18\x02 \x01(\v2\x1e.com.evrblk.monstera.rpc.ErrorR\x05error\"T\n" +
 	"\aRequest\x12#\n" +
 	"\rmethod_number\x18\x01 \x01(\x05R\fmethodNumber\x12\x12\n" +
-	"\x04data\x18\x02 \x01(\fR\x04data*\xba\x01\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\x12\x10\n" +
+	"\x03now\x18\x03 \x01(\x03R\x03now*\xba\x01\n" +
 	"\tErrorCode\x12\v\n" +
 	"\aINVALID\x10\x00\x12\x06\n" +
 	"\x02OK\x10\x01\x12\x13\n" +

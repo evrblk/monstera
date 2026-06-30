@@ -4,36 +4,71 @@ package com.evrblk.monstera.rpc;
 
 option go_package = "github.com/evrblk/monstera/rpc";
 
+// Error is a deterministic application (domain) error produced by an application
+// core and carried back in Response.error. It is transport-neutral.
 message Error {
+  // code is the transport-neutral error classification.
   ErrorCode code = 1;
+  // message is a human-readable description of the error.
   string message = 2;
+  // context holds structured key/value details about the error (e.g. the
+  // offending field or limit), surfaced to clients as errdetails.ErrorInfo.
   repeated ErrorContext context = 3;
 }
 
+// ErrorContext is a single key/value pair of structured context attached to an
+// Error.
 message ErrorContext {
   string key = 1;
   string value = 2;
 }
 
+// ErrorCode is the transport-neutral classification of an application Error.
 enum ErrorCode {
+  // INVALID is the proto zero value; together with OK it means "no error"
+  // (nilifyIfEmpty treats both as a nil error).
   INVALID = 0;
+  // OK indicates success / no error.
   OK = 1;
+  // INVALID_REQUEST: the request was malformed or invalid for the current state.
   INVALID_REQUEST = 2;
+  // DEADLINE_EXCEEDED: the operation did not complete in time.
   DEADLINE_EXCEEDED = 3;
+  // NOT_FOUND: the requested resource does not exist.
   NOT_FOUND = 4;
+  // ALREADY_EXISTS: a resource with the same client-provided identity (e.g. a
+  // name) already exists.
   ALREADY_EXISTS = 5;
+  // RESOURCE_EXHAUSTED: a quota or limit has been reached.
   RESOURCE_EXHAUSTED = 6;
+  // UNIMPLEMENTED: the requested method is not implemented.
   UNIMPLEMENTED = 7;
+  // INTERNAL: an unexpected server-side failure.
   INTERNAL = 8;
+  // ID_COLLISION: a randomly generated id already exists; the caller should
+  // regenerate the id and retry. This is internal and never surfaced to clients.
   ID_COLLISION = 9;
 }
 
+// Response is the envelope returned by an application core for an RPC.
 message Response {
+  // data is the marshaled response payload.
   bytes data = 1;
+  // error is the application error, set when the RPC failed at the domain level
+  // (nil/INVALID/OK code means success).
   Error error = 2;
 }
 
+// Request is the envelope sent to an application core for an RPC.
 message Request {
+  // method_number selects which core method to dispatch to. Similar to protobuf
+  // field numbers, method numbers must never change in time.
   int32 method_number = 1;
+  // data is the marshaled request payload for the selected method.
   bytes data = 2;
+  // now is the request timestamp in Unix nanoseconds. For updates it is stamped
+  // by the leader before the entry is appended to the Raft log, so every replica
+  // applies the same value deterministically; the application core must read it
+  // here rather than calling time.Now() at apply time.
+  int64 now = 3;
 }

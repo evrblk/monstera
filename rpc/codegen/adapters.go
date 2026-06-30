@@ -197,7 +197,10 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 							Return(Nil(), Err()),
 						),
 						List(Id("methodResponse"), Err()).Op(":=").Id("a").Dot(coreVarName).Dot(update.Name).Call(
-							Op("&").Id(update.Name+"Request").Values(Dict{Id("Payload"): Op("&").Id("payload")}),
+							Op("&").Id(update.Name+"Request").Values(Dict{
+								Id("Payload"): Op("&").Id("payload"),
+								Id("Now"):     Id("appRequest").Dot("Now"),
+							}),
 						),
 						If(
 							Id("err").Op("!=").Nil(),
@@ -306,7 +309,10 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 							Return(Nil(), Err()),
 						),
 						List(Id("methodResponse"), Err()).Op(":=").Id("a").Dot(coreVarName).Dot(read.Name).Call(
-							Op("&").Id(read.Name+"Request").Values(Dict{Id("Payload"): Op("&").Id("payload")}),
+							Op("&").Id(read.Name+"Request").Values(Dict{
+								Id("Payload"): Op("&").Id("payload"),
+								Id("Now"):     Id("appRequest").Dot("Now"),
+							}),
 						),
 						If(
 							Id("err").Op("!=").Nil(),

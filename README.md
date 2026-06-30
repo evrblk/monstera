@@ -29,8 +29,6 @@ Go to [official documentation](https://everblack.dev/docs/monstera) to learn mor
 It might be easier to understand how it works from examples rather than from the documentation.
 
 * [evrblk/grackle](https://github.com/evrblk/grackle) is a complete production-ready application built with Monstera.
-* [evrblk/monstera-example](https://github.com/evrblk/monstera-example) repository has toy examples of applications 
-  built with Monstera.
 
 ## Installing
 

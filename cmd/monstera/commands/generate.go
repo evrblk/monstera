@@ -7,12 +7,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/evrblk/monstera/x/codegen"
+	"github.com/evrblk/monstera/rpc/codegen"
 )
 
 var codeGenerateCmd = &cobra.Command{
 	Use:   "generate",
-	Short: "Generates stubs, core interfaces and adapters",
+	Short: "Generates RPC stubs, core interfaces and adapters",
 	Run: func(cmd *cobra.Command, args []string) {
 		monsteraYaml, err := codegen.LoadMonsteraYaml("./monstera.yaml")
 		if err != nil {

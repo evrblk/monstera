@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"io"
+	"maps"
 
 	"github.com/evrblk/monstera"
 )
@@ -52,9 +53,7 @@ func (c *PlaygroundCore) Update(request []byte) (*monstera.UpdateResponse, error
 
 func (c *PlaygroundCore) Snapshot() monstera.ApplicationCoreSnapshot {
 	clone := make(map[uint64]string)
-	for k, v := range c.state {
-		clone[k] = v
-	}
+	maps.Copy(clone, c.state)
 
 	return &PlaygroundCoreSnapshot{
 		state: clone,

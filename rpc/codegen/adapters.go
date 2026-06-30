@@ -3,13 +3,13 @@ package codegen
 import (
 	"fmt"
 
-	. "github.com/dave/jennifer/jen"
+	. "github.com/dave/jennifer/jen" //lint:ignore ST1001 jen helpers are so much nicer to use with dot-importing
 )
 
 func GenerateAdapters(cfg *MonsteraYaml) string {
 	f := NewFilePath(cfg.GoCode.OutputPackage)
 	f.HeaderComment(generatedCodeComment)
-	f.ImportAlias(monsterax, "monsterax")
+	f.ImportAlias(mrpcPkg, "mrpc")
 
 	// Core metrics
 	f.Var().Defs(
@@ -39,7 +39,20 @@ func GenerateAdapters(cfg *MonsteraYaml) string {
 		generateAdapter(f, core, cfg)
 	}
 
+	generateHelpers(f)
+
 	return fmt.Sprintf("%#v", f)
+}
+
+func generateHelpers(f *File) {
+	// measureSince func
+	f.Func().Id("measureSince").Params(
+		Id("o").Qual("github.com/prometheus/client_golang/prometheus", "Observer"),
+		Id("t1").Qual("time", "Time"),
+	).Block(
+		Id("o").Dot("Observe").Call(Qual("time", "Since").Call(Id("t1")).Dot("Seconds").Call()),
+	)
+	f.Line()
 }
 
 func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
@@ -55,7 +68,7 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 	)
 
 	// ApplicationCore interface var
-	f.Var().Id("_").Qual("github.com/evrblk/monstera", "ApplicationCore").Op("=").Op("&").Id(adapterName).Values()
+	f.Var().Id("_").Qual(monsteraPkg, "ApplicationCore").Op("=").Op("&").Id(adapterName).Values()
 
 	// NewAdapter func
 	f.Func().Id(
@@ -79,9 +92,9 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 	f.Func().Params(
 		Id("a").Op("*").Id(adapterName),
 	).Id("Snapshot").Params().Params(
-		Qual("github.com/evrblk/monstera", "ApplicationCoreSnapshot"),
+		Qual(monsteraPkg, "ApplicationCoreSnapshot"),
 	).Block(
-		Defer().Qual(monsterax, "MeasureSince").Call(
+		Defer().Id("measureSince").Call(
 			Id("monsteraCoreMethodDuration").Dot("WithLabelValues").Call(
 				Lit(core.Name),
 				Lit("Snapshot"),
@@ -109,7 +122,7 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 	).Params(
 		Error(),
 	).Block(
-		Defer().Qual(monsterax, "MeasureSince").Call(
+		Defer().Id("measureSince").Call(
 			Id("monsteraCoreMethodDuration").Dot("WithLabelValues").Call(
 				Lit(core.Name),
 				Lit("Restore"),
@@ -144,14 +157,14 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 		Id("appRequestBytes").Index().Byte(),
 	).Params(
 		List(
-			Op("*").Qual("github.com/evrblk/monstera", "UpdateResponse"),
+			Op("*").Qual(monsteraPkg, "UpdateResponse"),
 			Error(),
 		),
 	).BlockFunc(func(g *Group) {
 		if len(core.UpdateMethods) > 0 {
-			g.Id("response").Op(":=").Op("&").Qual("github.com/evrblk/monstera", "UpdateResponse").Values()
-			g.Id("appResponse").Op(":=").Op("&").Qual(monsterax, "Response").Values()
-			g.Id("appRequest").Op(":=").Op("&").Qual(monsterax, "Request").Values()
+			g.Id("response").Op(":=").Op("&").Qual(monsteraPkg, "UpdateResponse").Values()
+			g.Id("appResponse").Op(":=").Op("&").Qual(mrpcPkg, "Response").Values()
+			g.Id("appRequest").Op(":=").Op("&").Qual(mrpcPkg, "Request").Values()
 			g.Line()
 
 			g.Err().Op(":=").Id("appRequest").Dot("UnmarshalVT").Call(
@@ -191,7 +204,7 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 						).Block(
 							Return(Nil(), Err()),
 						),
-						Qual(monsterax, "MeasureSince").Call(
+						Id("measureSince").Call(
 							Id("monsteraCoreMethodDuration").Dot("WithLabelValues").Call(
 								Lit(core.Name),
 								Lit(update.Name),
@@ -253,14 +266,14 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 		Id("appRequestBytes").Index().Byte(),
 	).Params(
 		List(
-			Op("*").Qual("github.com/evrblk/monstera", "ReadResponse"),
+			Op("*").Qual(monsteraPkg, "ReadResponse"),
 			Error(),
 		),
 	).BlockFunc(func(g *Group) {
 		if len(core.ReadMethods) > 0 {
-			g.Id("response").Op(":=").Op("&").Qual("github.com/evrblk/monstera", "ReadResponse").Values()
-			g.Id("appResponse").Op(":=").Op("&").Qual(monsterax, "Response").Values()
-			g.Id("appRequest").Op(":=").Op("&").Qual(monsterax, "Request").Values()
+			g.Id("response").Op(":=").Op("&").Qual(monsteraPkg, "ReadResponse").Values()
+			g.Id("appResponse").Op(":=").Op("&").Qual(mrpcPkg, "Response").Values()
+			g.Id("appRequest").Op(":=").Op("&").Qual(mrpcPkg, "Request").Values()
 			g.Line()
 
 			g.Err().Op(":=").Id("appRequest").Dot("UnmarshalVT").Call(
@@ -300,7 +313,7 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 						).Block(
 							Return(Nil(), Err()),
 						),
-						Qual(monsterax, "MeasureSince").Call(
+						Id("measureSince").Call(
 							Id("monsteraCoreMethodDuration").Dot("WithLabelValues").Call(
 								Lit(core.Name),
 								Lit(read.Name),

@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.9
 // 	protoc        v7.35.0
-// source: x/response.proto
+// source: rpc/response.proto
 
-package monsterax
+package rpc
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -26,13 +26,14 @@ type ErrorCode int32
 const (
 	ErrorCode_INVALID            ErrorCode = 0
 	ErrorCode_OK                 ErrorCode = 1
-	ErrorCode_INVALID_ARGUMENT   ErrorCode = 2
+	ErrorCode_INVALID_REQUEST    ErrorCode = 2
 	ErrorCode_DEADLINE_EXCEEDED  ErrorCode = 3
 	ErrorCode_NOT_FOUND          ErrorCode = 4
 	ErrorCode_ALREADY_EXISTS     ErrorCode = 5
 	ErrorCode_RESOURCE_EXHAUSTED ErrorCode = 6
 	ErrorCode_UNIMPLEMENTED      ErrorCode = 7
 	ErrorCode_INTERNAL           ErrorCode = 8
+	ErrorCode_ID_COLLISION       ErrorCode = 9
 )
 
 // Enum value maps for ErrorCode.
@@ -40,24 +41,26 @@ var (
 	ErrorCode_name = map[int32]string{
 		0: "INVALID",
 		1: "OK",
-		2: "INVALID_ARGUMENT",
+		2: "INVALID_REQUEST",
 		3: "DEADLINE_EXCEEDED",
 		4: "NOT_FOUND",
 		5: "ALREADY_EXISTS",
 		6: "RESOURCE_EXHAUSTED",
 		7: "UNIMPLEMENTED",
 		8: "INTERNAL",
+		9: "ID_COLLISION",
 	}
 	ErrorCode_value = map[string]int32{
 		"INVALID":            0,
 		"OK":                 1,
-		"INVALID_ARGUMENT":   2,
+		"INVALID_REQUEST":    2,
 		"DEADLINE_EXCEEDED":  3,
 		"NOT_FOUND":          4,
 		"ALREADY_EXISTS":     5,
 		"RESOURCE_EXHAUSTED": 6,
 		"UNIMPLEMENTED":      7,
 		"INTERNAL":           8,
+		"ID_COLLISION":       9,
 	}
 )
 
@@ -72,11 +75,11 @@ func (x ErrorCode) String() string {
 }
 
 func (ErrorCode) Descriptor() protoreflect.EnumDescriptor {
-	return file_x_response_proto_enumTypes[0].Descriptor()
+	return file_rpc_response_proto_enumTypes[0].Descriptor()
 }
 
 func (ErrorCode) Type() protoreflect.EnumType {
-	return &file_x_response_proto_enumTypes[0]
+	return &file_rpc_response_proto_enumTypes[0]
 }
 
 func (x ErrorCode) Number() protoreflect.EnumNumber {
@@ -85,12 +88,12 @@ func (x ErrorCode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ErrorCode.Descriptor instead.
 func (ErrorCode) EnumDescriptor() ([]byte, []int) {
-	return file_x_response_proto_rawDescGZIP(), []int{0}
+	return file_rpc_response_proto_rawDescGZIP(), []int{0}
 }
 
 type Error struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Code          ErrorCode              `protobuf:"varint,1,opt,name=code,proto3,enum=com.evrblk.monstera.monsterax.ErrorCode" json:"code,omitempty"`
+	Code          ErrorCode              `protobuf:"varint,1,opt,name=code,proto3,enum=com.evrblk.monstera.rpc.ErrorCode" json:"code,omitempty"`
 	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	Context       []*ErrorContext        `protobuf:"bytes,3,rep,name=context,proto3" json:"context,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -99,7 +102,7 @@ type Error struct {
 
 func (x *Error) Reset() {
 	*x = Error{}
-	mi := &file_x_response_proto_msgTypes[0]
+	mi := &file_rpc_response_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -111,7 +114,7 @@ func (x *Error) String() string {
 func (*Error) ProtoMessage() {}
 
 func (x *Error) ProtoReflect() protoreflect.Message {
-	mi := &file_x_response_proto_msgTypes[0]
+	mi := &file_rpc_response_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -124,7 +127,7 @@ func (x *Error) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Error.ProtoReflect.Descriptor instead.
 func (*Error) Descriptor() ([]byte, []int) {
-	return file_x_response_proto_rawDescGZIP(), []int{0}
+	return file_rpc_response_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *Error) GetCode() ErrorCode {
@@ -158,7 +161,7 @@ type ErrorContext struct {
 
 func (x *ErrorContext) Reset() {
 	*x = ErrorContext{}
-	mi := &file_x_response_proto_msgTypes[1]
+	mi := &file_rpc_response_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -170,7 +173,7 @@ func (x *ErrorContext) String() string {
 func (*ErrorContext) ProtoMessage() {}
 
 func (x *ErrorContext) ProtoReflect() protoreflect.Message {
-	mi := &file_x_response_proto_msgTypes[1]
+	mi := &file_rpc_response_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -183,7 +186,7 @@ func (x *ErrorContext) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorContext.ProtoReflect.Descriptor instead.
 func (*ErrorContext) Descriptor() ([]byte, []int) {
-	return file_x_response_proto_rawDescGZIP(), []int{1}
+	return file_rpc_response_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *ErrorContext) GetKey() string {
@@ -210,7 +213,7 @@ type Response struct {
 
 func (x *Response) Reset() {
 	*x = Response{}
-	mi := &file_x_response_proto_msgTypes[2]
+	mi := &file_rpc_response_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -222,7 +225,7 @@ func (x *Response) String() string {
 func (*Response) ProtoMessage() {}
 
 func (x *Response) ProtoReflect() protoreflect.Message {
-	mi := &file_x_response_proto_msgTypes[2]
+	mi := &file_rpc_response_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -235,7 +238,7 @@ func (x *Response) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Response.ProtoReflect.Descriptor instead.
 func (*Response) Descriptor() ([]byte, []int) {
-	return file_x_response_proto_rawDescGZIP(), []int{2}
+	return file_rpc_response_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Response) GetData() []byte {
@@ -262,7 +265,7 @@ type Request struct {
 
 func (x *Request) Reset() {
 	*x = Request{}
-	mi := &file_x_response_proto_msgTypes[3]
+	mi := &file_rpc_response_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -274,7 +277,7 @@ func (x *Request) String() string {
 func (*Request) ProtoMessage() {}
 
 func (x *Request) ProtoReflect() protoreflect.Message {
-	mi := &file_x_response_proto_msgTypes[3]
+	mi := &file_rpc_response_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -287,7 +290,7 @@ func (x *Request) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Request.ProtoReflect.Descriptor instead.
 func (*Request) Descriptor() ([]byte, []int) {
-	return file_x_response_proto_rawDescGZIP(), []int{3}
+	return file_rpc_response_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Request) GetMethodNumber() int32 {
@@ -304,60 +307,61 @@ func (x *Request) GetData() []byte {
 	return nil
 }
 
-var File_x_response_proto protoreflect.FileDescriptor
+var File_rpc_response_proto protoreflect.FileDescriptor
 
-const file_x_response_proto_rawDesc = "" +
+const file_rpc_response_proto_rawDesc = "" +
 	"\n" +
-	"\x10x/response.proto\x12\x1dcom.evrblk.monstera.monsterax\"\xa6\x01\n" +
-	"\x05Error\x12<\n" +
-	"\x04code\x18\x01 \x01(\x0e2(.com.evrblk.monstera.monsterax.ErrorCodeR\x04code\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\x12E\n" +
-	"\acontext\x18\x03 \x03(\v2+.com.evrblk.monstera.monsterax.ErrorContextR\acontext\"6\n" +
+	"\x12rpc/response.proto\x12\x17com.evrblk.monstera.rpc\"\x9a\x01\n" +
+	"\x05Error\x126\n" +
+	"\x04code\x18\x01 \x01(\x0e2\".com.evrblk.monstera.rpc.ErrorCodeR\x04code\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12?\n" +
+	"\acontext\x18\x03 \x03(\v2%.com.evrblk.monstera.rpc.ErrorContextR\acontext\"6\n" +
 	"\fErrorContext\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"Z\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"T\n" +
 	"\bResponse\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data\x12:\n" +
-	"\x05error\x18\x02 \x01(\v2$.com.evrblk.monstera.monsterax.ErrorR\x05error\"B\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\x124\n" +
+	"\x05error\x18\x02 \x01(\v2\x1e.com.evrblk.monstera.rpc.ErrorR\x05error\"B\n" +
 	"\aRequest\x12#\n" +
 	"\rmethod_number\x18\x01 \x01(\x05R\fmethodNumber\x12\x12\n" +
-	"\x04data\x18\x02 \x01(\fR\x04data*\xa9\x01\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data*\xba\x01\n" +
 	"\tErrorCode\x12\v\n" +
 	"\aINVALID\x10\x00\x12\x06\n" +
-	"\x02OK\x10\x01\x12\x14\n" +
-	"\x10INVALID_ARGUMENT\x10\x02\x12\x15\n" +
+	"\x02OK\x10\x01\x12\x13\n" +
+	"\x0fINVALID_REQUEST\x10\x02\x12\x15\n" +
 	"\x11DEADLINE_EXCEEDED\x10\x03\x12\r\n" +
 	"\tNOT_FOUND\x10\x04\x12\x12\n" +
 	"\x0eALREADY_EXISTS\x10\x05\x12\x16\n" +
 	"\x12RESOURCE_EXHAUSTED\x10\x06\x12\x11\n" +
 	"\rUNIMPLEMENTED\x10\a\x12\f\n" +
-	"\bINTERNAL\x10\bB(Z&github.com/evrblk/monstera/x;monsteraxb\x06proto3"
+	"\bINTERNAL\x10\b\x12\x10\n" +
+	"\fID_COLLISION\x10\tB Z\x1egithub.com/evrblk/monstera/rpcb\x06proto3"
 
 var (
-	file_x_response_proto_rawDescOnce sync.Once
-	file_x_response_proto_rawDescData []byte
+	file_rpc_response_proto_rawDescOnce sync.Once
+	file_rpc_response_proto_rawDescData []byte
 )
 
-func file_x_response_proto_rawDescGZIP() []byte {
-	file_x_response_proto_rawDescOnce.Do(func() {
-		file_x_response_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_x_response_proto_rawDesc), len(file_x_response_proto_rawDesc)))
+func file_rpc_response_proto_rawDescGZIP() []byte {
+	file_rpc_response_proto_rawDescOnce.Do(func() {
+		file_rpc_response_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_rpc_response_proto_rawDesc), len(file_rpc_response_proto_rawDesc)))
 	})
-	return file_x_response_proto_rawDescData
+	return file_rpc_response_proto_rawDescData
 }
 
-var file_x_response_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_x_response_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
-var file_x_response_proto_goTypes = []any{
-	(ErrorCode)(0),       // 0: com.evrblk.monstera.monsterax.ErrorCode
-	(*Error)(nil),        // 1: com.evrblk.monstera.monsterax.Error
-	(*ErrorContext)(nil), // 2: com.evrblk.monstera.monsterax.ErrorContext
-	(*Response)(nil),     // 3: com.evrblk.monstera.monsterax.Response
-	(*Request)(nil),      // 4: com.evrblk.monstera.monsterax.Request
+var file_rpc_response_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_rpc_response_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_rpc_response_proto_goTypes = []any{
+	(ErrorCode)(0),       // 0: com.evrblk.monstera.rpc.ErrorCode
+	(*Error)(nil),        // 1: com.evrblk.monstera.rpc.Error
+	(*ErrorContext)(nil), // 2: com.evrblk.monstera.rpc.ErrorContext
+	(*Response)(nil),     // 3: com.evrblk.monstera.rpc.Response
+	(*Request)(nil),      // 4: com.evrblk.monstera.rpc.Request
 }
-var file_x_response_proto_depIdxs = []int32{
-	0, // 0: com.evrblk.monstera.monsterax.Error.code:type_name -> com.evrblk.monstera.monsterax.ErrorCode
-	2, // 1: com.evrblk.monstera.monsterax.Error.context:type_name -> com.evrblk.monstera.monsterax.ErrorContext
-	1, // 2: com.evrblk.monstera.monsterax.Response.error:type_name -> com.evrblk.monstera.monsterax.Error
+var file_rpc_response_proto_depIdxs = []int32{
+	0, // 0: com.evrblk.monstera.rpc.Error.code:type_name -> com.evrblk.monstera.rpc.ErrorCode
+	2, // 1: com.evrblk.monstera.rpc.Error.context:type_name -> com.evrblk.monstera.rpc.ErrorContext
+	1, // 2: com.evrblk.monstera.rpc.Response.error:type_name -> com.evrblk.monstera.rpc.Error
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
@@ -365,27 +369,27 @@ var file_x_response_proto_depIdxs = []int32{
 	0, // [0:3] is the sub-list for field type_name
 }
 
-func init() { file_x_response_proto_init() }
-func file_x_response_proto_init() {
-	if File_x_response_proto != nil {
+func init() { file_rpc_response_proto_init() }
+func file_rpc_response_proto_init() {
+	if File_rpc_response_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_x_response_proto_rawDesc), len(file_x_response_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rpc_response_proto_rawDesc), len(file_rpc_response_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_x_response_proto_goTypes,
-		DependencyIndexes: file_x_response_proto_depIdxs,
-		EnumInfos:         file_x_response_proto_enumTypes,
-		MessageInfos:      file_x_response_proto_msgTypes,
+		GoTypes:           file_rpc_response_proto_goTypes,
+		DependencyIndexes: file_rpc_response_proto_depIdxs,
+		EnumInfos:         file_rpc_response_proto_enumTypes,
+		MessageInfos:      file_rpc_response_proto_msgTypes,
 	}.Build()
-	File_x_response_proto = out.File
-	file_x_response_proto_goTypes = nil
-	file_x_response_proto_depIdxs = nil
+	File_rpc_response_proto = out.File
+	file_rpc_response_proto_goTypes = nil
+	file_rpc_response_proto_depIdxs = nil
 }

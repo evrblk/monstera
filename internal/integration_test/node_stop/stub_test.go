@@ -48,7 +48,7 @@ func TestPlaygroundApiMonsteraStub_ReadAndUpdate(t *testing.T) {
 	log.Println("Nodes are ready")
 
 	log.Println("Sending requests")
-	for i := 0; i < 5000; i++ {
+	for range 5000 {
 		// Test reading nonexistent key
 		key := rand.Uint64()
 
@@ -74,7 +74,7 @@ func TestPlaygroundApiMonsteraStub_ReadAndUpdate(t *testing.T) {
 	nodes[0].monsteraServer.Stop()
 
 	log.Println("Sending requests")
-	for i := 0; i < 5000; i++ {
+	for range 5000 {
 		key := rand.Uint64()
 
 		// Update key

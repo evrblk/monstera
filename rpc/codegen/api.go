@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"log"
 
-	. "github.com/dave/jennifer/jen"
+	. "github.com/dave/jennifer/jen" //lint:ignore ST1001 jen helpers are so much nicer to use with dot-importing
 )
 
 func GenerateCoreApis(cfg *MonsteraYaml) string {
 	f := NewFilePath(cfg.GoCode.OutputPackage)
 	f.HeaderComment(generatedCodeComment)
-	f.ImportAlias(monsterax, "monsterax")
+	f.ImportAlias(mrpcPkg, "mrpc")
 
 	// Generate request and response type aliases
 	for _, core := range cfg.Cores {
@@ -19,16 +19,16 @@ func GenerateCoreApis(cfg *MonsteraYaml) string {
 			if !method.Sharded {
 				requestName = "ReadUnshardedRequest"
 			}
-			f.Type().Id(method.Name+"Request").Op("=").Qual(monsterax, requestName).Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, method.Name+"Request"))
-			f.Type().Id(method.Name+"Response").Op("=").Qual(monsterax, "ReadResponse").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, method.Name+"Response"))
+			f.Type().Id(method.Name+"Request").Op("=").Qual(mrpcPkg, requestName).Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, method.Name+"Request"))
+			f.Type().Id(method.Name+"Response").Op("=").Qual(mrpcPkg, "ReadResponse").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, method.Name+"Response"))
 		}
 		for _, method := range core.UpdateMethods {
 			requestName := "UpdateRequest"
 			if !method.Sharded {
 				requestName = "UpdateUnshardedRequest"
 			}
-			f.Type().Id(method.Name+"Request").Op("=").Qual(monsterax, requestName).Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, method.Name+"Request"))
-			f.Type().Id(method.Name+"Response").Op("=").Qual(monsterax, "UpdateResponse").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, method.Name+"Response"))
+			f.Type().Id(method.Name+"Request").Op("=").Qual(mrpcPkg, requestName).Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, method.Name+"Request"))
+			f.Type().Id(method.Name+"Response").Op("=").Qual(mrpcPkg, "UpdateResponse").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, method.Name+"Response"))
 		}
 	}
 	f.Line()
@@ -65,7 +65,7 @@ func GenerateCoreApis(cfg *MonsteraYaml) string {
 func generateCoreApi(f *File, core *MonsteraCore) {
 	apiName := core.Name + "CoreApi"
 	f.Type().Id(apiName).InterfaceFunc(func(g *Group) {
-		g.Id("Snapshot").Params().Qual("github.com/evrblk/monstera", "ApplicationCoreSnapshot")
+		g.Id("Snapshot").Params().Qual(monsteraPkg, "ApplicationCoreSnapshot")
 		g.Id("Restore").Params(Id("reader").Qual("io", "ReadCloser")).Error()
 		g.Id("Close").Params()
 

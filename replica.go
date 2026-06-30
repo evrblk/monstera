@@ -52,6 +52,9 @@ func (r *replica) Update(request []byte) (*UpdateResponse, error) {
 	}
 
 	response, err := r.raft.Update(cmdBytes)
+	if err != nil {
+		return nil, err
+	}
 	updateResponse, ok := response.(*UpdateResponse)
 	if !ok {
 		return nil, fmt.Errorf("invalid response type %v", updateResponse)

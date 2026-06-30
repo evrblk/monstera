@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"log"
 
-	. "github.com/dave/jennifer/jen"
+	. "github.com/dave/jennifer/jen" //lint:ignore ST1001 jen helpers are so much nicer to use with dot-importing
 )
 
 func GenerateStubs(cfg *MonsteraYaml) string {
 	f := NewFilePath(cfg.GoCode.OutputPackage)
 	f.HeaderComment(generatedCodeComment)
-	f.ImportAlias(monsterax, "monsterax")
+	f.ImportAlias(mrpcPkg, "mrpc")
 
 	for _, stub := range cfg.Stubs {
 		cores := make([]*MonsteraCore, len(stub.Cores))
@@ -41,7 +41,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 
 	// type <Stub>
 	f.Type().Id(stubType).StructFunc(func(g *Group) {
-		g.Id("monsteraClient").Op("*").Qual("github.com/evrblk/monstera", "Client")
+		g.Id("monsteraClient").Op("*").Qual(monsteraPkg, "Client")
 	})
 	apiName := stub.Name + "ClientApi"
 	f.Var().Id("_").Qual(cfg.GoCode.OutputPackage, apiName).Op("=").Op("&").Id(stubType).Values()
@@ -74,7 +74,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				)
 				g.Line()
 
-				g.Id("appRequest").Op(":=").Op("&").Qual(monsterax, "Request").Values(Dict{
+				g.Id("appRequest").Op(":=").Op("&").Qual(mrpcPkg, "Request").Values(Dict{
 					Id("MethodNumber"): Lit(read.Number),
 					Id("Data"):         Id("data"),
 				})
@@ -116,7 +116,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				)
 				g.Line()
 
-				g.Id("appResponse").Op(":=").Op("&").Qual(monsterax, "Response").Values()
+				g.Id("appResponse").Op(":=").Op("&").Qual(mrpcPkg, "Response").Values()
 				g.Err().Op("=").Id("appResponse").Dot("UnmarshalVT").Call(Id("responseBytes"))
 				g.If(
 					Err().Op("!=").Nil(),
@@ -167,7 +167,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				)
 				g.Line()
 
-				g.Id("appRequest").Op(":=").Op("&").Qual(monsterax, "Request").Values(Dict{
+				g.Id("appRequest").Op(":=").Op("&").Qual(mrpcPkg, "Request").Values(Dict{
 					Id("MethodNumber"): Lit(update.Number),
 					Id("Data"):         Id("data"),
 				})
@@ -207,7 +207,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				)
 				g.Line()
 
-				g.Id("appResponse").Op(":=").Op("&").Qual(monsterax, "Response").Values()
+				g.Id("appResponse").Op(":=").Op("&").Qual(mrpcPkg, "Response").Values()
 				g.Err().Op("=").Id("appResponse").Dot("UnmarshalVT").Call(Id("responseBytes"))
 				g.If(
 					Err().Op("!=").Nil(),
@@ -255,7 +255,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 
 	// func New<Stub>
 	f.Func().Id("New" + stubType).Params(
-		Id("monsteraClient").Op("*").Qual("github.com/evrblk/monstera", "Client"),
+		Id("monsteraClient").Op("*").Qual(monsteraPkg, "Client"),
 	).Params(
 		Op("*").Id(stubType),
 	).Block(
@@ -267,12 +267,12 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 	f.Line()
 
 	f.Func().Id("nilifyIfEmpty").Params(
-		Err().Op("*").Qual(monsterax, "Error"),
+		Err().Op("*").Qual(mrpcPkg, "Error"),
 	).Params(
 		Error(),
 	).Block(
 		If(
-			Err().Op("==").Nil().Op("||").Id("err.Code").Op("==").Qual(monsterax, "ErrorCode_INVALID").Op("||").Id("err.Code").Op("==").Qual(monsterax, "ErrorCode_OK"),
+			Err().Op("==").Nil().Op("||").Id("err.Code").Op("==").Qual(mrpcPkg, "ErrorCode_INVALID").Op("||").Id("err.Code").Op("==").Qual(mrpcPkg, "ErrorCode_OK"),
 		).Block(
 			Return(Nil()),
 		).Else().Block(
@@ -343,7 +343,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 							Defer().Id("adapter").Dot("mu").Dot("RUnlock").Call(),
 							Line(),
 							List(Id("response"), Err()).Op(":=").Id("adapter").Dot("core").Dot(read.Name).Call(
-								Op("&").Qual("github.com/evrblk/monstera/x", "ReadRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, read.Name+"Request")).Values(Dict{Id("Payload"): Id("request")}),
+								Op("&").Qual(mrpcPkg, "ReadRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, read.Name+"Request")).Values(Dict{Id("Payload"): Id("request")}),
 							),
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),
@@ -365,7 +365,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 							Defer().Id("adapter").Dot("mu").Dot("RUnlock").Call(),
 							Line(),
 							List(Id("response"), Err()).Op(":=").Id("adapter").Dot("core").Dot(read.Name).Call(
-								Op("&").Qual("github.com/evrblk/monstera/x", "ReadUnshardedRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, read.Name+"Request")).Values(Dict{Id("Payload"): Id("request")}),
+								Op("&").Qual(mrpcPkg, "ReadUnshardedRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, read.Name+"Request")).Values(Dict{Id("Payload"): Id("request")}),
 							),
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),
@@ -407,7 +407,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 							Defer().Id("adapter").Dot("mu").Dot("Unlock").Call(),
 							Line(),
 							List(Id("response"), Err()).Op(":=").Id("adapter").Dot("core").Dot(update.Name).Call(
-								Op("&").Qual("github.com/evrblk/monstera/x", "UpdateRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, update.Name+"Request")).Values(Dict{Id("Payload"): Id("request")}),
+								Op("&").Qual(mrpcPkg, "UpdateRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, update.Name+"Request")).Values(Dict{Id("Payload"): Id("request")}),
 							),
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),
@@ -429,7 +429,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 							Defer().Id("adapter").Dot("mu").Dot("Unlock").Call(),
 							Line(),
 							List(Id("response"), Err()).Op(":=").Id("adapter").Dot("core").Dot(update.Name).Call(
-								Op("&").Qual("github.com/evrblk/monstera/x", "UpdateUnshardedRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, update.Name+"Request")).Values(Dict{Id("Payload"): Id("request")}),
+								Op("&").Qual(mrpcPkg, "UpdateUnshardedRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, update.Name+"Request")).Values(Dict{Id("Payload"): Id("request")}),
 							),
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),

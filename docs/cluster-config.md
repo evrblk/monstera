@@ -70,7 +70,7 @@ Here is an example of `cluster_config.json` file:
             }
           ]
         },
-        //...
+        #...
       ],
       "replication_factor": 3
     }

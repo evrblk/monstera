@@ -83,8 +83,7 @@ type UpdateRequest struct {
 	ShardKey        []byte                 `protobuf:"bytes,2,opt,name=shard_key,json=shardKey,proto3" json:"shard_key,omitempty"`
 	ApplicationName string                 `protobuf:"bytes,3,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
 	ShardId         string                 `protobuf:"bytes,4,opt,name=shard_id,json=shardId,proto3" json:"shard_id,omitempty"`
-	ReplicaId       string                 `protobuf:"bytes,5,opt,name=replica_id,json=replicaId,proto3" json:"replica_id,omitempty"`
-	Hops            int32                  `protobuf:"varint,6,opt,name=hops,proto3" json:"hops,omitempty"`
+	Hops            int32                  `protobuf:"varint,5,opt,name=hops,proto3" json:"hops,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -147,13 +146,6 @@ func (x *UpdateRequest) GetShardId() string {
 	return ""
 }
 
-func (x *UpdateRequest) GetReplicaId() string {
-	if x != nil {
-		return x.ReplicaId
-	}
-	return ""
-}
-
 func (x *UpdateRequest) GetHops() int32 {
 	if x != nil {
 		return x.Hops
@@ -212,8 +204,7 @@ type ReadRequest struct {
 	ShardKey               []byte                 `protobuf:"bytes,3,opt,name=shard_key,json=shardKey,proto3" json:"shard_key,omitempty"`
 	ApplicationName        string                 `protobuf:"bytes,4,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
 	ShardId                string                 `protobuf:"bytes,5,opt,name=shard_id,json=shardId,proto3" json:"shard_id,omitempty"`
-	ReplicaId              string                 `protobuf:"bytes,6,opt,name=replica_id,json=replicaId,proto3" json:"replica_id,omitempty"`
-	Hops                   int32                  `protobuf:"varint,7,opt,name=hops,proto3" json:"hops,omitempty"`
+	Hops                   int32                  `protobuf:"varint,6,opt,name=hops,proto3" json:"hops,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -279,13 +270,6 @@ func (x *ReadRequest) GetApplicationName() string {
 func (x *ReadRequest) GetShardId() string {
 	if x != nil {
 		return x.ShardId
-	}
-	return ""
-}
-
-func (x *ReadRequest) GetReplicaId() string {
-	if x != nil {
-		return x.ReplicaId
 	}
 	return ""
 }
@@ -929,26 +913,22 @@ var File_transport_grpc_monsterapb_api_proto protoreflect.FileDescriptor
 
 const file_transport_grpc_monsterapb_api_proto_rawDesc = "" +
 	"\n" +
-	"#transport/grpc/monsterapb/api.proto\x12\x1ecom.evrblk.monstera.monsterapb\x1a\x14cluster/config.proto\"\xbf\x01\n" +
+	"#transport/grpc/monsterapb/api.proto\x12\x1ecom.evrblk.monstera.monsterapb\x1a\x14cluster/config.proto\"\xa0\x01\n" +
 	"\rUpdateRequest\x12\x18\n" +
 	"\apayload\x18\x01 \x01(\fR\apayload\x12\x1b\n" +
 	"\tshard_key\x18\x02 \x01(\fR\bshardKey\x12)\n" +
 	"\x10application_name\x18\x03 \x01(\tR\x0fapplicationName\x12\x19\n" +
-	"\bshard_id\x18\x04 \x01(\tR\ashardId\x12\x1d\n" +
-	"\n" +
-	"replica_id\x18\x05 \x01(\tR\treplicaId\x12\x12\n" +
-	"\x04hops\x18\x06 \x01(\x05R\x04hops\"*\n" +
+	"\bshard_id\x18\x04 \x01(\tR\ashardId\x12\x12\n" +
+	"\x04hops\x18\x05 \x01(\x05R\x04hops\"*\n" +
 	"\x0eUpdateResponse\x12\x18\n" +
-	"\apayload\x18\x01 \x01(\fR\apayload\"\xf8\x01\n" +
+	"\apayload\x18\x01 \x01(\fR\apayload\"\xd9\x01\n" +
 	"\vReadRequest\x12\x18\n" +
 	"\apayload\x18\x01 \x01(\fR\apayload\x129\n" +
 	"\x19allow_read_from_followers\x18\x02 \x01(\bR\x16allowReadFromFollowers\x12\x1b\n" +
 	"\tshard_key\x18\x03 \x01(\fR\bshardKey\x12)\n" +
 	"\x10application_name\x18\x04 \x01(\tR\x0fapplicationName\x12\x19\n" +
-	"\bshard_id\x18\x05 \x01(\tR\ashardId\x12\x1d\n" +
-	"\n" +
-	"replica_id\x18\x06 \x01(\tR\treplicaId\x12\x12\n" +
-	"\x04hops\x18\a \x01(\x05R\x04hops\"(\n" +
+	"\bshard_id\x18\x05 \x01(\tR\ashardId\x12\x12\n" +
+	"\x04hops\x18\x06 \x01(\x05R\x04hops\"(\n" +
 	"\fReadResponse\x12\x18\n" +
 	"\apayload\x18\x01 \x01(\fR\apayload\"\x14\n" +
 	"\x12HealthCheckRequest\"_\n" +

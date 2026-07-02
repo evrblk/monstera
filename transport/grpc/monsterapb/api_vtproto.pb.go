@@ -53,14 +53,7 @@ func (m *UpdateRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 	if m.Hops != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Hops))
 		i--
-		dAtA[i] = 0x30
-	}
-	if len(m.ReplicaId) > 0 {
-		i -= len(m.ReplicaId)
-		copy(dAtA[i:], m.ReplicaId)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.ReplicaId)))
-		i--
-		dAtA[i] = 0x2a
+		dAtA[i] = 0x28
 	}
 	if len(m.ShardId) > 0 {
 		i -= len(m.ShardId)
@@ -166,14 +159,7 @@ func (m *ReadRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 	if m.Hops != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Hops))
 		i--
-		dAtA[i] = 0x38
-	}
-	if len(m.ReplicaId) > 0 {
-		i -= len(m.ReplicaId)
-		copy(dAtA[i:], m.ReplicaId)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.ReplicaId)))
-		i--
-		dAtA[i] = 0x32
+		dAtA[i] = 0x30
 	}
 	if len(m.ShardId) > 0 {
 		i -= len(m.ShardId)
@@ -828,10 +814,6 @@ func (m *UpdateRequest) SizeVT() (n int) {
 	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
-	l = len(m.ReplicaId)
-	if l > 0 {
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	}
 	if m.Hops != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.Hops))
 	}
@@ -875,10 +857,6 @@ func (m *ReadRequest) SizeVT() (n int) {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
 	l = len(m.ShardId)
-	if l > 0 {
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
-	}
-	l = len(m.ReplicaId)
 	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
@@ -1267,38 +1245,6 @@ func (m *UpdateRequest) UnmarshalVT(dAtA []byte) error {
 			m.ShardId = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 5:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ReplicaId", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return protohelpers.ErrIntOverflow
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return protohelpers.ErrInvalidLength
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return protohelpers.ErrInvalidLength
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.ReplicaId = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		case 6:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Hops", wireType)
 			}
@@ -1606,38 +1552,6 @@ func (m *ReadRequest) UnmarshalVT(dAtA []byte) error {
 			m.ShardId = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 6:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ReplicaId", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return protohelpers.ErrIntOverflow
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return protohelpers.ErrInvalidLength
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return protohelpers.ErrInvalidLength
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.ReplicaId = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		case 7:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Hops", wireType)
 			}

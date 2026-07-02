@@ -67,15 +67,14 @@ type handler struct {
 
 var _ monsterapb.MonsteraApiServer = &handler{}
 
-func (h *handler) Read(ctx context.Context, request *monsterapb.ReadRequest) (*monsterapb.ReadResponse, error) {
-	response, err := h.monsteraNode.Read(ctx, &transport.ReadRequest{
-		ApplicationName:        request.ApplicationName,
-		ShardId:                request.ShardId,
-		ReplicaId:              request.ReplicaId,
-		ShardKey:               request.ShardKey,
-		Payload:                request.Payload,
-		AllowReadFromFollowers: request.AllowReadFromFollowers,
-		Hops:                   request.Hops,
+func (h *handler) Read(ctx context.Context, req *monsterapb.ReadRequest) (*monsterapb.ReadResponse, error) {
+	resp, err := h.monsteraNode.Read(ctx, &transport.ReadRequest{
+		ApplicationName:        req.ApplicationName,
+		ShardId:                req.ShardId,
+		ShardKey:               req.ShardKey,
+		Payload:                req.Payload,
+		AllowReadFromFollowers: req.AllowReadFromFollowers,
+		Hops:                   req.Hops,
 	})
 	if err != nil {
 		h.logger.Printf("Error calling MonsteraNode.Read: %v", err)
@@ -83,18 +82,17 @@ func (h *handler) Read(ctx context.Context, request *monsterapb.ReadRequest) (*m
 	}
 
 	return &monsterapb.ReadResponse{
-		Payload: response.Payload,
+		Payload: resp.Payload,
 	}, nil
 }
 
-func (h *handler) Update(ctx context.Context, request *monsterapb.UpdateRequest) (*monsterapb.UpdateResponse, error) {
-	response, err := h.monsteraNode.Update(ctx, &transport.UpdateRequest{
-		ApplicationName: request.ApplicationName,
-		ShardId:         request.ShardId,
-		ReplicaId:       request.ReplicaId,
-		ShardKey:        request.ShardKey,
-		Payload:         request.Payload,
-		Hops:            request.Hops,
+func (h *handler) Update(ctx context.Context, req *monsterapb.UpdateRequest) (*monsterapb.UpdateResponse, error) {
+	resp, err := h.monsteraNode.Update(ctx, &transport.UpdateRequest{
+		ApplicationName: req.ApplicationName,
+		ShardId:         req.ShardId,
+		ShardKey:        req.ShardKey,
+		Payload:         req.Payload,
+		Hops:            req.Hops,
 	})
 	if err != nil {
 		h.logger.Printf("Error calling MonsteraNode.Update: %v", err)
@@ -102,12 +100,12 @@ func (h *handler) Update(ctx context.Context, request *monsterapb.UpdateRequest)
 	}
 
 	return &monsterapb.UpdateResponse{
-		Payload: response.Payload,
+		Payload: resp.Payload,
 	}, nil
 }
 
-func (h *handler) TriggerSnapshot(ctx context.Context, request *monsterapb.TriggerSnapshotRequest) (*monsterapb.TriggerSnapshotResponse, error) {
-	err := h.monsteraNode.TriggerSnapshot(request.ReplicaId)
+func (h *handler) TriggerSnapshot(ctx context.Context, req *monsterapb.TriggerSnapshotRequest) (*monsterapb.TriggerSnapshotResponse, error) {
+	err := h.monsteraNode.TriggerSnapshot(req.ReplicaId)
 	if err != nil {
 		h.logger.Printf("Error calling MonsteraNode.TriggerSnapshot: %v", err)
 		return nil, err
@@ -115,8 +113,8 @@ func (h *handler) TriggerSnapshot(ctx context.Context, request *monsterapb.Trigg
 	return &monsterapb.TriggerSnapshotResponse{}, nil
 }
 
-func (h *handler) LeadershipTransfer(ctx context.Context, request *monsterapb.LeadershipTransferRequest) (*monsterapb.LeadershipTransferResponse, error) {
-	err := h.monsteraNode.LeadershipTransfer(request.ReplicaId)
+func (h *handler) LeadershipTransfer(ctx context.Context, req *monsterapb.LeadershipTransferRequest) (*monsterapb.LeadershipTransferResponse, error) {
+	err := h.monsteraNode.LeadershipTransfer(req.ReplicaId)
 	if err != nil {
 		h.logger.Printf("Error calling MonsteraNode.LeadershipTransfer: %v", err)
 		return nil, err
@@ -124,7 +122,7 @@ func (h *handler) LeadershipTransfer(ctx context.Context, request *monsterapb.Le
 	return &monsterapb.LeadershipTransferResponse{}, nil
 }
 
-func (h *handler) HealthCheck(ctx context.Context, request *monsterapb.HealthCheckRequest) (*monsterapb.HealthCheckResponse, error) {
+func (h *handler) HealthCheck(ctx context.Context, req *monsterapb.HealthCheckRequest) (*monsterapb.HealthCheckResponse, error) {
 	cores := h.monsteraNode.ListReplicas()
 
 	replicas := make([]*monsterapb.ReplicaState, len(cores))
@@ -147,8 +145,8 @@ func (h *handler) HealthCheck(ctx context.Context, request *monsterapb.HealthChe
 	}, nil
 }
 
-func (h *handler) UpdateClusterConfig(ctx context.Context, request *monsterapb.UpdateClusterConfigRequest) (*monsterapb.UpdateClusterConfigResponse, error) {
-	err := h.monsteraNode.UpdateClusterConfig(ctx, request.Config)
+func (h *handler) UpdateClusterConfig(ctx context.Context, req *monsterapb.UpdateClusterConfigRequest) (*monsterapb.UpdateClusterConfigResponse, error) {
+	err := h.monsteraNode.UpdateClusterConfig(ctx, req.Config)
 	if err != nil {
 		h.logger.Printf("Error calling MonsteraNode.UpdateClusterConfig: %v", err)
 		return nil, err

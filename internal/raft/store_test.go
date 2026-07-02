@@ -610,7 +610,7 @@ func BenchmarkHraftBadgerStoreFirstIndex(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore, err := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(store.DefaultOptions(dir))
 	if err != nil {
 		b.Error(err)
 	}
@@ -626,7 +626,7 @@ func BenchmarkHraftBadgerStoreLastIndex(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore, err := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(store.DefaultOptions(dir))
 	if err != nil {
 		b.Error(err)
 	}
@@ -642,7 +642,7 @@ func BenchmarkHraftBadgerStoreGetLog(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore, err := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(store.DefaultOptions(dir))
 	if err != nil {
 		b.Error(err)
 	}
@@ -658,7 +658,7 @@ func BenchmarkHraftBadgerStoreStoreLog(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore, err := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(store.DefaultOptions(dir))
 	if err != nil {
 		b.Error(err)
 	}
@@ -674,7 +674,7 @@ func BenchmarkHraftBadgerStoreStoreLogs(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore, err := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(store.DefaultOptions(dir))
 	if err != nil {
 		b.Error(err)
 	}
@@ -690,7 +690,7 @@ func BenchmarkHraftBadgerStoreDeleteRange(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore, err := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(store.DefaultOptions(dir))
 	if err != nil {
 		b.Error(err)
 	}
@@ -706,7 +706,7 @@ func BenchmarkHraftBadgerStoreGet(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore, err := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(store.DefaultOptions(dir))
 	if err != nil {
 		b.Error(err)
 	}
@@ -722,7 +722,7 @@ func BenchmarkHraftBadgerStoreSet(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore, err := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(store.DefaultOptions(dir))
 	if err != nil {
 		b.Error(err)
 	}
@@ -738,7 +738,7 @@ func BenchmarkHraftBadgerStoreSetUint64(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore, err := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(store.DefaultOptions(dir))
 	if err != nil {
 		b.Error(err)
 	}
@@ -754,7 +754,7 @@ func BenchmarkHraftBadgerStoreGetUint64(b *testing.B) {
 		b.Error(err)
 	}
 	defer os.RemoveAll(dir)
-	badgerStore, err := store.NewBadgerStore(dir)
+	badgerStore, err := store.NewBadgerStore(store.DefaultOptions(dir))
 	if err != nil {
 		b.Error(err)
 	}

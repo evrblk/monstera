@@ -103,7 +103,7 @@ This config will generate:
 * `GrackleLocksCoreAdapter`, `GrackleSemaphoresCoreAdapter`, etc. - adapters for the corresponding application cores, 
   constructed with `NewGrackleLocksCoreAdapter`, `NewGrackleSemaphoresCoreAdapter`, etc.
 * Request/response type aliases for every method (e.g. `GetLockRequest`, `GetLockResponse`) in the `output_package`. 
-  These wrap your proto payloads (see below) and only improve core readability.
+  These wrap your proto payloads (see below) and only improve code readability.
 
 A stub can route requests to one or several application cores. Since cores tend to be small, it makes sense to group 
 multiple of them in a single stub. The stub interface (`GrackleClientApi`) is essentially the union of the methods 
@@ -119,9 +119,13 @@ Currently, Monstera codegen relies on several conventions in order to make it wo
 * Those `*Request` and `*Response` structs must implement `encoding.BinaryMarshaler` and 
   `encoding.BinaryUnmarshaler` (`MarshalBinary()` / `UnmarshalBinary()`). The framework moves them around as opaque 
   bytes inside a generic envelope, so it does not need to know their concrete types. (Grackle generates these one-line 
-  wrappers over the proto's `MarshalVT` / `UnmarshalVT` with a small helper tool of its own.)
+  wrappers over the proto's `MarshalVT` / `UnmarshalVT` with a small helper tool of its own, but you can choose whatever
+  you want).
 * Every `*Request` of a sharded method must implement `ShardKey() []byte`. There are no annotations or reflection — you
   specify explicitly how to extract a shard key from each request, usually with one line of Go code.
+
+Packages `output_package` and `core_types_package` should be different, otherwise it will cause name collision for 
+`*Request`/`*Response` types.
 
 You define one `*Request`/`*Response` pair per method. This is conceptually similar to a gRPC service declaration. 
 The envelope exchanged over the Monstera client is the framework's own `rpc.Request` (carrying a `method_number`, 
@@ -190,7 +194,7 @@ type GrackleLocksCoreApi interface {
 }
 ```
 
-The second returned value `error` is an internal error that murdered the application core (not a domain error). See 
+The second returned value `error` is an internal error that killed the application core (not a domain error). See 
 [Core Principles](/docs/core-principles.md) for more details.
 
 What is left for you to implement:

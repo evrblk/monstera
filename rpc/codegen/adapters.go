@@ -154,7 +154,7 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 	f.Func().Params(
 		Id("a").Op("*").Id(adapterName),
 	).Id("Update").Params(
-		Id("appRequestBytes").Index().Byte(),
+		Id("rpcReqBytes").Index().Byte(),
 	).Params(
 		List(
 			Op("*").Qual(monsteraPkg, "UpdateResponse"),
@@ -162,13 +162,13 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 		),
 	).BlockFunc(func(g *Group) {
 		if len(core.UpdateMethods) > 0 {
-			g.Id("response").Op(":=").Op("&").Qual(monsteraPkg, "UpdateResponse").Values()
-			g.Id("appResponse").Op(":=").Op("&").Qual(mrpcPkg, "Response").Values()
-			g.Id("appRequest").Op(":=").Op("&").Qual(mrpcPkg, "Request").Values()
+			g.Id("resp").Op(":=").Op("&").Qual(monsteraPkg, "UpdateResponse").Values()
+			g.Id("rpcResp").Op(":=").Op("&").Qual(mrpcPkg, "Response").Values()
+			g.Id("rpcReq").Op(":=").Op("&").Qual(mrpcPkg, "Request").Values()
 			g.Line()
 
-			g.Err().Op(":=").Id("appRequest").Dot("UnmarshalVT").Call(
-				Id("appRequestBytes"),
+			g.Err().Op(":=").Id("rpcReq").Dot("UnmarshalVT").Call(
+				Id("rpcReqBytes"),
 			)
 			g.If(
 				Err().Op("!=").Nil(),
@@ -181,25 +181,25 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 			g.Line()
 
 			g.Switch(
-				Id("appRequest").Dot("MethodNumber"),
+				Id("rpcReq").Dot("MethodNumber"),
 			).BlockFunc(func(g *Group) {
 				for _, update := range core.UpdateMethods {
 					g.Case(
 						Lit(update.Number),
 					).Block(
-						Id("payload").Op(":=").Qual(corepb, update.Name+"Request").Op("{}"),
-						Id("err").Op(":=").Id("payload").Dot("UnmarshalBinary").Call(
-							Id("appRequest").Dot("Data"),
+						Id("methodReq").Op(":=").Qual(corepb, update.Name+"Request").Op("{}"),
+						Id("err").Op(":=").Id("methodReq").Dot("UnmarshalBinary").Call(
+							Id("rpcReq").Dot("Data"),
 						),
 						If(
 							Id("err").Op("!=").Nil(),
 						).Block(
 							Return(Nil(), Err()),
 						),
-						List(Id("methodResponse"), Err()).Op(":=").Id("a").Dot(coreVarName).Dot(update.Name).Call(
+						List(Id("methodResp"), Err()).Op(":=").Id("a").Dot(coreVarName).Dot(update.Name).Call(
 							Op("&").Id(update.Name+"Request").Values(Dict{
-								Id("Payload"): Op("&").Id("payload"),
-								Id("Now"):     Id("appRequest").Dot("Now"),
+								Id("Payload"): Op("&").Id("methodReq"),
+								Id("Now"):     Id("rpcReq").Dot("Now"),
 							}),
 						),
 						If(
@@ -222,15 +222,15 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 							Id("a").Dot("shardId"),
 							Id("a").Dot("replicaId"),
 						).Dot("Inc").Call(),
-						Id("appResponse").Dot("Error").Op("=").Id("methodResponse").Dot("ApplicationError"),
-						List(Id("methodResponseBytes"), Err()).Op(":=").Id("methodResponse").Dot("Payload").Dot("MarshalBinary").Call(),
+						Id("rpcResp").Dot("Error").Op("=").Id("methodResp").Dot("ApplicationError"),
+						List(Id("methodRespBytes"), Err()).Op(":=").Id("methodResp").Dot("Payload").Dot("MarshalBinary").Call(),
 						If(
 							Id("err").Op("!=").Nil(),
 						).Block(
 							Return(Nil(), Err()),
 						),
-						Id("appResponse").Dot("Data").Op("=").Id("methodResponseBytes"),
-						// Id("response").Dot("Events").Op("=").Id("methodResponse").Dot("Events"),
+						Id("rpcResp").Dot("Data").Op("=").Id("methodRespBytes"),
+						// Id("resp").Dot("Events").Op("=").Id("methodResp").Dot("Events"),
 					)
 				}
 				g.Default().Block(
@@ -242,18 +242,18 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 			g.Line()
 
 			g.List(
-				Id("appResponseBytes"),
+				Id("rpcRespBytes"),
 				Err(),
-			).Op(":=").Id("appResponse").Dot("MarshalVT").Call()
+			).Op(":=").Id("rpcResp").Dot("MarshalVT").Call()
 			g.If(
 				Err().Op("!=").Nil(),
 			).Block(
 				Return(Nil(), Err()),
 			)
-			g.Id("response").Dot("Data").Op("=").Id("appResponseBytes")
+			g.Id("resp").Dot("Data").Op("=").Id("rpcRespBytes")
 			g.Line()
 
-			g.Return(Id("response"), Nil())
+			g.Return(Id("resp"), Nil())
 		} else {
 			g.Return(Nil(), Qual("fmt", "Errorf").Call(
 				Lit("no matching handlers"),
@@ -266,7 +266,7 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 	f.Func().Params(
 		Id("a").Op("*").Id(adapterName),
 	).Id("Read").Params(
-		Id("appRequestBytes").Index().Byte(),
+		Id("rpcReqBytes").Index().Byte(),
 	).Params(
 		List(
 			Op("*").Qual(monsteraPkg, "ReadResponse"),
@@ -274,13 +274,13 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 		),
 	).BlockFunc(func(g *Group) {
 		if len(core.ReadMethods) > 0 {
-			g.Id("response").Op(":=").Op("&").Qual(monsteraPkg, "ReadResponse").Values()
-			g.Id("appResponse").Op(":=").Op("&").Qual(mrpcPkg, "Response").Values()
-			g.Id("appRequest").Op(":=").Op("&").Qual(mrpcPkg, "Request").Values()
+			g.Id("resp").Op(":=").Op("&").Qual(monsteraPkg, "ReadResponse").Values()
+			g.Id("rpcResp").Op(":=").Op("&").Qual(mrpcPkg, "Response").Values()
+			g.Id("rpcReq").Op(":=").Op("&").Qual(mrpcPkg, "Request").Values()
 			g.Line()
 
-			g.Err().Op(":=").Id("appRequest").Dot("UnmarshalVT").Call(
-				Id("appRequestBytes"),
+			g.Err().Op(":=").Id("rpcReq").Dot("UnmarshalVT").Call(
+				Id("rpcReqBytes"),
 			)
 			g.If(
 				Err().Op("!=").Nil(),
@@ -293,25 +293,25 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 			g.Line()
 
 			g.Switch(
-				Id("appRequest").Dot("MethodNumber"),
+				Id("rpcReq").Dot("MethodNumber"),
 			).BlockFunc(func(g *Group) {
 				for _, read := range core.ReadMethods {
 					g.Case(
 						Lit(read.Number),
 					).Block(
-						Id("payload").Op(":=").Qual(corepb, read.Name+"Request").Op("{}"),
-						Id("err").Op(":=").Id("payload").Dot("UnmarshalBinary").Call(
-							Id("appRequest").Dot("Data"),
+						Id("methodReq").Op(":=").Qual(corepb, read.Name+"Request").Op("{}"),
+						Id("err").Op(":=").Id("methodReq").Dot("UnmarshalBinary").Call(
+							Id("rpcReq").Dot("Data"),
 						),
 						If(
 							Id("err").Op("!=").Nil(),
 						).Block(
 							Return(Nil(), Err()),
 						),
-						List(Id("methodResponse"), Err()).Op(":=").Id("a").Dot(coreVarName).Dot(read.Name).Call(
+						List(Id("methodResp"), Err()).Op(":=").Id("a").Dot(coreVarName).Dot(read.Name).Call(
 							Op("&").Id(read.Name+"Request").Values(Dict{
-								Id("Payload"): Op("&").Id("payload"),
-								Id("Now"):     Id("appRequest").Dot("Now"),
+								Id("Payload"): Op("&").Id("methodReq"),
+								Id("Now"):     Id("rpcReq").Dot("Now"),
 							}),
 						),
 						If(
@@ -334,15 +334,15 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 							Id("a").Dot("shardId"),
 							Id("a").Dot("replicaId"),
 						).Dot("Inc").Call(),
-						Id("appResponse").Dot("Error").Op("=").Id("methodResponse").Dot("ApplicationError"),
-						List(Id("methodResponseBytes"), Err()).Op(":=").Id("methodResponse").Dot("Payload").Dot("MarshalBinary").Call(),
+						Id("rpcResp").Dot("Error").Op("=").Id("methodResp").Dot("ApplicationError"),
+						List(Id("methodRespBytes"), Err()).Op(":=").Id("methodResp").Dot("Payload").Dot("MarshalBinary").Call(),
 						If(
 							Id("err").Op("!=").Nil(),
 						).Block(
 							Return(Nil(), Err()),
 						),
-						Id("appResponse").Dot("Data").Op("=").Id("methodResponseBytes"),
-						// Id("response").Dot("Events").Op("=").Id("methodResponse").Dot("Events"),
+						Id("rpcResp").Dot("Data").Op("=").Id("methodRespBytes"),
+						// Id("resp").Dot("Events").Op("=").Id("methodResp").Dot("Events"),
 					)
 				}
 				g.Default().Block(
@@ -354,18 +354,18 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 			g.Line()
 
 			g.List(
-				Id("appResponseBytes"),
+				Id("rpcRespBytes"),
 				Err(),
-			).Op(":=").Id("appResponse").Dot("MarshalVT").Call()
+			).Op(":=").Id("rpcResp").Dot("MarshalVT").Call()
 			g.If(
 				Err().Op("!=").Nil(),
 			).Block(
 				Return(Nil(), Err()),
 			)
-			g.Id("response").Dot("Data").Op("=").Id("appResponseBytes")
+			g.Id("resp").Dot("Data").Op("=").Id("rpcRespBytes")
 			g.Line()
 
-			g.Return(Id("response"), Nil())
+			g.Return(Id("resp"), Nil())
 		} else {
 			g.Return(Nil(), Qual("fmt", "Errorf").Call(
 				Lit("no matching handlers"),

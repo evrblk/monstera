@@ -124,7 +124,7 @@ func (c *Client) ReadShard(ctx context.Context, applicationName string, shardId 
 		return nil, err
 	}
 
-	return c.readShard(ctx, applicationName, shard, []byte{}, allowReadFromFollowers, payload)
+	return c.readShard(ctx, applicationName, shard, nil, allowReadFromFollowers, payload)
 }
 
 // readShard tries each replica in turn, retrying transient errors on the same
@@ -137,17 +137,18 @@ func (c *Client) readShard(ctx context.Context, applicationName string, shard *c
 		replicas = c.shuffleReplicasAndLeaderFirst(shard.Replicas)
 	}
 
+	req := &transport.ReadRequest{
+		ApplicationName:        applicationName,
+		ShardId:                shard.Id,
+		ShardKey:               shardKey,
+		Payload:                payload,
+		AllowReadFromFollowers: allowReadFromFollowers,
+		Hops:                   0,
+	}
+
 	for _, r := range replicas {
 		for range c.config.MaxRetriesOnSingleReplica {
-			result, err := c.trans.Read(ctx, r.NodeId, &transport.ReadRequest{
-				ApplicationName:        applicationName,
-				ShardId:                shard.Id,
-				ReplicaId:              r.Id,
-				ShardKey:               shardKey,
-				Payload:                payload,
-				AllowReadFromFollowers: allowReadFromFollowers,
-				Hops:                   0,
-			})
+			resp, err := c.trans.Read(ctx, r.NodeId, req)
 			if err != nil {
 				if isErrorRetryableOnTheSameReplica(err) {
 					time.Sleep(c.config.ReadRetryDelay)
@@ -162,7 +163,7 @@ func (c *Client) readShard(ctx context.Context, applicationName string, shard *c
 				return nil, fmt.Errorf("monsteraClient.Read: %v", err)
 			}
 
-			return result.Payload, nil
+			return resp.Payload, nil
 		}
 
 		// All retries failed, or a replica is dead, try next replica
@@ -190,7 +191,7 @@ func (c *Client) UpdateShard(ctx context.Context, applicationName string, shardI
 		return nil, err
 	}
 
-	return c.updateShard(ctx, applicationName, shard, []byte{}, payload)
+	return c.updateShard(ctx, applicationName, shard, nil, payload)
 }
 
 // updateShard tries replicas leader-first, retrying transient errors on the
@@ -198,16 +199,17 @@ func (c *Client) UpdateShard(ctx context.Context, applicationName string, shardI
 func (c *Client) updateShard(ctx context.Context, applicationName string, shard *cluster.Shard, shardKey []byte, payload []byte) ([]byte, error) {
 	replicas := c.shuffleReplicasAndLeaderFirst(shard.Replicas)
 
+	req := &transport.UpdateRequest{
+		ApplicationName: applicationName,
+		ShardId:         shard.Id,
+		ShardKey:        shardKey,
+		Payload:         payload,
+		Hops:            0,
+	}
+
 	for _, r := range replicas {
 		for range c.config.MaxRetriesOnSingleReplica {
-			result, err := c.trans.Update(ctx, r.NodeId, &transport.UpdateRequest{
-				ApplicationName: applicationName,
-				ShardId:         shard.Id,
-				ReplicaId:       r.Id,
-				ShardKey:        shardKey,
-				Payload:         payload,
-				Hops:            0,
-			})
+			resp, err := c.trans.Update(ctx, r.NodeId, req)
 			if err != nil {
 				if isErrorRetryableOnTheSameReplica(err) {
 					time.Sleep(c.config.UpdateRetryDelay)
@@ -222,7 +224,7 @@ func (c *Client) updateShard(ctx context.Context, applicationName string, shard 
 				return nil, fmt.Errorf("monsteraClient.Update: %v", err)
 			}
 
-			return result.Payload, nil
+			return resp.Payload, nil
 		}
 
 		// All retries failed, or a replica is dead, try next replica

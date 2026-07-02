@@ -26,6 +26,29 @@ type BadgerStore struct {
 	gcDone   chan struct{}
 }
 
+type BadgerStoreOptions struct {
+	Dir        string
+	SyncWrites bool
+}
+
+// DefaultOptions has all required options as the func arguments and returns default values for
+// all other options.
+// If a store is used for Raft, it must enable `WithSyncWrites(true)`, since it is false by default.
+func DefaultOptions(path string) BadgerStoreOptions {
+	return BadgerStoreOptions{
+		Dir:        path,
+		SyncWrites: false,
+	}
+}
+
+// WithSyncWrites returns a new Options value with SyncWrites set to the given value.
+// When set to true, Badger would call an additional msync after writes to flush mmap buffer over to
+// disk to survive hard reboots.
+func (opt BadgerStoreOptions) WithSyncWrites(val bool) BadgerStoreOptions {
+	opt.SyncWrites = val
+	return opt
+}
+
 // NewBadgerInMemoryStore creates a BadgerStore that stores all data in memory.
 // Useful for testing; data is lost when the process exits.
 func NewBadgerInMemoryStore() (*BadgerStore, error) {
@@ -41,13 +64,18 @@ func NewBadgerInMemoryStore() (*BadgerStore, error) {
 
 // NewBadgerStore opens (or creates) a persistent BadgerDB store at dir.
 // It starts a background goroutine that runs value log GC every minute.
-func NewBadgerStore(dir string) (*BadgerStore, error) {
-	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+func NewBadgerStore(opt BadgerStoreOptions) (*BadgerStore, error) {
+	if err := os.MkdirAll(opt.Dir, os.ModePerm); err != nil {
 		return nil, err
 	}
-	db, err := badger.Open(badger.DefaultOptions(dir).
+	// Conflict detection is disabled. Shared Badger store is supposed to get concurrent
+	// updates only to non-overlapping ranges (each Raft instance has its own unique prefix
+	// and application cores also prefix with a shard key), and each range gets updates only in a
+	// single thread. However, Badger internal map with touched keys produces occasional hash
+	// collisions and that causes transaction conflicts even for non-overlapping ranges.
+	db, err := badger.Open(badger.DefaultOptions(opt.Dir).
 		WithLoggingLevel(badger.ERROR).
-		WithSyncWrites(false).
+		WithSyncWrites(opt.SyncWrites).
 		WithMaxLevels(16).
 		WithDetectConflicts(false))
 	if err != nil {

@@ -1,0 +1,28 @@
+go_code:
+  output_package: github.com/evrblk/monstera/internal/integration_test/codegen
+  core_types_package: github.com/evrblk/monstera/internal/integration_test/codegen/types
+cores:
+  - name: MyCore
+    read_methods:
+      - name: Read1
+        method_number: 1
+        sharded: true
+      - name: Read2
+        method_number: 2
+        sharded: false
+      - name: Read3
+        method_number: 3
+        sharded: true
+        allow_read_from_followers: true
+    update_methods:
+      - name: Update1
+        method_number: 1
+        sharded: true
+      - name: Update2
+        method_number: 2
+        sharded: false
+
+stubs:
+  - name: MyStub
+    cores:
+      - MyCore

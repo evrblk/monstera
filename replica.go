@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"time"
 
 	hraft "github.com/hashicorp/raft"
 
@@ -122,7 +123,7 @@ func (r *replica) GetReplicaId() string {
 }
 
 func newReplica(baseDir string, applicationName string, shardId string, replicaId string,
-	myAddress string, core ApplicationCore, trans transport.Transport, raftStore *store.BadgerStore, restoreSnapshotOnStart bool) *replica {
+	myAddress string, core ApplicationCore, trans transport.Transport, raftStore *store.BadgerStore, restoreSnapshotOnStart bool, updateTimeout time.Duration) *replica {
 	commandCodec := &replication.ProtoCommandCodec{}
 	adapter := &appCoreAdapter{
 		core:         core,
@@ -138,7 +139,7 @@ func newReplica(baseDir string, applicationName string, shardId string, replicaI
 		logger:          log.New(os.Stderr, fmt.Sprintf("[%s]", replicaId), log.LstdFlags),
 	}
 
-	rep.raft = raft.NewRaft(baseDir, myAddress, replicaId, adapter, trans, raftStore, restoreSnapshotOnStart)
+	rep.raft = raft.NewRaft(baseDir, myAddress, replicaId, adapter, trans, raftStore, restoreSnapshotOnStart, updateTimeout)
 
 	return rep
 }

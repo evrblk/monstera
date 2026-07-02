@@ -189,7 +189,13 @@ func (h *HraftBadgerStore) StoreLogs(logs []*hraft.Log) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	return h.store.BatchUpdate(func(batch *store.Batch) error {
+	// Compute the new index bounds locally and only commit them to the in-memory
+	// cache after the batch is durably flushed, so a Flush failure does not leave
+	// the cache claiming indexes that were never persisted.
+	newFirstIndex := h.firstIndex
+	newLastIndex := h.lastIndex
+
+	err := h.store.BatchUpdate(func(batch *store.Batch) error {
 		indexes := make([]uint64, len(logs))
 		for i, l := range logs {
 			indexes[i] = l.Index
@@ -197,18 +203,18 @@ func (h *HraftBadgerStore) StoreLogs(logs []*hraft.Log) error {
 
 		if h.firstIndex == 0 {
 			lowestIndex := slices.Min(indexes)
-			err := h.setFirstIndex(lowestIndex, batch)
-			if err != nil {
+			if err := h.putFirstIndex(lowestIndex, batch); err != nil {
 				return err
 			}
+			newFirstIndex = lowestIndex
 		}
 
 		highestIndex := slices.Max(indexes)
 		if h.lastIndex < highestIndex {
-			err := h.setLastIndex(highestIndex, batch)
-			if err != nil {
+			if err := h.putLastIndex(highestIndex, batch); err != nil {
 				return err
 			}
+			newLastIndex = highestIndex
 		}
 
 		for _, l := range logs {
@@ -226,6 +232,14 @@ func (h *HraftBadgerStore) StoreLogs(logs []*hraft.Log) error {
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	h.firstIndex = newFirstIndex
+	h.lastIndex = newLastIndex
+
+	return nil
 }
 
 // DeleteRange deletes a range of log entries. The range is inclusive.
@@ -233,28 +247,33 @@ func (h *HraftBadgerStore) DeleteRange(min uint64, max uint64) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	return h.store.BatchUpdate(func(batch *store.Batch) error {
+	// Compute the new index bounds locally and only commit them to the in-memory
+	// cache after the batch is durably flushed (see StoreLogs).
+	newFirstIndex := h.firstIndex
+	newLastIndex := h.lastIndex
+
+	err := h.store.BatchUpdate(func(batch *store.Batch) error {
 		if min <= h.firstIndex {
-			err := h.setFirstIndex(max+1, batch)
-			if err != nil {
+			if err := h.putFirstIndex(max+1, batch); err != nil {
 				return err
 			}
+			newFirstIndex = max + 1
 		}
 		if max >= h.lastIndex {
-			err := h.setLastIndex(min-1, batch)
-			if err != nil {
+			if err := h.putLastIndex(min-1, batch); err != nil {
 				return err
 			}
+			newLastIndex = min - 1
 		}
-		if h.firstIndex > h.lastIndex {
-			err := h.setFirstIndex(0, batch)
-			if err != nil {
+		if newFirstIndex > newLastIndex {
+			if err := h.putFirstIndex(0, batch); err != nil {
 				return err
 			}
-			err = h.setLastIndex(0, batch)
-			if err != nil {
+			newFirstIndex = 0
+			if err := h.putLastIndex(0, batch); err != nil {
 				return err
 			}
+			newLastIndex = 0
 		}
 
 		for i := min; i <= max; i++ {
@@ -267,23 +286,26 @@ func (h *HraftBadgerStore) DeleteRange(min uint64, max uint64) error {
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	h.firstIndex = newFirstIndex
+	h.lastIndex = newLastIndex
+
+	return nil
 }
 
-// setFirstIndex needs to be called inside the locked mutex h.mu
-func (h *HraftBadgerStore) setFirstIndex(value uint64, batch *store.Batch) error {
-	// Update cached value
-	h.firstIndex = value
-
-	// Update stored value
+// putFirstIndex writes the first index into the batch. The in-memory cache
+// (h.firstIndex) must be updated by the caller only after the batch is flushed
+// successfully, so a Flush failure cannot desync the cache from stored state.
+func (h *HraftBadgerStore) putFirstIndex(value uint64, batch *store.Batch) error {
 	return batch.Set(h.firstIndexFullKey, uint64ToBytes(value))
 }
 
-// setLastIndex needs to be called inside the locked mutex h.mu
-func (h *HraftBadgerStore) setLastIndex(value uint64, batch *store.Batch) error {
-	// Update cached value
-	h.lastIndex = value
-
-	// Update stored value
+// putLastIndex writes the last index into the batch. See putFirstIndex for the
+// cache-update contract.
+func (h *HraftBadgerStore) putLastIndex(value uint64, batch *store.Batch) error {
 	return batch.Set(h.lastIndexFullKey, uint64ToBytes(value))
 }
 

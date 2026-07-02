@@ -10,28 +10,30 @@ type Transport interface {
 	// Read forwards a read request to the specified node. If AllowReadFromFollowers
 	// is set on the request, the node may serve the read locally without redirecting
 	// to the leader.
-	Read(ctx context.Context, nodeId string, request *ReadRequest) (*ReadResponse, error)
+	Read(ctx context.Context, nodeId string, req *ReadRequest) (*ReadResponse, error)
 
 	// Update forwards a write request to the specified node. The node is expected
 	// to be, or redirect to, the current Raft leader for the target shard.
-	Update(ctx context.Context, nodeId string, request *UpdateRequest) (*UpdateResponse, error)
+	Update(ctx context.Context, nodeId string, req *UpdateRequest) (*UpdateResponse, error)
 
 	// HealthCheck returns the observed state of all replicas hosted on the
 	// specified node, including which replica is currently the leader.
 	HealthCheck(ctx context.Context, nodeId string) ([]*ReplicaState, error)
 
 	// RaftMessage delivers a raw Raft protocol message to the specified node.
-	RaftMessage(ctx context.Context, nodeId string, request *RaftMessageRequest) (*RaftMessageResponse, error)
+	RaftMessage(ctx context.Context, nodeId string, req *RaftMessageRequest) (*RaftMessageResponse, error)
 
 	// Close releases any resources held by the transport (connections, goroutines, etc.).
 	Close()
 }
 
 // ReadRequest carries the parameters for a read operation routed to a specific node.
+// The receiving node resolves the target replica itself: by ShardKey against its
+// own cluster config for sharded reads (correct even if the sender's config is a
+// different version), or by ShardId for direct-shard reads (empty ShardKey).
 type ReadRequest struct {
 	ApplicationName string
 	ShardId         string
-	ReplicaId       string
 	ShardKey        []byte
 	// Payload is the opaque, application-defined read request body.
 	Payload []byte
@@ -49,10 +51,12 @@ type ReadResponse struct {
 }
 
 // UpdateRequest carries the parameters for a write operation routed to a specific node.
+// The receiving node resolves the target replica itself: by ShardKey against its own
+// cluster config for sharded updates, or by ShardId for direct-shard updates (empty
+// ShardKey).
 type UpdateRequest struct {
 	ApplicationName string
 	ShardId         string
-	ReplicaId       string
 	ShardKey        []byte
 	// Payload is the opaque, application-defined write request body.
 	Payload []byte

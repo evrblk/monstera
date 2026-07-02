@@ -442,7 +442,7 @@ func TestBadgerStore_DeleteNonExistent(t *testing.T) {
 
 func TestNewBadgerStore_DiskBased(t *testing.T) {
 	dir := t.TempDir()
-	store, err := NewBadgerStore(dir)
+	store, err := NewBadgerStore(DefaultOptions(dir))
 	require.NoError(t, err)
 
 	// Write and read back to confirm the store works.

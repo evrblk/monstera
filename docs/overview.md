@@ -6,8 +6,8 @@ Monstera is a framework that allows you to write stateful application logic in p
 on disk without worrying about scalability and availability. Monstera takes care of replication, sharding, snapshotting,
 and rebalancing.
 
-Monstera is a half-technical and half-mental framework. The tech part of it has a pretty small surface. It leaves 
-a lot up to you to implement. But sticking to the framework principles will ensure:
+Monstera is a very practical framework. It is half-technical and half-mental. The tech part of it has a pretty small surface. 
+It leaves a lot up to you to implement. But sticking to the framework principles will ensure:
 
 * Applications are insanely fast and efficient
 * Cluster is horizontally scalable
@@ -30,23 +30,23 @@ one place.
 The main components of the system are stateful **application cores**. They are modeled as State Machines. Application
 cores are fully self-contained and do not have any side effects. There are two types of operations on application cores:
 
-* **Updates**: any operation that modifies internal state and can also return arbitrary results.
-* **Reads**: any operation that only returns some results.
+* **Updates**: any operation that modifies internal state and also return arbitrary results.
+* **Reads**: any operation that only returns some results given the current state.
 
 All updates are replicated **before** they are applied to an application core. Updates are applied sequentially in a single
 thread. Essentially, it gives you serializable transactions out of the box, which allows you to perform complex operations
 with a simple and highly testable code.
 
-For more information on how to design application cores see [Core Principles](/docs/core-principles.md).
-
 Reads are performed in parallel with updates or other reads. Reads can be optionally performed on follower replicas
 when stale data is acceptable, and there is a need to increase read throughput.
+
+For more information on how to design application cores see [Core Principles](/docs/core-principles.md).
 
 ![Monstera cluster overview](/docs/images/overview-1.png)
 
 Monstera framework itself (components colored green on the diagram) handles only binary blobs for requests and 
 responses. It can do only abstract reads and updates and does not know anything about application core logic and 
-interface. There are two components on each side that make it more friendly: a **stub** and an **adapter**.   
+interface. Monstera RPC layer makes it more friendly and adds two components on each side: a **stub** and an **adapter**.   
 
 A stub implements the high-level interface of your application. Any code interacts with applications in Monstera cluster 
 only via stubs. A stub: 

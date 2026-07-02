@@ -62,6 +62,10 @@ type Raft struct {
 
 	snapshotSession   *snapshotSession
 	snapshotSessionMu sync.Mutex
+
+	// updateTimeout bounds how long r.hraft.Apply waits for a log entry to be
+	// committed and applied before returning an error.
+	updateTimeout time.Duration
 }
 
 func (r *Raft) TriggerSnapshot() {
@@ -85,7 +89,7 @@ func (r *Raft) IsBootstrapped() bool {
 }
 
 func (r *Raft) Update(request []byte) (any, error) {
-	f := r.hraft.Apply(request, 30*time.Second) // TODO timeout
+	f := r.hraft.Apply(request, r.updateTimeout)
 	if err := f.Error(); err != nil {
 		// TODO retry
 		// TODO what if FSM panics?
@@ -389,7 +393,7 @@ func (r *Raft) installSnapshot(request *hraft.InstallSnapshotRequest, data io.Re
 	return resp.Response.(*hraft.InstallSnapshotResponse), nil
 }
 
-func NewRaft(baseDir string, myAddress string, replicaId string, core AppCore, trans transport.Transport, raftStore *store.BadgerStore, restoreSnapshotOnStart bool) *Raft {
+func NewRaft(baseDir string, myAddress string, replicaId string, core AppCore, trans transport.Transport, raftStore *store.BadgerStore, restoreSnapshotOnStart bool, updateTimeout time.Duration) *Raft {
 	cfg := hraft.DefaultConfig()
 	cfg.LocalID = hraft.ServerID(replicaId)
 	cfg.Logger = hclog.New(&hclog.LoggerOptions{
@@ -426,9 +430,10 @@ func NewRaft(baseDir string, myAddress string, replicaId string, core AppCore, t
 	}
 
 	return &Raft{
-		hraft:     r,
-		hstore:    hstore,
-		hfss:      hfss,
-		transport: transport,
+		hraft:         r,
+		hstore:        hstore,
+		hfss:          hfss,
+		transport:     transport,
+		updateTimeout: updateTimeout,
 	}
 }

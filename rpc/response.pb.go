@@ -46,8 +46,7 @@ const (
 	// INTERNAL: an unexpected server-side failure.
 	ErrorCode_INTERNAL ErrorCode = 8
 	// ID_COLLISION: a randomly generated id already exists; the caller should
-	// regenerate the id and retry. This is internal and never surfaced to clients
-	// (ErrorToGRPC collapses it to INTERNAL).
+	// regenerate the id and retry. This is internal and never surfaced to clients.
 	ErrorCode_ID_COLLISION ErrorCode = 9
 )
 
@@ -107,8 +106,7 @@ func (ErrorCode) EnumDescriptor() ([]byte, []int) {
 }
 
 // Error is a deterministic application (domain) error produced by an application
-// core and carried back in Response.error. It is transport-neutral; the front
-// server maps it to a gRPC status via ErrorToGRPC.
+// core and carried back in Response.error. It is transport-neutral.
 type Error struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// code is the transport-neutral error classification.
@@ -286,7 +284,8 @@ func (x *Response) GetError() *Error {
 // Request is the envelope sent to an application core for an RPC.
 type Request struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// method_number selects which core method to dispatch to.
+	// method_number selects which core method to dispatch to. Similar to protobuf
+	// field numbers, method numbers must never change in time.
 	MethodNumber int32 `protobuf:"varint,1,opt,name=method_number,json=methodNumber,proto3" json:"method_number,omitempty"`
 	// data is the marshaled request payload for the selected method.
 	Data []byte `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`

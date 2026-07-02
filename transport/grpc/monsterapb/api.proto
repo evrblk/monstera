@@ -24,8 +24,7 @@ message UpdateRequest {
   bytes shard_key = 2;
   string application_name = 3;
   string shard_id = 4;
-  string replica_id = 5;
-  int32 hops = 6;
+  int32 hops = 5;
 }
 
 message UpdateResponse {
@@ -38,8 +37,7 @@ message ReadRequest {
   bytes shard_key = 3;
   string application_name = 4;
   string shard_id = 5;
-  string replica_id = 6;
-  int32 hops = 7;
+  int32 hops = 6;
 }
 
 message ReadResponse {

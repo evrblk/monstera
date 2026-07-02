@@ -13,14 +13,14 @@ type ApplicationCore interface {
 	// Reads can be performed concurrently with updates, other reads,
 	// and snapshots. Read must return internal errors, but all application
 	// errors should be returned as part of the ReadResponse.
-	Read(request []byte) (*ReadResponse, error)
+	Read(req []byte) (*ReadResponse, error)
 
 	// Update is used to update the application core state.
 	// All updates are applied to the application core sequentially,
 	// in the order they are committed to the Raft log. This method is called
 	// by the Raft thread. Update must return internal errors, but all application
 	// errors should be returned as part of the UpdateResponse.
-	Update(request []byte) (*UpdateResponse, error)
+	Update(req []byte) (*UpdateResponse, error)
 
 	// Snapshot returns an ApplicationCoreSnapshot used to support Raft log
 	// compaction, state restoration, and follower catch-up.

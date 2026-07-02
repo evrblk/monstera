@@ -478,17 +478,11 @@ func (c *Config) CreateReplica(applicationName string, shardId string, nodeId st
 	var id string
 	for {
 		id = generateId(shardId)
-		for _, a := range c.Applications {
-			for _, s := range a.Shards {
-				for _, r := range s.Replicas {
-					if r.Id == id {
-						continue // try generating again
-					}
-				}
-			}
+		// Regenerate on the (astronomically unlikely) chance of a collision with
+		// an existing replica id anywhere in the config.
+		if _, err := c.GetReplica(id); err == errReplicaNotFound {
+			break
 		}
-
-		break // did not find such id
 	}
 
 	replica := &Replica{

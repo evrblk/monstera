@@ -111,20 +111,19 @@ func (t *GrpcTransport) HealthCheck(ctx context.Context, nodeId string) ([]*tran
 	return states, nil
 }
 
-func (t *GrpcTransport) Read(ctx context.Context, nodeId string, request *transport.ReadRequest) (*transport.ReadResponse, error) {
+func (t *GrpcTransport) Read(ctx context.Context, nodeId string, req *transport.ReadRequest) (*transport.ReadResponse, error) {
 	conn, err := t.getConnection(nodeId)
 	if err != nil {
 		return nil, err
 	}
 
 	resp, err := conn.Read(ctx, &monsterapb.ReadRequest{
-		Payload:                request.Payload,
-		ShardKey:               request.ShardKey,
-		ApplicationName:        request.ApplicationName,
-		ShardId:                request.ShardId,
-		ReplicaId:              request.ReplicaId,
-		AllowReadFromFollowers: request.AllowReadFromFollowers,
-		Hops:                   request.Hops,
+		Payload:                req.Payload,
+		ShardKey:               req.ShardKey,
+		ApplicationName:        req.ApplicationName,
+		ShardId:                req.ShardId,
+		AllowReadFromFollowers: req.AllowReadFromFollowers,
+		Hops:                   req.Hops,
 	})
 	if err != nil {
 		return nil, err
@@ -135,19 +134,18 @@ func (t *GrpcTransport) Read(ctx context.Context, nodeId string, request *transp
 	}, nil
 }
 
-func (t *GrpcTransport) Update(ctx context.Context, nodeId string, request *transport.UpdateRequest) (*transport.UpdateResponse, error) {
+func (t *GrpcTransport) Update(ctx context.Context, nodeId string, req *transport.UpdateRequest) (*transport.UpdateResponse, error) {
 	conn, err := t.getConnection(nodeId)
 	if err != nil {
 		return nil, err
 	}
 
 	resp, err := conn.Update(ctx, &monsterapb.UpdateRequest{
-		Payload:         request.Payload,
-		ShardKey:        request.ShardKey,
-		ApplicationName: request.ApplicationName,
-		ShardId:         request.ShardId,
-		ReplicaId:       request.ReplicaId,
-		Hops:            request.Hops,
+		Payload:         req.Payload,
+		ShardKey:        req.ShardKey,
+		ApplicationName: req.ApplicationName,
+		ShardId:         req.ShardId,
+		Hops:            req.Hops,
 	})
 	if err != nil {
 		return nil, err
@@ -158,12 +156,12 @@ func (t *GrpcTransport) Update(ctx context.Context, nodeId string, request *tran
 	}, nil
 }
 
-func (t *GrpcTransport) RaftMessage(ctx context.Context, nodeId string, request *transport.RaftMessageRequest) (*transport.RaftMessageResponse, error) {
+func (t *GrpcTransport) RaftMessage(ctx context.Context, nodeId string, req *transport.RaftMessageRequest) (*transport.RaftMessageResponse, error) {
 	if nodeId == "" {
 		panic(fmt.Errorf("nodeId is required"))
 	}
 
-	if request.ReplicaId == "" {
+	if req.ReplicaId == "" {
 		panic(fmt.Errorf("replicaId is required"))
 	}
 
@@ -173,9 +171,9 @@ func (t *GrpcTransport) RaftMessage(ctx context.Context, nodeId string, request 
 	}
 
 	resp, err := s.send(ctx, &monsterapb.RaftMessageRequest{
-		ReplicaId:   request.ReplicaId,
-		MessageType: request.MessageType,
-		Message:     request.Message,
+		ReplicaId:   req.ReplicaId,
+		MessageType: req.MessageType,
+		Message:     req.Message,
 	})
 	if err != nil {
 		return nil, err

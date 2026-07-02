@@ -23,3 +23,6 @@ generate:
 	$(PROTOC) $(PROTOC_VTPROTO_FLAGS) $(PROTOC_GRPC_FLAGS) ./transport/grpc/monsterapb/*.proto
 	$(PROTOC) $(PROTOC_VTPROTO_FLAGS) ./internal/raft/raftpb/*.proto
 	$(PROTOC) $(PROTOC_VTPROTO_FLAGS) ./internal/replication/replicationpb/*.proto
+
+	@echo "Generating RPC for integration test..."
+	cd ./internal/integration_test/codegen; go run ../../../cmd/monstera code generate

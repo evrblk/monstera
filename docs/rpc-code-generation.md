@@ -17,6 +17,10 @@ Codegen produces three files into the same directory:
 * `adapters.go` with adapters to application cores, that turn binary blobs into method calls on a core.
 * `stubs.go` with service stubs, that turn requests into binary blobs and route them to the correct application core.
 
+The adapters record per-method Prometheus metrics, but the metrics are not auto-registered: call the generated
+`RegisterMetrics(prometheus.DefaultRegisterer)` once at startup (alongside `monstera.RegisterMetrics(...)` for the
+framework's own metrics) in each process that hosts a node.
+
 Let's take a look at the example `monstera.yaml` from [Grackle](https://github.com/evrblk/grackle), a service that 
 provides distributed synchronization primitives. It defines five application cores (`GrackleLocks`, 
 `GrackleSemaphores`, `GrackleNamespaces`, `GrackleWaitGroups`, `GrackleBarriers`) grouped under a single `Grackle` stub. 

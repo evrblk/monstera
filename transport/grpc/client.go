@@ -76,19 +76,19 @@ func (t *GrpcTransport) getOrCreateStream(nodeId string) (*raftMessageStream, er
 	return s, nil
 }
 
-func (t *GrpcTransport) HealthCheck(ctx context.Context, nodeId string) ([]*transport.ReplicaState, error) {
+func (t *GrpcTransport) ListReplicaStates(ctx context.Context, nodeId string) ([]*transport.ReplicaState, error) {
 	conn, err := t.getConnection(nodeId)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := conn.HealthCheck(ctx, &monsterapb.HealthCheckRequest{})
+	resp, err := conn.ListReplicaStates(ctx, &monsterapb.ListReplicaStatesRequest{})
 	if err != nil {
 		return nil, err
 	}
 
-	states := make([]*transport.ReplicaState, len(resp.Replicas))
-	for i, r := range resp.Replicas {
+	states := make([]*transport.ReplicaState, len(resp.ReplicaStates))
+	for i, r := range resp.ReplicaStates {
 		var protoState monsterapb.RaftState
 		if r.RaftStats != nil {
 			protoState = r.RaftStats.State

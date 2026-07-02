@@ -11,7 +11,6 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/evrblk/monstera"
-	"github.com/evrblk/monstera/internal/raft"
 	"github.com/evrblk/monstera/transport"
 	"github.com/evrblk/monstera/transport/grpc/monsterapb"
 )
@@ -121,25 +120,38 @@ func (h *handler) LeadershipTransfer(ctx context.Context, req *monsterapb.Leader
 	return &monsterapb.LeadershipTransferResponse{}, nil
 }
 
-func (h *handler) HealthCheck(ctx context.Context, req *monsterapb.HealthCheckRequest) (*monsterapb.HealthCheckResponse, error) {
+// ListReplicaStates returns the in-memory Raft state of every replica on this
+// node. It is the lightweight, frequently-polled call the Monstera client uses
+// to locate leaders; it does no disk I/O. Snapshot listing is a separate,
+// on-demand call (ListReplicaSnapshots).
+func (h *handler) ListReplicaStates(ctx context.Context, req *monsterapb.ListReplicaStatesRequest) (*monsterapb.ListReplicaStatesResponse, error) {
 	cores := h.monsteraNode.ListReplicas()
 
-	replicas := make([]*monsterapb.ReplicaState, len(cores))
+	replicaStates := make([]*monsterapb.ReplicaState, len(cores))
 	for i, c := range cores {
-		snapshots, err := c.ListSnapshots()
-		if err != nil {
-			h.logger.Printf("Error calling MonsteraReplica.ListSnapshots: %v", err)
-		}
-
-		replicas[i] = &monsterapb.ReplicaState{
+		replicaStates[i] = &monsterapb.ReplicaState{
 			ReplicaId: c.GetReplicaId(),
 			RaftStats: encodeRaftStats(c.GetRaftStats()),
-			Snapshots: encodeRaftSnapshots(snapshots),
 		}
 	}
 
-	return &monsterapb.HealthCheckResponse{
-		Replicas: replicas,
+	return &monsterapb.ListReplicaStatesResponse{
+		ReplicaStates: replicaStates,
+	}, nil
+}
+
+// ListReplicaSnapshots returns the snapshots stored for a single replica on this
+// node. It reads the replica's snapshot store from disk, so it is meant for
+// on-demand admin/ops use, not for frequent polling.
+func (h *handler) ListReplicaSnapshots(ctx context.Context, req *monsterapb.ListReplicaSnapshotsRequest) (*monsterapb.ListReplicaSnapshotsResponse, error) {
+	snapshots, err := h.monsteraNode.ListSnapshots(req.ReplicaId)
+	if err != nil {
+		h.logger.Printf("Error calling MonsteraNode.ListSnapshots: %v", err)
+		return nil, err
+	}
+
+	return &monsterapb.ListReplicaSnapshotsResponse{
+		Snapshots: encodeRaftSnapshots(snapshots),
 	}, nil
 }
 
@@ -180,52 +192,5 @@ func (h *handler) RaftMessage(stream grpc.BidiStreamingServer[monsterapb.RaftMes
 		}); err != nil {
 			return err
 		}
-	}
-}
-
-// encodeRaftStats renders the structured Raft stats onto the wire message. The
-// field set is Monstera's own contract, independent of the underlying Raft
-// library.
-func encodeRaftStats(s raft.RaftStats) *monsterapb.RaftStats {
-	return &monsterapb.RaftStats{
-		State:             encodeRaftState(s.State),
-		Term:              s.Term,
-		LastLogIndex:      s.LastLogIndex,
-		LastLogTerm:       s.LastLogTerm,
-		CommitIndex:       s.CommitIndex,
-		AppliedIndex:      s.AppliedIndex,
-		FsmPending:        s.FSMPending,
-		LastSnapshotIndex: s.LastSnapshotIndex,
-		LastSnapshotTerm:  s.LastSnapshotTerm,
-		NumPeers:          int32(s.NumPeers),
-		LastContactNanos:  int64(s.LastContact),
-	}
-}
-
-func encodeRaftSnapshots(s []raft.SnapshotMetadata) []*monsterapb.RaftSnapshot {
-	ret := make([]*monsterapb.RaftSnapshot, len(s))
-	for i, s := range s {
-		ret[i] = &monsterapb.RaftSnapshot{
-			Id:    s.Id,
-			Index: s.Index,
-			Term:  s.Term,
-			Size:  s.Size,
-		}
-	}
-	return ret
-}
-
-func encodeRaftState(s raft.RaftState) monsterapb.RaftState {
-	switch s {
-	case raft.Follower:
-		return monsterapb.RaftState_RAFT_STATE_FOLLOWER
-	case raft.Candidate:
-		return monsterapb.RaftState_RAFT_STATE_CANDIDATE
-	case raft.Shutdown:
-		return monsterapb.RaftState_RAFT_STATE_SHUTDOWN
-	case raft.Leader:
-		return monsterapb.RaftState_RAFT_STATE_LEADER
-	default:
-		panic(fmt.Sprintf("Unknown enum value %v", s))
 	}
 }

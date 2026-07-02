@@ -10,8 +10,8 @@ service MonsteraApi {
   rpc Update(UpdateRequest) returns (UpdateResponse) {}
   rpc Read(ReadRequest) returns (ReadResponse) {}
 
-  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {}
-
+  rpc ListReplicaStates(ListReplicaStatesRequest) returns (ListReplicaStatesResponse) {}
+  rpc ListReplicaSnapshots(ListReplicaSnapshotsRequest) returns (ListReplicaSnapshotsResponse) {}
   rpc LeadershipTransfer(LeadershipTransferRequest) returns (LeadershipTransferResponse) {}
   rpc TriggerSnapshot(TriggerSnapshotRequest) returns (TriggerSnapshotResponse) {}
   rpc UpdateClusterConfig(UpdateClusterConfigRequest) returns (UpdateClusterConfigResponse) {}
@@ -44,10 +44,18 @@ message ReadResponse {
   bytes payload = 1;
 }
 
-message HealthCheckRequest {}
+message ListReplicaStatesRequest {}
 
-message HealthCheckResponse {
-  repeated ReplicaState replicas = 1;
+message ListReplicaStatesResponse {
+  repeated ReplicaState replica_states = 1;
+}
+
+message ListReplicaSnapshotsRequest {
+  string replica_id = 1;
+}
+
+message ListReplicaSnapshotsResponse {
+  repeated RaftSnapshot snapshots = 1;
 }
 
 message TriggerSnapshotRequest {
@@ -65,7 +73,6 @@ message LeadershipTransferResponse {}
 message ReplicaState {
   string replica_id = 1;
   RaftStats raft_stats = 2;
-  repeated RaftSnapshot snapshots = 3;
 }
 
 message RaftStats {

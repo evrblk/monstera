@@ -58,7 +58,7 @@ func (t *LocalTransport) Update(ctx context.Context, nodeId string, request *tra
 	return node.Update(ctx, request)
 }
 
-func (t *LocalTransport) HealthCheck(ctx context.Context, nodeId string) ([]*transport.ReplicaState, error) {
+func (t *LocalTransport) ListReplicaStates(ctx context.Context, nodeId string) ([]*transport.ReplicaState, error) {
 	node, err := t.getNode(nodeId)
 	if err != nil {
 		return nil, err

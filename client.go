@@ -20,12 +20,13 @@ type ClientConfig struct {
 	// MaxRetriesOnSingleReplica is the number of times to retry a request on the
 	// same replica before moving on to the next one.
 	MaxRetriesOnSingleReplica int
-	// HealthCheckTimeout is the per-node timeout for each health check RPC.
-	HealthCheckTimeout time.Duration
-	// RefreshIntervalBase is the minimum wait between health check rounds.
+	// ListReplicaStatesTimeout is the per-node timeout for each replica-state
+	// refresh RPC.
+	ListReplicaStatesTimeout time.Duration
+	// RefreshIntervalBase is the minimum wait between replica-state refresh rounds.
 	RefreshIntervalBase time.Duration
 	// RefreshIntervalJitter is the upper bound of random jitter added to
-	// RefreshIntervalBase to spread health check load across clients.
+	// RefreshIntervalBase to spread refresh load across clients.
 	RefreshIntervalJitter time.Duration
 	// ReadRetryDelay is how long to wait before retrying a read on the same replica.
 	ReadRetryDelay time.Duration
@@ -37,7 +38,7 @@ type ClientConfig struct {
 func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
 		MaxRetriesOnSingleReplica: 10,
-		HealthCheckTimeout:        500 * time.Millisecond,
+		ListReplicaStatesTimeout:  500 * time.Millisecond,
 		RefreshIntervalBase:       5000 * time.Millisecond,
 		RefreshIntervalJitter:     1000 * time.Millisecond,
 		ReadRetryDelay:            100 * time.Millisecond,
@@ -72,7 +73,7 @@ func (c *Client) Stop() {
 }
 
 // Start launches the background goroutine that periodically polls all nodes
-// for replica health state, used to identify the current leader of each shard.
+// for replica states, used to identify the current leader of each shard.
 func (c *Client) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.refresherCancel = cancel
@@ -80,8 +81,8 @@ func (c *Client) Start() {
 	go func(monstera *Client, ctx context.Context) {
 		for {
 			for _, n := range c.clusterConfig.ListNodes() {
-				tctx, tcancel := context.WithTimeout(ctx, c.config.HealthCheckTimeout)
-				states, err := c.trans.HealthCheck(tctx, n.Id)
+				tctx, tcancel := context.WithTimeout(ctx, c.config.ListReplicaStatesTimeout)
+				states, err := c.trans.ListReplicaStates(tctx, n.Id)
 				tcancel()
 				if err != nil {
 					continue

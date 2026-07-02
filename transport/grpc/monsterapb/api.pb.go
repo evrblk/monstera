@@ -325,26 +325,26 @@ func (x *ReadResponse) GetPayload() []byte {
 	return nil
 }
 
-type HealthCheckRequest struct {
+type ListReplicaStatesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *HealthCheckRequest) Reset() {
-	*x = HealthCheckRequest{}
+func (x *ListReplicaStatesRequest) Reset() {
+	*x = ListReplicaStatesRequest{}
 	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *HealthCheckRequest) String() string {
+func (x *ListReplicaStatesRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*HealthCheckRequest) ProtoMessage() {}
+func (*ListReplicaStatesRequest) ProtoMessage() {}
 
-func (x *HealthCheckRequest) ProtoReflect() protoreflect.Message {
+func (x *ListReplicaStatesRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -356,32 +356,32 @@ func (x *HealthCheckRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use HealthCheckRequest.ProtoReflect.Descriptor instead.
-func (*HealthCheckRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use ListReplicaStatesRequest.ProtoReflect.Descriptor instead.
+func (*ListReplicaStatesRequest) Descriptor() ([]byte, []int) {
 	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{4}
 }
 
-type HealthCheckResponse struct {
+type ListReplicaStatesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Replicas      []*ReplicaState        `protobuf:"bytes,1,rep,name=replicas,proto3" json:"replicas,omitempty"`
+	ReplicaStates []*ReplicaState        `protobuf:"bytes,1,rep,name=replica_states,json=replicaStates,proto3" json:"replica_states,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *HealthCheckResponse) Reset() {
-	*x = HealthCheckResponse{}
+func (x *ListReplicaStatesResponse) Reset() {
+	*x = ListReplicaStatesResponse{}
 	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *HealthCheckResponse) String() string {
+func (x *ListReplicaStatesResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*HealthCheckResponse) ProtoMessage() {}
+func (*ListReplicaStatesResponse) ProtoMessage() {}
 
-func (x *HealthCheckResponse) ProtoReflect() protoreflect.Message {
+func (x *ListReplicaStatesResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -393,14 +393,102 @@ func (x *HealthCheckResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use HealthCheckResponse.ProtoReflect.Descriptor instead.
-func (*HealthCheckResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use ListReplicaStatesResponse.ProtoReflect.Descriptor instead.
+func (*ListReplicaStatesResponse) Descriptor() ([]byte, []int) {
 	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *HealthCheckResponse) GetReplicas() []*ReplicaState {
+func (x *ListReplicaStatesResponse) GetReplicaStates() []*ReplicaState {
 	if x != nil {
-		return x.Replicas
+		return x.ReplicaStates
+	}
+	return nil
+}
+
+type ListReplicaSnapshotsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ReplicaId     string                 `protobuf:"bytes,1,opt,name=replica_id,json=replicaId,proto3" json:"replica_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListReplicaSnapshotsRequest) Reset() {
+	*x = ListReplicaSnapshotsRequest{}
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListReplicaSnapshotsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListReplicaSnapshotsRequest) ProtoMessage() {}
+
+func (x *ListReplicaSnapshotsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListReplicaSnapshotsRequest.ProtoReflect.Descriptor instead.
+func (*ListReplicaSnapshotsRequest) Descriptor() ([]byte, []int) {
+	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ListReplicaSnapshotsRequest) GetReplicaId() string {
+	if x != nil {
+		return x.ReplicaId
+	}
+	return ""
+}
+
+type ListReplicaSnapshotsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Snapshots     []*RaftSnapshot        `protobuf:"bytes,1,rep,name=snapshots,proto3" json:"snapshots,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListReplicaSnapshotsResponse) Reset() {
+	*x = ListReplicaSnapshotsResponse{}
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListReplicaSnapshotsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListReplicaSnapshotsResponse) ProtoMessage() {}
+
+func (x *ListReplicaSnapshotsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListReplicaSnapshotsResponse.ProtoReflect.Descriptor instead.
+func (*ListReplicaSnapshotsResponse) Descriptor() ([]byte, []int) {
+	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ListReplicaSnapshotsResponse) GetSnapshots() []*RaftSnapshot {
+	if x != nil {
+		return x.Snapshots
 	}
 	return nil
 }
@@ -414,7 +502,7 @@ type TriggerSnapshotRequest struct {
 
 func (x *TriggerSnapshotRequest) Reset() {
 	*x = TriggerSnapshotRequest{}
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[6]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -426,7 +514,7 @@ func (x *TriggerSnapshotRequest) String() string {
 func (*TriggerSnapshotRequest) ProtoMessage() {}
 
 func (x *TriggerSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[6]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -439,7 +527,7 @@ func (x *TriggerSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TriggerSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*TriggerSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{6}
+	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *TriggerSnapshotRequest) GetReplicaId() string {
@@ -457,7 +545,7 @@ type TriggerSnapshotResponse struct {
 
 func (x *TriggerSnapshotResponse) Reset() {
 	*x = TriggerSnapshotResponse{}
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[7]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -469,7 +557,7 @@ func (x *TriggerSnapshotResponse) String() string {
 func (*TriggerSnapshotResponse) ProtoMessage() {}
 
 func (x *TriggerSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[7]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -482,7 +570,7 @@ func (x *TriggerSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TriggerSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*TriggerSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{7}
+	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{9}
 }
 
 type LeadershipTransferRequest struct {
@@ -494,7 +582,7 @@ type LeadershipTransferRequest struct {
 
 func (x *LeadershipTransferRequest) Reset() {
 	*x = LeadershipTransferRequest{}
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[8]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -506,7 +594,7 @@ func (x *LeadershipTransferRequest) String() string {
 func (*LeadershipTransferRequest) ProtoMessage() {}
 
 func (x *LeadershipTransferRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[8]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -519,7 +607,7 @@ func (x *LeadershipTransferRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeadershipTransferRequest.ProtoReflect.Descriptor instead.
 func (*LeadershipTransferRequest) Descriptor() ([]byte, []int) {
-	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{8}
+	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *LeadershipTransferRequest) GetReplicaId() string {
@@ -537,7 +625,7 @@ type LeadershipTransferResponse struct {
 
 func (x *LeadershipTransferResponse) Reset() {
 	*x = LeadershipTransferResponse{}
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[9]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -549,7 +637,7 @@ func (x *LeadershipTransferResponse) String() string {
 func (*LeadershipTransferResponse) ProtoMessage() {}
 
 func (x *LeadershipTransferResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[9]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -562,21 +650,20 @@ func (x *LeadershipTransferResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeadershipTransferResponse.ProtoReflect.Descriptor instead.
 func (*LeadershipTransferResponse) Descriptor() ([]byte, []int) {
-	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{9}
+	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{11}
 }
 
 type ReplicaState struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ReplicaId     string                 `protobuf:"bytes,1,opt,name=replica_id,json=replicaId,proto3" json:"replica_id,omitempty"`
 	RaftStats     *RaftStats             `protobuf:"bytes,2,opt,name=raft_stats,json=raftStats,proto3" json:"raft_stats,omitempty"`
-	Snapshots     []*RaftSnapshot        `protobuf:"bytes,3,rep,name=snapshots,proto3" json:"snapshots,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ReplicaState) Reset() {
 	*x = ReplicaState{}
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[10]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -588,7 +675,7 @@ func (x *ReplicaState) String() string {
 func (*ReplicaState) ProtoMessage() {}
 
 func (x *ReplicaState) ProtoReflect() protoreflect.Message {
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[10]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -601,7 +688,7 @@ func (x *ReplicaState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplicaState.ProtoReflect.Descriptor instead.
 func (*ReplicaState) Descriptor() ([]byte, []int) {
-	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{10}
+	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ReplicaState) GetReplicaId() string {
@@ -614,13 +701,6 @@ func (x *ReplicaState) GetReplicaId() string {
 func (x *ReplicaState) GetRaftStats() *RaftStats {
 	if x != nil {
 		return x.RaftStats
-	}
-	return nil
-}
-
-func (x *ReplicaState) GetSnapshots() []*RaftSnapshot {
-	if x != nil {
-		return x.Snapshots
 	}
 	return nil
 }
@@ -644,7 +724,7 @@ type RaftStats struct {
 
 func (x *RaftStats) Reset() {
 	*x = RaftStats{}
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[11]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -656,7 +736,7 @@ func (x *RaftStats) String() string {
 func (*RaftStats) ProtoMessage() {}
 
 func (x *RaftStats) ProtoReflect() protoreflect.Message {
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[11]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -669,7 +749,7 @@ func (x *RaftStats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RaftStats.ProtoReflect.Descriptor instead.
 func (*RaftStats) Descriptor() ([]byte, []int) {
-	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{11}
+	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RaftStats) GetState() RaftState {
@@ -761,7 +841,7 @@ type RaftSnapshot struct {
 
 func (x *RaftSnapshot) Reset() {
 	*x = RaftSnapshot{}
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[12]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -773,7 +853,7 @@ func (x *RaftSnapshot) String() string {
 func (*RaftSnapshot) ProtoMessage() {}
 
 func (x *RaftSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[12]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -786,7 +866,7 @@ func (x *RaftSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RaftSnapshot.ProtoReflect.Descriptor instead.
 func (*RaftSnapshot) Descriptor() ([]byte, []int) {
-	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{12}
+	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *RaftSnapshot) GetId() string {
@@ -826,7 +906,7 @@ type UpdateClusterConfigRequest struct {
 
 func (x *UpdateClusterConfigRequest) Reset() {
 	*x = UpdateClusterConfigRequest{}
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[13]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -838,7 +918,7 @@ func (x *UpdateClusterConfigRequest) String() string {
 func (*UpdateClusterConfigRequest) ProtoMessage() {}
 
 func (x *UpdateClusterConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[13]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -851,7 +931,7 @@ func (x *UpdateClusterConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateClusterConfigRequest.ProtoReflect.Descriptor instead.
 func (*UpdateClusterConfigRequest) Descriptor() ([]byte, []int) {
-	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{13}
+	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UpdateClusterConfigRequest) GetConfig() *cluster.Config {
@@ -869,7 +949,7 @@ type UpdateClusterConfigResponse struct {
 
 func (x *UpdateClusterConfigResponse) Reset() {
 	*x = UpdateClusterConfigResponse{}
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[14]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -881,7 +961,7 @@ func (x *UpdateClusterConfigResponse) String() string {
 func (*UpdateClusterConfigResponse) ProtoMessage() {}
 
 func (x *UpdateClusterConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[14]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -894,7 +974,7 @@ func (x *UpdateClusterConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateClusterConfigResponse.ProtoReflect.Descriptor instead.
 func (*UpdateClusterConfigResponse) Descriptor() ([]byte, []int) {
-	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{14}
+	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{16}
 }
 
 type RaftMessageRequest struct {
@@ -909,7 +989,7 @@ type RaftMessageRequest struct {
 
 func (x *RaftMessageRequest) Reset() {
 	*x = RaftMessageRequest{}
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[15]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -921,7 +1001,7 @@ func (x *RaftMessageRequest) String() string {
 func (*RaftMessageRequest) ProtoMessage() {}
 
 func (x *RaftMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[15]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -934,7 +1014,7 @@ func (x *RaftMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RaftMessageRequest.ProtoReflect.Descriptor instead.
 func (*RaftMessageRequest) Descriptor() ([]byte, []int) {
-	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{15}
+	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RaftMessageRequest) GetReplicaId() string {
@@ -976,7 +1056,7 @@ type RaftMessageResponse struct {
 
 func (x *RaftMessageResponse) Reset() {
 	*x = RaftMessageResponse{}
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[16]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -988,7 +1068,7 @@ func (x *RaftMessageResponse) String() string {
 func (*RaftMessageResponse) ProtoMessage() {}
 
 func (x *RaftMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[16]
+	mi := &file_transport_grpc_monsterapb_api_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1001,7 +1081,7 @@ func (x *RaftMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RaftMessageResponse.ProtoReflect.Descriptor instead.
 func (*RaftMessageResponse) Descriptor() ([]byte, []int) {
-	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{16}
+	return file_transport_grpc_monsterapb_api_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RaftMessageResponse) GetMessageType() int32 {
@@ -1046,10 +1126,15 @@ const file_transport_grpc_monsterapb_api_proto_rawDesc = "" +
 	"\bshard_id\x18\x05 \x01(\tR\ashardId\x12\x12\n" +
 	"\x04hops\x18\x06 \x01(\x05R\x04hops\"(\n" +
 	"\fReadResponse\x12\x18\n" +
-	"\apayload\x18\x01 \x01(\fR\apayload\"\x14\n" +
-	"\x12HealthCheckRequest\"_\n" +
-	"\x13HealthCheckResponse\x12H\n" +
-	"\breplicas\x18\x01 \x03(\v2,.com.evrblk.monstera.monsterapb.ReplicaStateR\breplicas\"7\n" +
+	"\apayload\x18\x01 \x01(\fR\apayload\"\x1a\n" +
+	"\x18ListReplicaStatesRequest\"p\n" +
+	"\x19ListReplicaStatesResponse\x12S\n" +
+	"\x0ereplica_states\x18\x01 \x03(\v2,.com.evrblk.monstera.monsterapb.ReplicaStateR\rreplicaStates\"<\n" +
+	"\x1bListReplicaSnapshotsRequest\x12\x1d\n" +
+	"\n" +
+	"replica_id\x18\x01 \x01(\tR\treplicaId\"j\n" +
+	"\x1cListReplicaSnapshotsResponse\x12J\n" +
+	"\tsnapshots\x18\x01 \x03(\v2,.com.evrblk.monstera.monsterapb.RaftSnapshotR\tsnapshots\"7\n" +
 	"\x16TriggerSnapshotRequest\x12\x1d\n" +
 	"\n" +
 	"replica_id\x18\x01 \x01(\tR\treplicaId\"\x19\n" +
@@ -1057,13 +1142,12 @@ const file_transport_grpc_monsterapb_api_proto_rawDesc = "" +
 	"\x19LeadershipTransferRequest\x12\x1d\n" +
 	"\n" +
 	"replica_id\x18\x01 \x01(\tR\treplicaId\"\x1c\n" +
-	"\x1aLeadershipTransferResponse\"\xc3\x01\n" +
+	"\x1aLeadershipTransferResponse\"w\n" +
 	"\fReplicaState\x12\x1d\n" +
 	"\n" +
 	"replica_id\x18\x01 \x01(\tR\treplicaId\x12H\n" +
 	"\n" +
-	"raft_stats\x18\x02 \x01(\v2).com.evrblk.monstera.monsterapb.RaftStatsR\traftStats\x12J\n" +
-	"\tsnapshots\x18\x03 \x03(\v2,.com.evrblk.monstera.monsterapb.RaftSnapshotR\tsnapshots\"\xbc\x03\n" +
+	"raft_stats\x18\x02 \x01(\v2).com.evrblk.monstera.monsterapb.RaftStatsR\traftStats\"\xbc\x03\n" +
 	"\tRaftStats\x12?\n" +
 	"\x05state\x18\x01 \x01(\x0e2).com.evrblk.monstera.monsterapb.RaftStateR\x05state\x12\x12\n" +
 	"\x04term\x18\x02 \x01(\x04R\x04term\x12$\n" +
@@ -1102,11 +1186,12 @@ const file_transport_grpc_monsterapb_api_proto_rawDesc = "" +
 	"\x13RAFT_STATE_FOLLOWER\x10\x01\x12\x15\n" +
 	"\x11RAFT_STATE_LEADER\x10\x02\x12\x18\n" +
 	"\x14RAFT_STATE_CANDIDATE\x10\x03\x12\x17\n" +
-	"\x13RAFT_STATE_SHUTDOWN\x10\x042\xff\x06\n" +
+	"\x13RAFT_STATE_SHUTDOWN\x10\x042\xa8\b\n" +
 	"\vMonsteraApi\x12i\n" +
 	"\x06Update\x12-.com.evrblk.monstera.monsterapb.UpdateRequest\x1a..com.evrblk.monstera.monsterapb.UpdateResponse\"\x00\x12c\n" +
-	"\x04Read\x12+.com.evrblk.monstera.monsterapb.ReadRequest\x1a,.com.evrblk.monstera.monsterapb.ReadResponse\"\x00\x12x\n" +
-	"\vHealthCheck\x122.com.evrblk.monstera.monsterapb.HealthCheckRequest\x1a3.com.evrblk.monstera.monsterapb.HealthCheckResponse\"\x00\x12\x8d\x01\n" +
+	"\x04Read\x12+.com.evrblk.monstera.monsterapb.ReadRequest\x1a,.com.evrblk.monstera.monsterapb.ReadResponse\"\x00\x12\x8a\x01\n" +
+	"\x11ListReplicaStates\x128.com.evrblk.monstera.monsterapb.ListReplicaStatesRequest\x1a9.com.evrblk.monstera.monsterapb.ListReplicaStatesResponse\"\x00\x12\x93\x01\n" +
+	"\x14ListReplicaSnapshots\x12;.com.evrblk.monstera.monsterapb.ListReplicaSnapshotsRequest\x1a<.com.evrblk.monstera.monsterapb.ListReplicaSnapshotsResponse\"\x00\x12\x8d\x01\n" +
 	"\x12LeadershipTransfer\x129.com.evrblk.monstera.monsterapb.LeadershipTransferRequest\x1a:.com.evrblk.monstera.monsterapb.LeadershipTransferResponse\"\x00\x12\x84\x01\n" +
 	"\x0fTriggerSnapshot\x126.com.evrblk.monstera.monsterapb.TriggerSnapshotRequest\x1a7.com.evrblk.monstera.monsterapb.TriggerSnapshotResponse\"\x00\x12\x90\x01\n" +
 	"\x13UpdateClusterConfig\x12:.com.evrblk.monstera.monsterapb.UpdateClusterConfigRequest\x1a;.com.evrblk.monstera.monsterapb.UpdateClusterConfigResponse\"\x00\x12|\n" +
@@ -1125,50 +1210,54 @@ func file_transport_grpc_monsterapb_api_proto_rawDescGZIP() []byte {
 }
 
 var file_transport_grpc_monsterapb_api_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_transport_grpc_monsterapb_api_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_transport_grpc_monsterapb_api_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_transport_grpc_monsterapb_api_proto_goTypes = []any{
-	(RaftState)(0),                      // 0: com.evrblk.monstera.monsterapb.RaftState
-	(*UpdateRequest)(nil),               // 1: com.evrblk.monstera.monsterapb.UpdateRequest
-	(*UpdateResponse)(nil),              // 2: com.evrblk.monstera.monsterapb.UpdateResponse
-	(*ReadRequest)(nil),                 // 3: com.evrblk.monstera.monsterapb.ReadRequest
-	(*ReadResponse)(nil),                // 4: com.evrblk.monstera.monsterapb.ReadResponse
-	(*HealthCheckRequest)(nil),          // 5: com.evrblk.monstera.monsterapb.HealthCheckRequest
-	(*HealthCheckResponse)(nil),         // 6: com.evrblk.monstera.monsterapb.HealthCheckResponse
-	(*TriggerSnapshotRequest)(nil),      // 7: com.evrblk.monstera.monsterapb.TriggerSnapshotRequest
-	(*TriggerSnapshotResponse)(nil),     // 8: com.evrblk.monstera.monsterapb.TriggerSnapshotResponse
-	(*LeadershipTransferRequest)(nil),   // 9: com.evrblk.monstera.monsterapb.LeadershipTransferRequest
-	(*LeadershipTransferResponse)(nil),  // 10: com.evrblk.monstera.monsterapb.LeadershipTransferResponse
-	(*ReplicaState)(nil),                // 11: com.evrblk.monstera.monsterapb.ReplicaState
-	(*RaftStats)(nil),                   // 12: com.evrblk.monstera.monsterapb.RaftStats
-	(*RaftSnapshot)(nil),                // 13: com.evrblk.monstera.monsterapb.RaftSnapshot
-	(*UpdateClusterConfigRequest)(nil),  // 14: com.evrblk.monstera.monsterapb.UpdateClusterConfigRequest
-	(*UpdateClusterConfigResponse)(nil), // 15: com.evrblk.monstera.monsterapb.UpdateClusterConfigResponse
-	(*RaftMessageRequest)(nil),          // 16: com.evrblk.monstera.monsterapb.RaftMessageRequest
-	(*RaftMessageResponse)(nil),         // 17: com.evrblk.monstera.monsterapb.RaftMessageResponse
-	(*cluster.Config)(nil),              // 18: com.evrblk.monstera.cluster.Config
+	(RaftState)(0),                       // 0: com.evrblk.monstera.monsterapb.RaftState
+	(*UpdateRequest)(nil),                // 1: com.evrblk.monstera.monsterapb.UpdateRequest
+	(*UpdateResponse)(nil),               // 2: com.evrblk.monstera.monsterapb.UpdateResponse
+	(*ReadRequest)(nil),                  // 3: com.evrblk.monstera.monsterapb.ReadRequest
+	(*ReadResponse)(nil),                 // 4: com.evrblk.monstera.monsterapb.ReadResponse
+	(*ListReplicaStatesRequest)(nil),     // 5: com.evrblk.monstera.monsterapb.ListReplicaStatesRequest
+	(*ListReplicaStatesResponse)(nil),    // 6: com.evrblk.monstera.monsterapb.ListReplicaStatesResponse
+	(*ListReplicaSnapshotsRequest)(nil),  // 7: com.evrblk.monstera.monsterapb.ListReplicaSnapshotsRequest
+	(*ListReplicaSnapshotsResponse)(nil), // 8: com.evrblk.monstera.monsterapb.ListReplicaSnapshotsResponse
+	(*TriggerSnapshotRequest)(nil),       // 9: com.evrblk.monstera.monsterapb.TriggerSnapshotRequest
+	(*TriggerSnapshotResponse)(nil),      // 10: com.evrblk.monstera.monsterapb.TriggerSnapshotResponse
+	(*LeadershipTransferRequest)(nil),    // 11: com.evrblk.monstera.monsterapb.LeadershipTransferRequest
+	(*LeadershipTransferResponse)(nil),   // 12: com.evrblk.monstera.monsterapb.LeadershipTransferResponse
+	(*ReplicaState)(nil),                 // 13: com.evrblk.monstera.monsterapb.ReplicaState
+	(*RaftStats)(nil),                    // 14: com.evrblk.monstera.monsterapb.RaftStats
+	(*RaftSnapshot)(nil),                 // 15: com.evrblk.monstera.monsterapb.RaftSnapshot
+	(*UpdateClusterConfigRequest)(nil),   // 16: com.evrblk.monstera.monsterapb.UpdateClusterConfigRequest
+	(*UpdateClusterConfigResponse)(nil),  // 17: com.evrblk.monstera.monsterapb.UpdateClusterConfigResponse
+	(*RaftMessageRequest)(nil),           // 18: com.evrblk.monstera.monsterapb.RaftMessageRequest
+	(*RaftMessageResponse)(nil),          // 19: com.evrblk.monstera.monsterapb.RaftMessageResponse
+	(*cluster.Config)(nil),               // 20: com.evrblk.monstera.cluster.Config
 }
 var file_transport_grpc_monsterapb_api_proto_depIdxs = []int32{
-	11, // 0: com.evrblk.monstera.monsterapb.HealthCheckResponse.replicas:type_name -> com.evrblk.monstera.monsterapb.ReplicaState
-	12, // 1: com.evrblk.monstera.monsterapb.ReplicaState.raft_stats:type_name -> com.evrblk.monstera.monsterapb.RaftStats
-	13, // 2: com.evrblk.monstera.monsterapb.ReplicaState.snapshots:type_name -> com.evrblk.monstera.monsterapb.RaftSnapshot
+	13, // 0: com.evrblk.monstera.monsterapb.ListReplicaStatesResponse.replica_states:type_name -> com.evrblk.monstera.monsterapb.ReplicaState
+	15, // 1: com.evrblk.monstera.monsterapb.ListReplicaSnapshotsResponse.snapshots:type_name -> com.evrblk.monstera.monsterapb.RaftSnapshot
+	14, // 2: com.evrblk.monstera.monsterapb.ReplicaState.raft_stats:type_name -> com.evrblk.monstera.monsterapb.RaftStats
 	0,  // 3: com.evrblk.monstera.monsterapb.RaftStats.state:type_name -> com.evrblk.monstera.monsterapb.RaftState
-	18, // 4: com.evrblk.monstera.monsterapb.UpdateClusterConfigRequest.config:type_name -> com.evrblk.monstera.cluster.Config
+	20, // 4: com.evrblk.monstera.monsterapb.UpdateClusterConfigRequest.config:type_name -> com.evrblk.monstera.cluster.Config
 	1,  // 5: com.evrblk.monstera.monsterapb.MonsteraApi.Update:input_type -> com.evrblk.monstera.monsterapb.UpdateRequest
 	3,  // 6: com.evrblk.monstera.monsterapb.MonsteraApi.Read:input_type -> com.evrblk.monstera.monsterapb.ReadRequest
-	5,  // 7: com.evrblk.monstera.monsterapb.MonsteraApi.HealthCheck:input_type -> com.evrblk.monstera.monsterapb.HealthCheckRequest
-	9,  // 8: com.evrblk.monstera.monsterapb.MonsteraApi.LeadershipTransfer:input_type -> com.evrblk.monstera.monsterapb.LeadershipTransferRequest
-	7,  // 9: com.evrblk.monstera.monsterapb.MonsteraApi.TriggerSnapshot:input_type -> com.evrblk.monstera.monsterapb.TriggerSnapshotRequest
-	14, // 10: com.evrblk.monstera.monsterapb.MonsteraApi.UpdateClusterConfig:input_type -> com.evrblk.monstera.monsterapb.UpdateClusterConfigRequest
-	16, // 11: com.evrblk.monstera.monsterapb.MonsteraApi.RaftMessage:input_type -> com.evrblk.monstera.monsterapb.RaftMessageRequest
-	2,  // 12: com.evrblk.monstera.monsterapb.MonsteraApi.Update:output_type -> com.evrblk.monstera.monsterapb.UpdateResponse
-	4,  // 13: com.evrblk.monstera.monsterapb.MonsteraApi.Read:output_type -> com.evrblk.monstera.monsterapb.ReadResponse
-	6,  // 14: com.evrblk.monstera.monsterapb.MonsteraApi.HealthCheck:output_type -> com.evrblk.monstera.monsterapb.HealthCheckResponse
-	10, // 15: com.evrblk.monstera.monsterapb.MonsteraApi.LeadershipTransfer:output_type -> com.evrblk.monstera.monsterapb.LeadershipTransferResponse
-	8,  // 16: com.evrblk.monstera.monsterapb.MonsteraApi.TriggerSnapshot:output_type -> com.evrblk.monstera.monsterapb.TriggerSnapshotResponse
-	15, // 17: com.evrblk.monstera.monsterapb.MonsteraApi.UpdateClusterConfig:output_type -> com.evrblk.monstera.monsterapb.UpdateClusterConfigResponse
-	17, // 18: com.evrblk.monstera.monsterapb.MonsteraApi.RaftMessage:output_type -> com.evrblk.monstera.monsterapb.RaftMessageResponse
-	12, // [12:19] is the sub-list for method output_type
-	5,  // [5:12] is the sub-list for method input_type
+	5,  // 7: com.evrblk.monstera.monsterapb.MonsteraApi.ListReplicaStates:input_type -> com.evrblk.monstera.monsterapb.ListReplicaStatesRequest
+	7,  // 8: com.evrblk.monstera.monsterapb.MonsteraApi.ListReplicaSnapshots:input_type -> com.evrblk.monstera.monsterapb.ListReplicaSnapshotsRequest
+	11, // 9: com.evrblk.monstera.monsterapb.MonsteraApi.LeadershipTransfer:input_type -> com.evrblk.monstera.monsterapb.LeadershipTransferRequest
+	9,  // 10: com.evrblk.monstera.monsterapb.MonsteraApi.TriggerSnapshot:input_type -> com.evrblk.monstera.monsterapb.TriggerSnapshotRequest
+	16, // 11: com.evrblk.monstera.monsterapb.MonsteraApi.UpdateClusterConfig:input_type -> com.evrblk.monstera.monsterapb.UpdateClusterConfigRequest
+	18, // 12: com.evrblk.monstera.monsterapb.MonsteraApi.RaftMessage:input_type -> com.evrblk.monstera.monsterapb.RaftMessageRequest
+	2,  // 13: com.evrblk.monstera.monsterapb.MonsteraApi.Update:output_type -> com.evrblk.monstera.monsterapb.UpdateResponse
+	4,  // 14: com.evrblk.monstera.monsterapb.MonsteraApi.Read:output_type -> com.evrblk.monstera.monsterapb.ReadResponse
+	6,  // 15: com.evrblk.monstera.monsterapb.MonsteraApi.ListReplicaStates:output_type -> com.evrblk.monstera.monsterapb.ListReplicaStatesResponse
+	8,  // 16: com.evrblk.monstera.monsterapb.MonsteraApi.ListReplicaSnapshots:output_type -> com.evrblk.monstera.monsterapb.ListReplicaSnapshotsResponse
+	12, // 17: com.evrblk.monstera.monsterapb.MonsteraApi.LeadershipTransfer:output_type -> com.evrblk.monstera.monsterapb.LeadershipTransferResponse
+	10, // 18: com.evrblk.monstera.monsterapb.MonsteraApi.TriggerSnapshot:output_type -> com.evrblk.monstera.monsterapb.TriggerSnapshotResponse
+	17, // 19: com.evrblk.monstera.monsterapb.MonsteraApi.UpdateClusterConfig:output_type -> com.evrblk.monstera.monsterapb.UpdateClusterConfigResponse
+	19, // 20: com.evrblk.monstera.monsterapb.MonsteraApi.RaftMessage:output_type -> com.evrblk.monstera.monsterapb.RaftMessageResponse
+	13, // [13:21] is the sub-list for method output_type
+	5,  // [5:13] is the sub-list for method input_type
 	5,  // [5:5] is the sub-list for extension type_name
 	5,  // [5:5] is the sub-list for extension extendee
 	0,  // [0:5] is the sub-list for field type_name
@@ -1185,7 +1274,7 @@ func file_transport_grpc_monsterapb_api_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_transport_grpc_monsterapb_api_proto_rawDesc), len(file_transport_grpc_monsterapb_api_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   17,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

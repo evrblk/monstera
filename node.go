@@ -330,6 +330,22 @@ func (n *Node) TriggerSnapshot(replicaId string) error {
 	return nil
 }
 
+// ListSnapshots returns the snapshots stored for the replica with the given id.
+// It reads the replica's snapshot store from disk, so it is meant for on-demand
+// admin/ops use rather than frequent polling.
+func (n *Node) ListSnapshots(replicaId string) ([]raft.SnapshotMetadata, error) {
+	if n.NodeState() != READY {
+		return nil, errNodeNotReady
+	}
+
+	r, err := n.getReplica(replicaId)
+	if err != nil {
+		return nil, err
+	}
+
+	return r.ListSnapshots()
+}
+
 // LeadershipTransfer asks the replica with the given id to hand off Raft
 // leadership to another replica in its group (used for graceful node drain).
 func (n *Node) LeadershipTransfer(replicaId string) error {

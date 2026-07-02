@@ -19,13 +19,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	MonsteraApi_Update_FullMethodName              = "/com.evrblk.monstera.monsterapb.MonsteraApi/Update"
-	MonsteraApi_Read_FullMethodName                = "/com.evrblk.monstera.monsterapb.MonsteraApi/Read"
-	MonsteraApi_HealthCheck_FullMethodName         = "/com.evrblk.monstera.monsterapb.MonsteraApi/HealthCheck"
-	MonsteraApi_LeadershipTransfer_FullMethodName  = "/com.evrblk.monstera.monsterapb.MonsteraApi/LeadershipTransfer"
-	MonsteraApi_TriggerSnapshot_FullMethodName     = "/com.evrblk.monstera.monsterapb.MonsteraApi/TriggerSnapshot"
-	MonsteraApi_UpdateClusterConfig_FullMethodName = "/com.evrblk.monstera.monsterapb.MonsteraApi/UpdateClusterConfig"
-	MonsteraApi_RaftMessage_FullMethodName         = "/com.evrblk.monstera.monsterapb.MonsteraApi/RaftMessage"
+	MonsteraApi_Update_FullMethodName               = "/com.evrblk.monstera.monsterapb.MonsteraApi/Update"
+	MonsteraApi_Read_FullMethodName                 = "/com.evrblk.monstera.monsterapb.MonsteraApi/Read"
+	MonsteraApi_ListReplicaStates_FullMethodName    = "/com.evrblk.monstera.monsterapb.MonsteraApi/ListReplicaStates"
+	MonsteraApi_ListReplicaSnapshots_FullMethodName = "/com.evrblk.monstera.monsterapb.MonsteraApi/ListReplicaSnapshots"
+	MonsteraApi_LeadershipTransfer_FullMethodName   = "/com.evrblk.monstera.monsterapb.MonsteraApi/LeadershipTransfer"
+	MonsteraApi_TriggerSnapshot_FullMethodName      = "/com.evrblk.monstera.monsterapb.MonsteraApi/TriggerSnapshot"
+	MonsteraApi_UpdateClusterConfig_FullMethodName  = "/com.evrblk.monstera.monsterapb.MonsteraApi/UpdateClusterConfig"
+	MonsteraApi_RaftMessage_FullMethodName          = "/com.evrblk.monstera.monsterapb.MonsteraApi/RaftMessage"
 )
 
 // MonsteraApiClient is the client API for MonsteraApi service.
@@ -34,7 +35,8 @@ const (
 type MonsteraApiClient interface {
 	Update(ctx context.Context, in *UpdateRequest, opts ...grpc.CallOption) (*UpdateResponse, error)
 	Read(ctx context.Context, in *ReadRequest, opts ...grpc.CallOption) (*ReadResponse, error)
-	HealthCheck(ctx context.Context, in *HealthCheckRequest, opts ...grpc.CallOption) (*HealthCheckResponse, error)
+	ListReplicaStates(ctx context.Context, in *ListReplicaStatesRequest, opts ...grpc.CallOption) (*ListReplicaStatesResponse, error)
+	ListReplicaSnapshots(ctx context.Context, in *ListReplicaSnapshotsRequest, opts ...grpc.CallOption) (*ListReplicaSnapshotsResponse, error)
 	LeadershipTransfer(ctx context.Context, in *LeadershipTransferRequest, opts ...grpc.CallOption) (*LeadershipTransferResponse, error)
 	TriggerSnapshot(ctx context.Context, in *TriggerSnapshotRequest, opts ...grpc.CallOption) (*TriggerSnapshotResponse, error)
 	UpdateClusterConfig(ctx context.Context, in *UpdateClusterConfigRequest, opts ...grpc.CallOption) (*UpdateClusterConfigResponse, error)
@@ -69,10 +71,20 @@ func (c *monsteraApiClient) Read(ctx context.Context, in *ReadRequest, opts ...g
 	return out, nil
 }
 
-func (c *monsteraApiClient) HealthCheck(ctx context.Context, in *HealthCheckRequest, opts ...grpc.CallOption) (*HealthCheckResponse, error) {
+func (c *monsteraApiClient) ListReplicaStates(ctx context.Context, in *ListReplicaStatesRequest, opts ...grpc.CallOption) (*ListReplicaStatesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(HealthCheckResponse)
-	err := c.cc.Invoke(ctx, MonsteraApi_HealthCheck_FullMethodName, in, out, cOpts...)
+	out := new(ListReplicaStatesResponse)
+	err := c.cc.Invoke(ctx, MonsteraApi_ListReplicaStates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *monsteraApiClient) ListReplicaSnapshots(ctx context.Context, in *ListReplicaSnapshotsRequest, opts ...grpc.CallOption) (*ListReplicaSnapshotsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListReplicaSnapshotsResponse)
+	err := c.cc.Invoke(ctx, MonsteraApi_ListReplicaSnapshots_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +140,8 @@ type MonsteraApi_RaftMessageClient = grpc.BidiStreamingClient[RaftMessageRequest
 type MonsteraApiServer interface {
 	Update(context.Context, *UpdateRequest) (*UpdateResponse, error)
 	Read(context.Context, *ReadRequest) (*ReadResponse, error)
-	HealthCheck(context.Context, *HealthCheckRequest) (*HealthCheckResponse, error)
+	ListReplicaStates(context.Context, *ListReplicaStatesRequest) (*ListReplicaStatesResponse, error)
+	ListReplicaSnapshots(context.Context, *ListReplicaSnapshotsRequest) (*ListReplicaSnapshotsResponse, error)
 	LeadershipTransfer(context.Context, *LeadershipTransferRequest) (*LeadershipTransferResponse, error)
 	TriggerSnapshot(context.Context, *TriggerSnapshotRequest) (*TriggerSnapshotResponse, error)
 	UpdateClusterConfig(context.Context, *UpdateClusterConfigRequest) (*UpdateClusterConfigResponse, error)
@@ -149,8 +162,11 @@ func (UnimplementedMonsteraApiServer) Update(context.Context, *UpdateRequest) (*
 func (UnimplementedMonsteraApiServer) Read(context.Context, *ReadRequest) (*ReadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Read not implemented")
 }
-func (UnimplementedMonsteraApiServer) HealthCheck(context.Context, *HealthCheckRequest) (*HealthCheckResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method HealthCheck not implemented")
+func (UnimplementedMonsteraApiServer) ListReplicaStates(context.Context, *ListReplicaStatesRequest) (*ListReplicaStatesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListReplicaStates not implemented")
+}
+func (UnimplementedMonsteraApiServer) ListReplicaSnapshots(context.Context, *ListReplicaSnapshotsRequest) (*ListReplicaSnapshotsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListReplicaSnapshots not implemented")
 }
 func (UnimplementedMonsteraApiServer) LeadershipTransfer(context.Context, *LeadershipTransferRequest) (*LeadershipTransferResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LeadershipTransfer not implemented")
@@ -221,20 +237,38 @@ func _MonsteraApi_Read_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MonsteraApi_HealthCheck_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(HealthCheckRequest)
+func _MonsteraApi_ListReplicaStates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListReplicaStatesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MonsteraApiServer).HealthCheck(ctx, in)
+		return srv.(MonsteraApiServer).ListReplicaStates(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MonsteraApi_HealthCheck_FullMethodName,
+		FullMethod: MonsteraApi_ListReplicaStates_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MonsteraApiServer).HealthCheck(ctx, req.(*HealthCheckRequest))
+		return srv.(MonsteraApiServer).ListReplicaStates(ctx, req.(*ListReplicaStatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MonsteraApi_ListReplicaSnapshots_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListReplicaSnapshotsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MonsteraApiServer).ListReplicaSnapshots(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MonsteraApi_ListReplicaSnapshots_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MonsteraApiServer).ListReplicaSnapshots(ctx, req.(*ListReplicaSnapshotsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -316,8 +350,12 @@ var MonsteraApi_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _MonsteraApi_Read_Handler,
 		},
 		{
-			MethodName: "HealthCheck",
-			Handler:    _MonsteraApi_HealthCheck_Handler,
+			MethodName: "ListReplicaStates",
+			Handler:    _MonsteraApi_ListReplicaStates_Handler,
+		},
+		{
+			MethodName: "ListReplicaSnapshots",
+			Handler:    _MonsteraApi_ListReplicaSnapshots_Handler,
 		},
 		{
 			MethodName: "LeadershipTransfer",

@@ -16,9 +16,11 @@ type Transport interface {
 	// to be, or redirect to, the current Raft leader for the target shard.
 	Update(ctx context.Context, nodeId string, req *UpdateRequest) (*UpdateResponse, error)
 
-	// HealthCheck returns the observed state of all replicas hosted on the
-	// specified node, including which replica is currently the leader.
-	HealthCheck(ctx context.Context, nodeId string) ([]*ReplicaState, error)
+	// ListReplicaStates returns the observed state of all replicas hosted on the
+	// specified node, including which replica is currently the leader. It is a
+	// lightweight, frequently-polled call (no disk I/O). Snapshot listing is a
+	// separate node RPC (ListReplicaSnapshots), not part of this interface.
+	ListReplicaStates(ctx context.Context, nodeId string) ([]*ReplicaState, error)
 
 	// RaftMessage delivers a raw Raft protocol message to the specified node.
 	RaftMessage(ctx context.Context, nodeId string, req *RaftMessageRequest) (*RaftMessageResponse, error)

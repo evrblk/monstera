@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 
-	hraft "github.com/hashicorp/raft"
 	"google.golang.org/grpc"
 
 	"github.com/evrblk/monstera"
@@ -134,8 +133,7 @@ func (h *handler) HealthCheck(ctx context.Context, req *monsterapb.HealthCheckRe
 
 		replicas[i] = &monsterapb.ReplicaState{
 			ReplicaId: c.GetReplicaId(),
-			RaftState: encodeRaftState(c.GetRaftState()),
-			RaftStats: c.GetRaftStats(),
+			RaftStats: encodeRaftStats(c.GetRaftStats()),
 			Snapshots: encodeRaftSnapshots(snapshots),
 		}
 	}
@@ -185,11 +183,30 @@ func (h *handler) RaftMessage(stream grpc.BidiStreamingServer[monsterapb.RaftMes
 	}
 }
 
-func encodeRaftSnapshots(s []*hraft.SnapshotMeta) []*monsterapb.RaftSnapshot {
+// encodeRaftStats renders the structured Raft stats onto the wire message. The
+// field set is Monstera's own contract, independent of the underlying Raft
+// library.
+func encodeRaftStats(s raft.RaftStats) *monsterapb.RaftStats {
+	return &monsterapb.RaftStats{
+		State:             encodeRaftState(s.State),
+		Term:              s.Term,
+		LastLogIndex:      s.LastLogIndex,
+		LastLogTerm:       s.LastLogTerm,
+		CommitIndex:       s.CommitIndex,
+		AppliedIndex:      s.AppliedIndex,
+		FsmPending:        s.FSMPending,
+		LastSnapshotIndex: s.LastSnapshotIndex,
+		LastSnapshotTerm:  s.LastSnapshotTerm,
+		NumPeers:          int32(s.NumPeers),
+		LastContactNanos:  int64(s.LastContact),
+	}
+}
+
+func encodeRaftSnapshots(s []raft.SnapshotMetadata) []*monsterapb.RaftSnapshot {
 	ret := make([]*monsterapb.RaftSnapshot, len(s))
 	for i, s := range s {
 		ret[i] = &monsterapb.RaftSnapshot{
-			Id:    s.ID,
+			Id:    s.Id,
 			Index: s.Index,
 			Term:  s.Term,
 			Size:  s.Size,

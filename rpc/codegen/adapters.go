@@ -11,29 +11,7 @@ func GenerateAdapters(cfg *MonsteraYaml) string {
 	f.HeaderComment(generatedCodeComment)
 	f.ImportAlias(mrpcPkg, "mrpc")
 
-	// Core metrics
-	f.Var().Defs(
-		Id("monsteraCoreMethodDuration").Op("=").Qual("github.com/prometheus/client_golang/prometheus", "NewHistogramVec").Call(
-			Qual("github.com/prometheus/client_golang/prometheus", "HistogramOpts").Values(Dict{
-				Id("Name"):                            Lit("monstera_core_method_duration_seconds"),
-				Id("Help"):                            Lit("Monstera core method duration"),
-				Id("NativeHistogramBucketFactor"):     Lit(1.1),
-				Id("NativeHistogramMaxBucketNumber"):  Lit(100),
-				Id("NativeHistogramMinResetDuration"): Qual("time", "Hour"),
-			},
-			),
-			Op("[]").String().Values(Lit("core"), Lit("method"), Lit("shard"), Lit("replica")),
-		),
-		Id("monsteraCoreMethodCount").Op("=").Qual("github.com/prometheus/client_golang/prometheus", "NewCounterVec").Call(
-			Qual("github.com/prometheus/client_golang/prometheus", "CounterOpts").Values(Dict{
-				Id("Name"): Lit("monstera_core_method_count"),
-				Id("Help"): Lit("Monstera core method count"),
-			},
-			),
-			Op("[]").String().Values(Lit("core"), Lit("method"), Lit("shard"), Lit("replica")),
-		),
-	)
-	f.Line()
+	generateMetrics(f)
 
 	for _, core := range cfg.Cores {
 		generateAdapter(f, core, cfg)
@@ -42,6 +20,43 @@ func GenerateAdapters(cfg *MonsteraYaml) string {
 	generateHelpers(f)
 
 	return fmt.Sprintf("%#v", f)
+}
+
+func generateMetrics(f *File) {
+	f.Var().Defs(
+		Id("rpcMethodDuration").Op("=").Qual("github.com/prometheus/client_golang/prometheus", "NewHistogramVec").Call(
+			Qual("github.com/prometheus/client_golang/prometheus", "HistogramOpts").Values(Dict{
+				Id("Name"):                            Lit("monstera_rpc_method_duration_seconds"),
+				Id("Help"):                            Lit("Monstera RPC method duration"),
+				Id("NativeHistogramBucketFactor"):     Lit(1.1),
+				Id("NativeHistogramMaxBucketNumber"):  Lit(100),
+				Id("NativeHistogramMinResetDuration"): Qual("time", "Hour"),
+			},
+			),
+			Op("[]").String().Values(Lit("core"), Lit("method"), Lit("shard"), Lit("replica")),
+		),
+		Id("rpcMethodsTotal").Op("=").Qual("github.com/prometheus/client_golang/prometheus", "NewCounterVec").Call(
+			Qual("github.com/prometheus/client_golang/prometheus", "CounterOpts").Values(Dict{
+				Id("Name"): Lit("monstera_rpc_methods_total"),
+				Id("Help"): Lit("Number of Monstera RPC method calls"),
+			},
+			),
+			Op("[]").String().Values(Lit("core"), Lit("method"), Lit("shard"), Lit("replica")),
+		),
+	)
+	f.Line()
+
+	f.Comment("RegisterMetrics registers the RPC metrics emitted by the generated core")
+	f.Comment("adapters with the given registerer. Call once at startup, e.g.")
+	f.Comment("RegisterMetrics(prometheus.DefaultRegisterer). It panics if a metric is")
+	f.Comment("already registered.")
+	f.Func().Id("RegisterMetrics").Params(
+		Id("registerer").Qual("github.com/prometheus/client_golang/prometheus", "Registerer"),
+	).Block(
+		Id("registerer").Dot("MustRegister").Call(Id("rpcMethodDuration")),
+		Id("registerer").Dot("MustRegister").Call(Id("rpcMethodsTotal")),
+	)
+	f.Line()
 }
 
 func generateHelpers(f *File) {
@@ -94,22 +109,6 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 	).Id("Snapshot").Params().Params(
 		Qual(monsteraPkg, "ApplicationCoreSnapshot"),
 	).Block(
-		Defer().Id("measureSince").Call(
-			Id("monsteraCoreMethodDuration").Dot("WithLabelValues").Call(
-				Lit(core.Name),
-				Lit("Snapshot"),
-				Id("a").Dot("shardId"),
-				Id("a").Dot("replicaId"),
-			),
-			Qual("time", "Now").Call(),
-		),
-		Id("monsteraCoreMethodCount").Dot("WithLabelValues").Call(
-			Lit(core.Name),
-			Lit("Snapshot"),
-			Id("a").Dot("shardId"),
-			Id("a").Dot("replicaId"),
-		).Dot("Inc").Call(),
-		Line(),
 		Return(Id("a").Dot(coreVarName).Dot("Snapshot").Call()),
 	)
 	f.Line()
@@ -122,22 +121,6 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 	).Params(
 		Error(),
 	).Block(
-		Defer().Id("measureSince").Call(
-			Id("monsteraCoreMethodDuration").Dot("WithLabelValues").Call(
-				Lit(core.Name),
-				Lit("Restore"),
-				Id("a").Dot("shardId"),
-				Id("a").Dot("replicaId"),
-			),
-			Qual("time", "Now").Call(),
-		),
-		Id("monsteraCoreMethodCount").Dot("WithLabelValues").Call(
-			Lit(core.Name),
-			Lit("Restore"),
-			Id("a").Dot("shardId"),
-			Id("a").Dot("replicaId"),
-		).Dot("Inc").Call(),
-		Line(),
 		Return(Id("a").Dot(coreVarName).Dot("Restore").Call(Id("r"))),
 	)
 	f.Line()
@@ -162,6 +145,9 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 		),
 	).BlockFunc(func(g *Group) {
 		if len(core.UpdateMethods) > 0 {
+			g.Id("t1").Op(":=").Qual("time", "Now").Call()
+			g.Line()
+
 			g.Id("resp").Op(":=").Op("&").Qual(monsteraPkg, "UpdateResponse").Values()
 			g.Id("rpcResp").Op(":=").Op("&").Qual(mrpcPkg, "Response").Values()
 			g.Id("rpcReq").Op(":=").Op("&").Qual(mrpcPkg, "Request").Values()
@@ -177,9 +163,6 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 			)
 			g.Line()
 
-			g.Id("t1").Op(":=").Qual("time", "Now").Call()
-			g.Line()
-
 			g.Switch(
 				Id("rpcReq").Dot("MethodNumber"),
 			).BlockFunc(func(g *Group) {
@@ -187,6 +170,23 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 					g.Case(
 						Lit(update.Number),
 					).Block(
+						Id("rpcMethodsTotal").Dot("WithLabelValues").Call(
+							Lit(core.Name),
+							Lit(update.Name),
+							Id("a").Dot("shardId"),
+							Id("a").Dot("replicaId"),
+						).Dot("Inc").Call(),
+						Defer().Id("measureSince").Call(
+							Id("rpcMethodDuration").Dot("WithLabelValues").Call(
+								Lit(core.Name),
+								Lit(update.Name),
+								Id("a").Dot("shardId"),
+								Id("a").Dot("replicaId"),
+							),
+							Id("t1"),
+						),
+						Line(),
+
 						Id("methodReq").Op(":=").Qual(corepb, update.Name+"Request").Op("{}"),
 						Id("err").Op(":=").Id("methodReq").Dot("UnmarshalBinary").Call(
 							Id("rpcReq").Dot("Data"),
@@ -207,21 +207,6 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 						).Block(
 							Return(Nil(), Err()),
 						),
-						Id("measureSince").Call(
-							Id("monsteraCoreMethodDuration").Dot("WithLabelValues").Call(
-								Lit(core.Name),
-								Lit(update.Name),
-								Id("a").Dot("shardId"),
-								Id("a").Dot("replicaId"),
-							),
-							Id("t1"),
-						),
-						Id("monsteraCoreMethodCount").Dot("WithLabelValues").Call(
-							Lit(core.Name),
-							Lit(update.Name),
-							Id("a").Dot("shardId"),
-							Id("a").Dot("replicaId"),
-						).Dot("Inc").Call(),
 						Id("rpcResp").Dot("Error").Op("=").Id("methodResp").Dot("ApplicationError"),
 						List(Id("methodRespBytes"), Err()).Op(":=").Id("methodResp").Dot("Payload").Dot("MarshalBinary").Call(),
 						If(
@@ -274,6 +259,9 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 		),
 	).BlockFunc(func(g *Group) {
 		if len(core.ReadMethods) > 0 {
+			g.Id("t1").Op(":=").Qual("time", "Now").Call()
+			g.Line()
+
 			g.Id("resp").Op(":=").Op("&").Qual(monsteraPkg, "ReadResponse").Values()
 			g.Id("rpcResp").Op(":=").Op("&").Qual(mrpcPkg, "Response").Values()
 			g.Id("rpcReq").Op(":=").Op("&").Qual(mrpcPkg, "Request").Values()
@@ -289,9 +277,6 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 			)
 			g.Line()
 
-			g.Id("t1").Op(":=").Qual("time", "Now").Call()
-			g.Line()
-
 			g.Switch(
 				Id("rpcReq").Dot("MethodNumber"),
 			).BlockFunc(func(g *Group) {
@@ -299,6 +284,23 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 					g.Case(
 						Lit(read.Number),
 					).Block(
+						Id("rpcMethodsTotal").Dot("WithLabelValues").Call(
+							Lit(core.Name),
+							Lit(read.Name),
+							Id("a").Dot("shardId"),
+							Id("a").Dot("replicaId"),
+						).Dot("Inc").Call(),
+						Defer().Id("measureSince").Call(
+							Id("rpcMethodDuration").Dot("WithLabelValues").Call(
+								Lit(core.Name),
+								Lit(read.Name),
+								Id("a").Dot("shardId"),
+								Id("a").Dot("replicaId"),
+							),
+							Id("t1"),
+						),
+						Line(),
+
 						Id("methodReq").Op(":=").Qual(corepb, read.Name+"Request").Op("{}"),
 						Id("err").Op(":=").Id("methodReq").Dot("UnmarshalBinary").Call(
 							Id("rpcReq").Dot("Data"),
@@ -319,21 +321,6 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 						).Block(
 							Return(Nil(), Err()),
 						),
-						Id("measureSince").Call(
-							Id("monsteraCoreMethodDuration").Dot("WithLabelValues").Call(
-								Lit(core.Name),
-								Lit(read.Name),
-								Id("a").Dot("shardId"),
-								Id("a").Dot("replicaId"),
-							),
-							Id("t1"),
-						),
-						Id("monsteraCoreMethodCount").Dot("WithLabelValues").Call(
-							Lit(core.Name),
-							Lit(read.Name),
-							Id("a").Dot("shardId"),
-							Id("a").Dot("replicaId"),
-						).Dot("Inc").Call(),
 						Id("rpcResp").Dot("Error").Op("=").Id("methodResp").Dot("ApplicationError"),
 						List(Id("methodRespBytes"), Err()).Op(":=").Id("methodResp").Dot("Payload").Dot("MarshalBinary").Call(),
 						If(

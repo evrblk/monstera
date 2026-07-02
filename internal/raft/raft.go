@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -51,6 +52,7 @@ type snapshotSession struct {
 	expectedSize  int64
 	bytesReceived int64
 	resultCh      chan snapshotSessionResult
+	startTime     time.Time
 }
 
 // Raft wraps the HashiCorp Raft implementation with a Badger store backend.
@@ -59,6 +61,11 @@ type Raft struct {
 	hstore    *HraftBadgerStore
 	hfss      *hraft.FileSnapshotStore
 	transport *RaftTransport
+
+	// applicationName, shardId and replicaId identify this replica in metrics.
+	applicationName string
+	shardId         string
+	replicaId       string
 
 	snapshotSession   *snapshotSession
 	snapshotSessionMu sync.Mutex
@@ -72,8 +79,32 @@ func (r *Raft) TriggerSnapshot() {
 	r.hraft.Snapshot()
 }
 
-func (r *Raft) ListSnapshots() ([]*hraft.SnapshotMeta, error) {
-	return r.hfss.List()
+// SnapshotMetadata describes a stored Raft snapshot. It is a library-agnostic
+// view of the underlying snapshot metadata so callers outside this package do
+// not depend on the concrete Raft implementation.
+type SnapshotMetadata struct {
+	Id    string
+	Index uint64
+	Term  uint64
+	Size  int64
+}
+
+func (r *Raft) ListSnapshots() ([]SnapshotMetadata, error) {
+	metas, err := r.hfss.List()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]SnapshotMetadata, len(metas))
+	for i, m := range metas {
+		result[i] = SnapshotMetadata{
+			Id:    m.ID,
+			Index: m.Index,
+			Term:  m.Term,
+			Size:  m.Size,
+		}
+	}
+	return result, nil
 }
 
 func (r *Raft) LeadershipTransfer() error {
@@ -89,10 +120,14 @@ func (r *Raft) IsBootstrapped() bool {
 }
 
 func (r *Raft) Update(request []byte) (any, error) {
+	t1 := time.Now()
 	f := r.hraft.Apply(request, r.updateTimeout)
-	if err := f.Error(); err != nil {
+	err := f.Error()
+	applyDuration.WithLabelValues(r.applicationName, r.shardId, r.replicaId).Observe(time.Since(t1).Seconds())
+	if err != nil {
 		// TODO retry
 		// TODO what if FSM panics?
+		applyErrorsTotal.WithLabelValues(r.applicationName, r.shardId, r.replicaId, applyErrorReason(err)).Inc()
 		return nil, err
 	}
 
@@ -105,8 +140,84 @@ func (r *Raft) Close() error {
 	return f.Error()
 }
 
-func (r *Raft) GetRaftStats() map[string]string {
-	return r.hraft.Stats()
+// RaftStats is a library-agnostic snapshot of a replica's Raft state, used for
+// health and monitoring. Most fields are standard Raft concepts (term, log and
+// commit/apply indexes, snapshot index/term, membership). FSMPending and
+// LastContact are not part of the Raft paper but are generic operational
+// signals any implementation can supply.
+type RaftStats struct {
+	// State is the current role of this replica in its Raft group.
+	State RaftState
+	// Term is the current Raft term.
+	Term uint64
+	// LastLogIndex and LastLogTerm describe the last entry in the local log.
+	LastLogIndex uint64
+	LastLogTerm  uint64
+	// CommitIndex is the highest log index known to be committed.
+	CommitIndex uint64
+	// AppliedIndex is the highest log index applied to the FSM.
+	AppliedIndex uint64
+	// FSMPending is the number of committed entries queued to apply to the FSM.
+	FSMPending uint64
+	// LastSnapshotIndex and LastSnapshotTerm describe the most recent snapshot.
+	LastSnapshotIndex uint64
+	LastSnapshotTerm  uint64
+	// NumPeers is the number of other voting members in the group.
+	NumPeers int
+	// LastContact is the time since this replica last heard from the leader. It
+	// is 0 on the leader itself, and -1 when there has been no contact yet.
+	LastContact time.Duration
+}
+
+func (r *Raft) GetRaftStats() RaftStats {
+	s := r.hraft.Stats()
+	return RaftStats{
+		State:             r.GetRaftState(),
+		Term:              statsUint64(s, "term"),
+		LastLogIndex:      statsUint64(s, "last_log_index"),
+		LastLogTerm:       statsUint64(s, "last_log_term"),
+		CommitIndex:       statsUint64(s, "commit_index"),
+		AppliedIndex:      statsUint64(s, "applied_index"),
+		FSMPending:        statsUint64(s, "fsm_pending"),
+		LastSnapshotIndex: statsUint64(s, "last_snapshot_index"),
+		LastSnapshotTerm:  statsUint64(s, "last_snapshot_term"),
+		NumPeers:          statsInt(s, "num_peers"),
+		LastContact:       parseLastContact(s["last_contact"]),
+	}
+}
+
+func statsUint64(m map[string]string, key string) uint64 {
+	v, err := strconv.ParseUint(m[key], 10, 64)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+func statsInt(m map[string]string, key string) int {
+	v, err := strconv.Atoi(m[key])
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+// parseLastContact interprets the "last_contact" stat. The underlying value is
+// "never" (no contact yet), "0" (this replica is the leader), or a duration
+// string. They map to -1, 0, and the parsed duration respectively.
+func parseLastContact(s string) time.Duration {
+	switch s {
+	case "never":
+		return -1
+	case "", "0":
+		return 0
+	default:
+		d, err := time.ParseDuration(s)
+		if err != nil {
+			return -1
+		}
+		return d
+	}
 }
 
 func (r *Raft) GetRaftState() RaftState {
@@ -161,9 +272,26 @@ func (r *Raft) WaitForNewLeader(ctx context.Context, excludeId string) (string, 
 	}
 }
 
-func (r *Raft) Bootstrap(servers []hraft.Server) error {
+// RaftServer identifies a voting member of a Raft group. It is a
+// library-agnostic bootstrap descriptor: ReplicaId is the member's id and
+// NodeId is the address the transport resolves to a network endpoint.
+type RaftServer struct {
+	ReplicaId string
+	NodeId    string
+}
+
+func (r *Raft) Bootstrap(servers []RaftServer) error {
+	hservers := make([]hraft.Server, len(servers))
+	for i, s := range servers {
+		hservers[i] = hraft.Server{
+			Suffrage: hraft.Voter,
+			ID:       hraft.ServerID(s.ReplicaId),
+			Address:  hraft.ServerAddress(s.NodeId),
+		}
+	}
+
 	cfg := hraft.Configuration{
-		Servers: servers,
+		Servers: hservers,
 	}
 	f := r.hraft.BootstrapCluster(cfg)
 	if err := f.Error(); err != nil && err != hraft.ErrCantBootstrap {
@@ -255,6 +383,7 @@ func (r *Raft) handleInstallSnapshotInitMessage(msg *raftpb.InstallSnapshotInitR
 		pipeWriter:   pw,
 		expectedSize: msg.Size,
 		resultCh:     make(chan snapshotSessionResult, 1),
+		startTime:    time.Now(),
 	}
 
 	r.snapshotSessionMu.Lock()
@@ -309,6 +438,7 @@ func (r *Raft) finishSnapshotSession(session *snapshotSession) (*transport.RaftM
 	r.snapshotSessionMu.Unlock()
 
 	result := <-session.resultCh
+	RecordSnapshot(r.applicationName, r.shardId, r.replicaId, "install", time.Since(session.startTime), session.bytesReceived, result.err)
 	if result.err != nil {
 		return nil, result.err
 	}
@@ -393,7 +523,7 @@ func (r *Raft) installSnapshot(request *hraft.InstallSnapshotRequest, data io.Re
 	return resp.Response.(*hraft.InstallSnapshotResponse), nil
 }
 
-func NewRaft(baseDir string, myAddress string, replicaId string, core AppCore, trans transport.Transport, raftStore *store.BadgerStore, restoreSnapshotOnStart bool, updateTimeout time.Duration) *Raft {
+func NewRaft(baseDir string, myAddress string, applicationName string, shardId string, replicaId string, core AppCore, trans transport.Transport, raftStore *store.BadgerStore, restoreSnapshotOnStart bool, updateTimeout time.Duration) *Raft {
 	cfg := hraft.DefaultConfig()
 	cfg.LocalID = hraft.ServerID(replicaId)
 	cfg.Logger = hclog.New(&hclog.LoggerOptions{
@@ -430,10 +560,13 @@ func NewRaft(baseDir string, myAddress string, replicaId string, core AppCore, t
 	}
 
 	return &Raft{
-		hraft:         r,
-		hstore:        hstore,
-		hfss:          hfss,
-		transport:     transport,
-		updateTimeout: updateTimeout,
+		hraft:           r,
+		hstore:          hstore,
+		hfss:            hfss,
+		transport:       transport,
+		applicationName: applicationName,
+		shardId:         shardId,
+		replicaId:       replicaId,
+		updateTimeout:   updateTimeout,
 	}
 }

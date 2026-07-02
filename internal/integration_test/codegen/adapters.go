@@ -13,18 +13,27 @@ import (
 )
 
 var (
-	monsteraCoreMethodDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Help:                            "Monstera core method duration",
-		Name:                            "monstera_core_method_duration_seconds",
+	rpcMethodDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Help:                            "Monstera RPC method duration",
+		Name:                            "monstera_rpc_method_duration_seconds",
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: time.Hour,
 	}, []string{"core", "method", "shard", "replica"})
-	monsteraCoreMethodCount = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Help: "Monstera core method count",
-		Name: "monstera_core_method_count",
+	rpcMethodsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Help: "Number of Monstera RPC method calls",
+		Name: "monstera_rpc_methods_total",
 	}, []string{"core", "method", "shard", "replica"})
 )
+
+// RegisterMetrics registers the RPC metrics emitted by the generated core
+// adapters with the given registerer. Call once at startup, e.g.
+// RegisterMetrics(prometheus.DefaultRegisterer). It panics if a metric is
+// already registered.
+func RegisterMetrics(registerer prometheus.Registerer) {
+	registerer.MustRegister(rpcMethodDuration)
+	registerer.MustRegister(rpcMethodsTotal)
+}
 
 type MyCoreCoreAdapter struct {
 	shardId   string
@@ -44,16 +53,10 @@ func NewMyCoreCoreAdapter(shardId string, replicaId string, myCoreCore MyCoreCor
 }
 
 func (a *MyCoreCoreAdapter) Snapshot() monstera.ApplicationCoreSnapshot {
-	defer measureSince(monsteraCoreMethodDuration.WithLabelValues("MyCore", "Snapshot", a.shardId, a.replicaId), time.Now())
-	monsteraCoreMethodCount.WithLabelValues("MyCore", "Snapshot", a.shardId, a.replicaId).Inc()
-
 	return a.myCoreCore.Snapshot()
 }
 
 func (a *MyCoreCoreAdapter) Restore(r io.ReadCloser) error {
-	defer measureSince(monsteraCoreMethodDuration.WithLabelValues("MyCore", "Restore", a.shardId, a.replicaId), time.Now())
-	monsteraCoreMethodCount.WithLabelValues("MyCore", "Restore", a.shardId, a.replicaId).Inc()
-
 	return a.myCoreCore.Restore(r)
 }
 
@@ -62,6 +65,8 @@ func (a *MyCoreCoreAdapter) Close() {
 }
 
 func (a *MyCoreCoreAdapter) Update(rpcReqBytes []byte) (*monstera.UpdateResponse, error) {
+	t1 := time.Now()
+
 	resp := &monstera.UpdateResponse{}
 	rpcResp := &mrpc.Response{}
 	rpcReq := &mrpc.Request{}
@@ -71,10 +76,11 @@ func (a *MyCoreCoreAdapter) Update(rpcReqBytes []byte) (*monstera.UpdateResponse
 		return nil, err
 	}
 
-	t1 := time.Now()
-
 	switch rpcReq.MethodNumber {
 	case 1:
+		rpcMethodsTotal.WithLabelValues("MyCore", "Update1", a.shardId, a.replicaId).Inc()
+		defer measureSince(rpcMethodDuration.WithLabelValues("MyCore", "Update1", a.shardId, a.replicaId), t1)
+
 		methodReq := types.Update1Request{}
 		err := methodReq.UnmarshalBinary(rpcReq.Data)
 		if err != nil {
@@ -87,8 +93,6 @@ func (a *MyCoreCoreAdapter) Update(rpcReqBytes []byte) (*monstera.UpdateResponse
 		if err != nil {
 			return nil, err
 		}
-		measureSince(monsteraCoreMethodDuration.WithLabelValues("MyCore", "Update1", a.shardId, a.replicaId), t1)
-		monsteraCoreMethodCount.WithLabelValues("MyCore", "Update1", a.shardId, a.replicaId).Inc()
 		rpcResp.Error = methodResp.ApplicationError
 		methodRespBytes, err := methodResp.Payload.MarshalBinary()
 		if err != nil {
@@ -96,6 +100,9 @@ func (a *MyCoreCoreAdapter) Update(rpcReqBytes []byte) (*monstera.UpdateResponse
 		}
 		rpcResp.Data = methodRespBytes
 	case 2:
+		rpcMethodsTotal.WithLabelValues("MyCore", "Update2", a.shardId, a.replicaId).Inc()
+		defer measureSince(rpcMethodDuration.WithLabelValues("MyCore", "Update2", a.shardId, a.replicaId), t1)
+
 		methodReq := types.Update2Request{}
 		err := methodReq.UnmarshalBinary(rpcReq.Data)
 		if err != nil {
@@ -108,8 +115,6 @@ func (a *MyCoreCoreAdapter) Update(rpcReqBytes []byte) (*monstera.UpdateResponse
 		if err != nil {
 			return nil, err
 		}
-		measureSince(monsteraCoreMethodDuration.WithLabelValues("MyCore", "Update2", a.shardId, a.replicaId), t1)
-		monsteraCoreMethodCount.WithLabelValues("MyCore", "Update2", a.shardId, a.replicaId).Inc()
 		rpcResp.Error = methodResp.ApplicationError
 		methodRespBytes, err := methodResp.Payload.MarshalBinary()
 		if err != nil {
@@ -130,6 +135,8 @@ func (a *MyCoreCoreAdapter) Update(rpcReqBytes []byte) (*monstera.UpdateResponse
 }
 
 func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, error) {
+	t1 := time.Now()
+
 	resp := &monstera.ReadResponse{}
 	rpcResp := &mrpc.Response{}
 	rpcReq := &mrpc.Request{}
@@ -139,10 +146,11 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 		return nil, err
 	}
 
-	t1 := time.Now()
-
 	switch rpcReq.MethodNumber {
 	case 1:
+		rpcMethodsTotal.WithLabelValues("MyCore", "Read1", a.shardId, a.replicaId).Inc()
+		defer measureSince(rpcMethodDuration.WithLabelValues("MyCore", "Read1", a.shardId, a.replicaId), t1)
+
 		methodReq := types.Read1Request{}
 		err := methodReq.UnmarshalBinary(rpcReq.Data)
 		if err != nil {
@@ -155,8 +163,6 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 		if err != nil {
 			return nil, err
 		}
-		measureSince(monsteraCoreMethodDuration.WithLabelValues("MyCore", "Read1", a.shardId, a.replicaId), t1)
-		monsteraCoreMethodCount.WithLabelValues("MyCore", "Read1", a.shardId, a.replicaId).Inc()
 		rpcResp.Error = methodResp.ApplicationError
 		methodRespBytes, err := methodResp.Payload.MarshalBinary()
 		if err != nil {
@@ -164,6 +170,9 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 		}
 		rpcResp.Data = methodRespBytes
 	case 2:
+		rpcMethodsTotal.WithLabelValues("MyCore", "Read2", a.shardId, a.replicaId).Inc()
+		defer measureSince(rpcMethodDuration.WithLabelValues("MyCore", "Read2", a.shardId, a.replicaId), t1)
+
 		methodReq := types.Read2Request{}
 		err := methodReq.UnmarshalBinary(rpcReq.Data)
 		if err != nil {
@@ -176,8 +185,6 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 		if err != nil {
 			return nil, err
 		}
-		measureSince(monsteraCoreMethodDuration.WithLabelValues("MyCore", "Read2", a.shardId, a.replicaId), t1)
-		monsteraCoreMethodCount.WithLabelValues("MyCore", "Read2", a.shardId, a.replicaId).Inc()
 		rpcResp.Error = methodResp.ApplicationError
 		methodRespBytes, err := methodResp.Payload.MarshalBinary()
 		if err != nil {
@@ -185,6 +192,9 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 		}
 		rpcResp.Data = methodRespBytes
 	case 3:
+		rpcMethodsTotal.WithLabelValues("MyCore", "Read3", a.shardId, a.replicaId).Inc()
+		defer measureSince(rpcMethodDuration.WithLabelValues("MyCore", "Read3", a.shardId, a.replicaId), t1)
+
 		methodReq := types.Read3Request{}
 		err := methodReq.UnmarshalBinary(rpcReq.Data)
 		if err != nil {
@@ -197,8 +207,6 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 		if err != nil {
 			return nil, err
 		}
-		measureSince(monsteraCoreMethodDuration.WithLabelValues("MyCore", "Read3", a.shardId, a.replicaId), t1)
-		monsteraCoreMethodCount.WithLabelValues("MyCore", "Read3", a.shardId, a.replicaId).Inc()
 		rpcResp.Error = methodResp.ApplicationError
 		methodRespBytes, err := methodResp.Payload.MarshalBinary()
 		if err != nil {

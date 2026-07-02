@@ -89,8 +89,13 @@ func (t *GrpcTransport) HealthCheck(ctx context.Context, nodeId string) ([]*tran
 
 	states := make([]*transport.ReplicaState, len(resp.Replicas))
 	for i, r := range resp.Replicas {
+		var protoState monsterapb.RaftState
+		if r.RaftStats != nil {
+			protoState = r.RaftStats.State
+		}
+
 		var raftState transport.RaftState
-		switch s := r.RaftState; s {
+		switch s := protoState; s {
 		case monsterapb.RaftState_RAFT_STATE_FOLLOWER:
 			raftState = transport.RaftStateFollower
 		case monsterapb.RaftState_RAFT_STATE_CANDIDATE:

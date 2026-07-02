@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	hraft "github.com/hashicorp/raft"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/evrblk/monstera/cluster"
+	"github.com/evrblk/monstera/internal/raft"
 	"github.com/evrblk/monstera/store"
 	"github.com/evrblk/monstera/transport"
 )
@@ -550,17 +550,11 @@ func (n *Node) bootstrapShards() error {
 				// The bootstrap configuration is the full set of replicas in the shard.
 				// The Raft server address is the node id; the transport resolves it to
 				// an actual network address via the cluster config.
-				servers := make([]hraft.Server, len(s.Replicas))
+				servers := make([]raft.RaftServer, len(s.Replicas))
 				for i, r := range s.Replicas {
-					for _, nd := range clusterConfig.Nodes {
-						if nd.Id == r.NodeId {
-							servers[i] = hraft.Server{
-								Suffrage: hraft.Voter,
-								ID:       hraft.ServerID(r.Id),
-								Address:  hraft.ServerAddress(nd.Id),
-							}
-							break
-						}
+					servers[i] = raft.RaftServer{
+						ReplicaId: r.Id,
+						NodeId:    r.NodeId,
 					}
 				}
 				r.Bootstrap(servers)

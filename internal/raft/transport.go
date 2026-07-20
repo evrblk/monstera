@@ -28,14 +28,14 @@ const (
 )
 
 // RaftTransport implements [hraft.Transport].
-// All outbound Raft RPCs are dispatched through Monstera [transport.Transport].
+// All outbound Raft RPCs are dispatched through Monstera [transport.DataPlane].
 type RaftTransport struct {
 	rpcChan         chan hraft.RPC
 	localAddress    hraft.ServerAddress
 	heartbeatFunc   func(hraft.RPC)
 	heartbeatFuncMu sync.Mutex
 
-	trans transport.Transport
+	trans transport.DataPlane
 }
 
 var _ hraft.Transport = &RaftTransport{}
@@ -216,7 +216,7 @@ type raftPipelineAPI struct {
 	doneCh          chan hraft.AppendFuture
 	targetReplicaId string
 	targetNodeId    string
-	trans           transport.Transport
+	trans           transport.DataPlane
 }
 
 // AppendEntries is used to add another request to the pipeline.
@@ -340,7 +340,7 @@ func (r *RaftTransport) Heartbeat(rpc hraft.RPC) {
 	}
 }
 
-func NewRaftTransport(localAddress string, trans transport.Transport) *RaftTransport {
+func NewRaftTransport(localAddress string, trans transport.DataPlane) *RaftTransport {
 	return &RaftTransport{
 		rpcChan:      make(chan hraft.RPC),
 		localAddress: hraft.ServerAddress(localAddress),

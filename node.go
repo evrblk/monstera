@@ -2,6 +2,7 @@ package monstera
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -51,12 +52,17 @@ type Node struct {
 	smu       sync.Mutex
 	nodeState NodeState
 
-	trans transport.Transport
+	trans transport.DataPlane
 
 	// raftStore is a persistent store shared by all replicas to store Raft log entries.
 	raftStore *store.BadgerStore
 
 	nodeConfig NodeConfig
+
+	// reconcilerCancel stops the background Raft-membership reconcile loop;
+	// reconcilerDone is closed when that loop has exited.
+	reconcilerCancel context.CancelFunc
+	reconcilerDone   chan struct{}
 
 	logger *log.Logger
 }
@@ -67,6 +73,9 @@ type NodeState = int
 const (
 	// INITIAL is the state before Start finishes; the node does not serve yet.
 	INITIAL NodeState = iota
+	// UNPROVISIONED means the node started without a cluster config: it serves
+	// only Bootstrap (and read-only status calls), awaiting provisioning.
+	UNPROVISIONED
 	// READY means replicas are loaded and the node serves reads and updates.
 	READY
 	// STOPPED means the node has been shut down and rejects further requests.
@@ -90,6 +99,12 @@ type NodeConfig struct {
 	// environment and is not recommended for production use, since in-memory Raft
 	// store is not durable.
 	UseInMemoryRaftStore bool
+
+	// MembershipReconcileInterval is how often a node re-checks, for each shard it
+	// leads, that the Raft group membership matches the cluster config (adding or
+	// removing voters as needed). The reconcile is idempotent and cheap when there
+	// is nothing to do.
+	MembershipReconcileInterval time.Duration
 }
 
 var DefaultMonsteraNodeConfig = NodeConfig{
@@ -98,6 +113,8 @@ var DefaultMonsteraNodeConfig = NodeConfig{
 	MaxUpdateTimeout: 30 * time.Second,
 
 	UseInMemoryRaftStore: false,
+
+	MembershipReconcileInterval: 1 * time.Second,
 }
 
 // Stop shuts the node down: it stops serving, closes the transport and every
@@ -115,12 +132,22 @@ func (n *Node) Stop() {
 	n.logger.Printf("Stopping Monstera Node")
 
 	n.nodeState = STOPPED
+	n.setReadyMetric(false)
+
+	// Stop the background reconcile loop before tearing down replicas so it never
+	// touches a replica that is being closed.
+	if n.reconcilerCancel != nil {
+		n.reconcilerCancel()
+		<-n.reconcilerDone
+	}
 
 	n.trans.Close()
 
+	n.mu.Lock()
 	for _, b := range n.replicas {
 		b.Close()
 	}
+	n.mu.Unlock()
 
 	n.logger.Printf("Monstera Node stopped")
 
@@ -137,26 +164,147 @@ func (n *Node) Start() {
 	// Populate replicas from clusterConfig under mu so the pair stays consistent
 	// even if a config reload races the initial load. There is no reader
 	// contention here: reads/updates bail out on the non-READY state first.
+	// mu is released explicitly (not deferred) before starting the reconciler.
 	n.mu.Lock()
-	defer n.mu.Unlock()
+
+	if n.clusterConfig == nil {
+		// No config yet: come up UNPROVISIONED and serve only Bootstrap.
+		n.mu.Unlock()
+		n.nodeState = UNPROVISIONED
+		n.logger.Printf("Node is unprovisioned; awaiting Bootstrap")
+		return
+	}
 
 	n.logger.Printf("Starting Monstera Node. Config version: %d", n.clusterConfig.Version)
 
 	n.logger.Printf("Loading cores...")
-	err := n.loadCores()
-	if err != nil {
+	if err := n.reconcileReplicasLocked(); err != nil {
+		n.mu.Unlock()
 		panic(err)
 	}
 
-	err = n.bootstrapShards()
-	if err != nil {
+	if err := n.bootstrapShards(); err != nil {
+		n.mu.Unlock()
 		panic(err)
 	}
-
-	n.nodeState = READY
 
 	n.logger.Printf("Node loaded %d replicas", len(n.replicas))
+	config := n.clusterConfig
+	n.mu.Unlock()
+
+	// Feed the transport the config we came up with, so it can resolve peer
+	// addresses for Raft traffic and request forwarding. The transport is built
+	// without a config; this is the provisioned-on-restart counterpart to the
+	// pushes in Bootstrap and UpdateClusterConfig.
+	n.refreshTransportConfig(config)
+
+	n.nodeState = READY
+	n.setReadyMetric(true)
+	n.setConfigVersionMetric(config.Version)
 	n.logger.Printf("Node is ready")
+
+	// Continuously converge Raft membership to the config for shards this node
+	// leads (also picks up config changes and leadership handoffs over time).
+	n.startReconciler()
+}
+
+// setReadyMetric publishes the monstera_node_ready gauge for this node (1 when
+// serving, 0 otherwise). It is a no-op until the node has an id — a
+// never-bootstrapped node has none to label yet.
+func (n *Node) setReadyMetric(ready bool) {
+	if n.nodeId == "" {
+		return
+	}
+	v := 0.0
+	if ready {
+		v = 1.0
+	}
+	nodeReady.WithLabelValues(n.nodeId).Set(v)
+}
+
+// setConfigVersionMetric publishes the monstera_config_version_number gauge for
+// this node. Like setReadyMetric it is a no-op until the node has an id.
+func (n *Node) setConfigVersionMetric(version int64) {
+	if n.nodeId == "" {
+		return
+	}
+	configVersion.WithLabelValues(n.nodeId).Set(float64(version))
+}
+
+// Bootstrap provisions an UNPROVISIONED node: it assigns the node its id, installs
+// the cluster config, creates the node's replicas, and transitions to READY. The
+// id is assigned here (this is the only place a node's identity is set) and must
+// name a node present in the config. Subsequent config changes go through
+// UpdateClusterConfig.
+//
+// Bootstrap is idempotent with respect to identity: calling it on a node already
+// provisioned as the same nodeId is a no-op success (so it is safe for an operator
+// to bootstrap manually and for a control action to retry). It does not change the
+// applied config in that case — the node may already be at a newer version. A
+// bootstrap for a different nodeId is rejected: identity is immutable once set.
+func (n *Node) Bootstrap(ctx context.Context, nodeId string, config *cluster.Config) error {
+	n.smu.Lock()
+	defer n.smu.Unlock()
+
+	if n.nodeState != UNPROVISIONED {
+		if nodeId != "" && nodeId != n.nodeId {
+			return fmt.Errorf("node is already provisioned as %q, cannot bootstrap as %q", n.nodeId, nodeId)
+		}
+		n.logger.Printf("Bootstrap is a no-op: node already provisioned as %q", n.nodeId)
+		return nil
+	}
+
+	if nodeId == "" {
+		return fmt.Errorf("bootstrap requires a node id")
+	}
+	if _, err := config.GetNode(nodeId); err != nil {
+		return fmt.Errorf("node %s not found in bootstrap config", nodeId)
+	}
+	for _, a := range config.GetApplications() {
+		if _, ok := n.coreDescriptors[a.Implementation]; !ok {
+			return fmt.Errorf("no core implementation registered for %s", a.Implementation)
+		}
+	}
+
+	// Persist the config, then the identity (identity is the commit marker: a
+	// crash between the two leaves the node unprovisioned and re-bootstrappable).
+	if err := cluster.WriteConfigToFile(config, clusterConfigPath(n.baseDir)); err != nil {
+		return fmt.Errorf("persisting cluster config: %w", err)
+	}
+	if err := writeNodeIdentity(n.baseDir, nodeId); err != nil {
+		return fmt.Errorf("persisting node identity: %w", err)
+	}
+
+	n.mu.Lock()
+	n.nodeId = nodeId
+	// Rebuild the logger now that the node has an identity, so subsequent log lines
+	// (reconcile, membership, serving) carry the node id prefix instead of the empty
+	// "[]" a freshly-started unprovisioned node had. Safe to reassign here: the node
+	// is not serving yet and nothing else reads n.logger while UNPROVISIONED.
+	n.logger = log.New(os.Stderr, fmt.Sprintf("[%s] ", nodeId), log.LstdFlags)
+	n.clusterConfig = config
+	if err := n.reconcileReplicasLocked(); err != nil {
+		n.mu.Unlock()
+		return err
+	}
+	if err := n.bootstrapShards(); err != nil {
+		n.mu.Unlock()
+		return err
+	}
+	n.mu.Unlock()
+
+	// The transport was built before this node had a config; give it the config
+	// now so it can reach peers.
+	n.refreshTransportConfig(config)
+
+	n.nodeState = READY
+	n.setReadyMetric(true)
+	n.setConfigVersionMetric(config.Version)
+	n.logger.Printf("Node bootstrapped at config version %d; ready", config.Version)
+
+	n.startReconciler()
+
+	return nil
 }
 
 // Read serves a read for the shard that owns req. When follower reads are allowed
@@ -403,57 +551,87 @@ func (n *Node) NodeId() string {
 	return n.nodeId
 }
 
-// UpdateClusterConfig installs a new cluster config. This is the only place
-// replicas and clusterConfig change after startup; the swap happens under mu so
-// readers always observe a config that matches the replica map.
-//
-// TODO: it does not yet create or close replicas for shards added or removed by
-// the new config (replicasToAdd/replicasToRemove are computed but not applied),
-// nor evict pooled connections for nodes that were removed.
+// GetClusterConfig returns the cluster config this node is currently running
+// with. Callers must treat it as read-only (it is the live pointer, swapped
+// wholesale by UpdateClusterConfig). Useful for inspecting the applied config
+// version on each node.
+func (n *Node) GetClusterConfig() *cluster.Config {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	return n.clusterConfig
+}
+
+// UpdateClusterConfig installs a new cluster config: it persists the config,
+// swaps it in, and reconciles this node's replicas and Raft group membership to
+// match. This is the only place replicas and clusterConfig change after startup;
+// the persist + swap + replica reconcile happen under mu so readers always
+// observe a config that matches the replica map. It also refreshes the
+// transport's view of the cluster so it can dial added nodes and drop
+// connections to removed ones.
 func (n *Node) UpdateClusterConfig(ctx context.Context, newConfig *cluster.Config) error {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-
-	// TODO: remove connections from pool when nodes are removed
-
-	replicasToAdd := make(map[string]bool)
-	replicasToRemove := make(map[string]bool)
-
-	for _, nr := range n.replicas {
-		replicasToRemove[nr.replicaId] = true
-		for _, a := range newConfig.Applications {
-			for _, s := range a.Shards {
-				for _, r := range s.Replicas {
-					if r.NodeId == n.nodeId && r.Id == nr.replicaId {
-						delete(replicasToRemove, nr.replicaId)
-						goto found
-					}
-				}
-			}
-		}
-	found:
+	if n.NodeState() != READY {
+		return errNodeNotReady
 	}
 
-	for _, a := range newConfig.Applications {
-		for _, s := range a.Shards {
-			for _, r := range s.Replicas {
-				if r.NodeId == n.nodeId {
-					_, ok := n.replicas[r.Id]
-					if !ok {
-						replicasToAdd[r.Id] = true
-					}
-				}
-			}
-		}
+	// The new config must be internally valid on its own.
+	if err := newConfig.Validate(); err != nil {
+		return fmt.Errorf("invalid cluster config: %w", err)
+	}
+
+	n.mu.Lock()
+
+	// The transition from the currently applied config to the new one must be
+	// safe (no shard removal, no replica reassignment, monotonic version, ...).
+	// This is checked under mu against the live config so concurrent updates
+	// can't race past each other.
+	if err := cluster.ValidateTransition(n.clusterConfig, newConfig); err != nil {
+		n.mu.Unlock()
+		return fmt.Errorf("invalid cluster config transition: %w", err)
+	}
+
+	// Persist the new config durably before acknowledging the swap, so a restart
+	// resumes at the applied version rather than a stale seed. The write is atomic
+	// (temp + fsync + rename), so a crash never leaves a torn config.
+	if err := cluster.WriteConfigToFile(newConfig, clusterConfigPath(n.baseDir)); err != nil {
+		n.mu.Unlock()
+		return fmt.Errorf("persisting cluster config: %w", err)
 	}
 
 	// replicas and clusterConfig must be updated together under mu so they stay a
-	// matched pair. The replica add/remove implied by replicasToAdd/replicasToRemove
-	// is not done yet (see TODO), but the config swap already holds the lock.
+	// matched pair.
 	n.clusterConfig = newConfig
-	// TODO implement config loading
+
+	if err := n.reconcileReplicasLocked(); err != nil {
+		n.mu.Unlock()
+		return err
+	}
+	if err := n.bootstrapShards(); err != nil {
+		n.mu.Unlock()
+		return err
+	}
+	n.mu.Unlock()
+
+	// Refresh the transport's view of the cluster so it can dial newly added nodes
+	// (and drop connections to removed ones) before membership changes trigger
+	// replication to them.
+	n.refreshTransportConfig(newConfig)
+
+	// Apply any Raft membership changes for shards this node leads (add/remove
+	// voters). Runs without n.mu since it makes replicated Raft calls.
+	n.reconcileRaftMembership()
+
+	n.setConfigVersionMetric(newConfig.Version)
 
 	return nil
+}
+
+// refreshTransportConfig tells the transport about the current cluster config, if
+// the transport resolves node addresses from it (see transport.ClusterConfigConsumer).
+func (n *Node) refreshTransportConfig(config *cluster.Config) {
+	if c, ok := n.trans.(transport.ClusterConfigConsumer); ok {
+		c.SetClusterConfig(config)
+	}
 }
 
 // getReplica looks up a replica hosted on this node by its replica id. It is used
@@ -507,43 +685,165 @@ func (n *Node) replicaForShard(applicationName string, shardId string, shardKey 
 	return nil, nil, fmt.Errorf("no replica for shard %s (application %s) found on this node %s", targetShardId, applicationName, n.nodeId)
 }
 
-// loadCores populates the replicas map from clusterConfig. It must be called
-// with n.mu held (see Start).
-func (n *Node) loadCores() error {
+// reconcileReplicasLocked brings the replica map into agreement with the cluster
+// config: it creates replicas newly assigned to this node and closes+deletes
+// replicas no longer assigned here. It is idempotent (safe to run on Start and on
+// every config change) and must be called with n.mu held.
+//
+// New replicas are NOT bootstrapped here — an added replica joins an existing
+// Raft group when that group's leader adds it as a voter (see
+// reconcileRaftMembership); brand-new shards are bootstrapped by bootstrapShards.
+func (n *Node) reconcileReplicasLocked() error {
 	clusterConfig := n.clusterConfig
 
-	found := false
-	for _, nd := range clusterConfig.Nodes {
-		if nd.Id == n.nodeId {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return fmt.Errorf("node not found in cluster config")
+	if _, err := clusterConfig.GetNode(n.nodeId); err != nil {
+		return fmt.Errorf("node %s not found in cluster config", n.nodeId)
 	}
 
+	// Desired replicas assigned to this node.
+	type placement struct {
+		app     *cluster.Application
+		shard   *cluster.Shard
+		replica *cluster.Replica
+	}
+	desired := make(map[string]placement)
 	for _, a := range clusterConfig.Applications {
 		for _, s := range a.Shards {
 			for _, r := range s.Replicas {
 				if r.NodeId == n.nodeId {
-					// Find core descriptor
-					coreDescriptor, ok := n.coreDescriptors[a.Implementation]
-					if !ok {
-						return fmt.Errorf("no core registered for %s", a.Implementation)
-					}
-
-					// Create replica
-					applicationCore := coreDescriptor.CoreFactoryFunc(s, r)
-					replica := newReplica(n.baseDir, a.Name, s.Id, r.Id, n.nodeId, applicationCore, n.trans, n.raftStore, coreDescriptor.RestoreSnapshotOnStart, n.nodeConfig.MaxUpdateTimeout)
-
-					n.replicas[r.Id] = replica
+					desired[r.Id] = placement{app: a, shard: s, replica: r}
 				}
 			}
 		}
 	}
 
+	// Create replicas newly assigned to this node.
+	for id, p := range desired {
+		if _, ok := n.replicas[id]; ok {
+			continue
+		}
+		coreDescriptor, ok := n.coreDescriptors[p.app.Implementation]
+		if !ok {
+			return fmt.Errorf("no core registered for %s", p.app.Implementation)
+		}
+		applicationCore := coreDescriptor.CoreFactoryFunc(p.shard, p.replica)
+		rep := newReplica(n.baseDir, p.app.Name, p.shard.Id, id, n.nodeId, applicationCore, n.trans, n.raftStore, coreDescriptor.RestoreSnapshotOnStart, n.nodeConfig.MaxUpdateTimeout)
+		n.replicas[id] = rep
+		n.logger.Printf("Created replica %s (shard %s)", id, p.shard.Id)
+	}
+
+	// Close and delete replicas no longer assigned to this node. Deleting the
+	// durable data is safe here (delete-last): the replica is gone from the
+	// desired config, and replica ids are never reused, so a later recreate would
+	// start fresh and catch up rather than read stale bytes.
+	for id, rep := range n.replicas {
+		if _, ok := desired[id]; ok {
+			continue
+		}
+		n.logger.Printf("Removing replica %s (shard %s)", id, rep.shardId)
+		rep.Close()
+		delete(n.replicas, id)
+		if err := n.raftStore.DropPrefix([]byte(id)); err != nil {
+			n.logger.Printf("error dropping raft data for replica %s: %v", id, err)
+		}
+		if err := os.RemoveAll(filepath.Join(n.baseDir, "snapshots", id)); err != nil {
+			n.logger.Printf("error removing snapshots for replica %s: %v", id, err)
+		}
+	}
+
 	return nil
+}
+
+// startReconciler launches the background loop that periodically converges Raft
+// group membership to the cluster config. Stop cancels it.
+func (n *Node) startReconciler() {
+	ctx, cancel := context.WithCancel(context.Background())
+	n.reconcilerCancel = cancel
+	n.reconcilerDone = make(chan struct{})
+
+	go func() {
+		defer close(n.reconcilerDone)
+
+		ticker := time.NewTicker(n.nodeConfig.MembershipReconcileInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				n.reconcileRaftMembership()
+			}
+		}
+	}()
+}
+
+// reconcileRaftMembership brings each shard this node currently LEADS into
+// agreement with the desired cluster config: it adds voters that the config lists
+// but the Raft group is missing, and removes servers the group has but the config
+// no longer lists. Only the leader can change membership, so this is a no-op on
+// followers; it is idempotent and safe to call repeatedly and from every node.
+//
+// The slow Raft membership RPCs run without holding n.mu: leaders and their
+// desired member sets are snapshotted under a brief read lock first.
+func (n *Node) reconcileRaftMembership() {
+	type task struct {
+		r       *replica
+		desired map[string]string // replicaId -> nodeId
+	}
+
+	n.mu.RLock()
+	var tasks []task
+	for _, r := range n.replicas {
+		if !r.IsLeader() {
+			continue
+		}
+		s, err := n.clusterConfig.GetShard(r.shardId)
+		if err != nil {
+			continue
+		}
+		desired := make(map[string]string, len(s.Replicas))
+		for _, rep := range s.Replicas {
+			desired[rep.Id] = rep.NodeId
+		}
+		tasks = append(tasks, task{r: r, desired: desired})
+	}
+	n.mu.RUnlock()
+
+	for _, t := range tasks {
+		actual, err := t.r.GetConfiguration()
+		if err != nil {
+			continue
+		}
+
+		actualSet := make(map[string]bool, len(actual))
+		for _, s := range actual {
+			actualSet[s.ReplicaId] = true
+		}
+
+		// Add voters that should be members but aren't yet.
+		for id, nodeId := range t.desired {
+			if !actualSet[id] {
+				if err := t.r.AddVoter(id, nodeId); err != nil {
+					n.logger.Printf("reconcile: AddVoter(%s) on %s: %v", id, t.r.replicaId, err)
+				}
+			}
+		}
+
+		// Remove servers no longer in the config. Never remove self here — a leader
+		// is handed off (LeadershipTransfer) before it is removed.
+		for _, s := range actual {
+			if _, ok := t.desired[s.ReplicaId]; ok {
+				continue
+			}
+			if s.ReplicaId == t.r.replicaId {
+				continue
+			}
+			if err := t.r.RemoveServer(s.ReplicaId); err != nil {
+				n.logger.Printf("reconcile: RemoveServer(%s) on %s: %v", s.ReplicaId, t.r.replicaId, err)
+			}
+		}
+	}
 }
 
 // bootstrapShards bootstraps the Raft groups for replicas owned by this node. It
@@ -591,12 +891,14 @@ func isUnavailableError(err error) bool {
 	return false
 }
 
-// NewNode creates a Node for nodeId from the given cluster config and the core
-// implementations registered in coreDescriptors. It opens the shared Raft store
-// (durable on disk, or in-memory when NodeConfig.UseInMemoryRaftStore is set) and
-// verifies that every application in the config has a registered core
-// implementation. Call Start to load replicas and begin serving.
-func NewNode(baseDir string, nodeId string, clusterConfig *cluster.Config, coreDescriptors ApplicationCoreDescriptors, nodeConfig NodeConfig, trans transport.Transport) (*Node, error) {
+// NewNode creates a Node backed by baseDir. Identity and config are discovered
+// from disk. config/node.json is the provisioning marker: when it is present the
+// node loads its applied cluster config (config/cluster.json) and runs as that node.
+// When it is absent the node comes up UNPROVISIONED and serves only Bootstrap, which
+// assigns its identity and installs the initial config. It opens the shared Raft
+// store (durable on disk, or in-memory when NodeConfig.UseInMemoryRaftStore is set).
+// Call Start to load replicas and begin serving.
+func NewNode(baseDir string, coreDescriptors ApplicationCoreDescriptors, nodeConfig NodeConfig, trans transport.DataPlane) (*Node, error) {
 	var raftStore *store.BadgerStore
 	var err error
 	if nodeConfig.UseInMemoryRaftStore {
@@ -608,24 +910,107 @@ func NewNode(baseDir string, nodeId string, clusterConfig *cluster.Config, coreD
 		return nil, err
 	}
 
-	for _, a := range clusterConfig.GetApplications() {
-		if _, ok := coreDescriptors[a.Implementation]; !ok {
-			return nil, fmt.Errorf("no core implementation registered for %s", a.Implementation)
+	// config/node.json is the provisioning commit marker. Its presence means the
+	// node was bootstrapped: load the applied config, which must exist. Its absence
+	// means unprovisioned — ignore any orphan cluster.json left by a bootstrap that
+	// crashed before writing the identity; Bootstrap will rewrite both.
+	persistedId, hasId, err := readNodeIdentity(baseDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var effectiveConfig *cluster.Config
+	if hasId {
+		effectiveConfig, err = loadConfig(clusterConfigPath(baseDir))
+		if err != nil {
+			return nil, err
+		}
+		if effectiveConfig == nil {
+			return nil, fmt.Errorf("node identity present but no cluster config at %s", clusterConfigPath(baseDir))
+		}
+		for _, a := range effectiveConfig.GetApplications() {
+			if _, ok := coreDescriptors[a.Implementation]; !ok {
+				return nil, fmt.Errorf("no core implementation registered for %s", a.Implementation)
+			}
 		}
 	}
 
 	node := &Node{
 		baseDir:         baseDir,
-		nodeId:          nodeId,
+		nodeId:          persistedId,
 		coreDescriptors: coreDescriptors,
-		clusterConfig:   clusterConfig,
+		clusterConfig:   effectiveConfig,
 		nodeState:       INITIAL,
 		replicas:        make(map[string]*replica),
 		trans:           trans,
 		raftStore:       raftStore,
 		nodeConfig:      nodeConfig,
-		logger:          log.New(os.Stderr, fmt.Sprintf("[%s] ", nodeId), log.LstdFlags),
+		logger:          log.New(os.Stderr, fmt.Sprintf("[%s] ", persistedId), log.LstdFlags),
 	}
 
+	// A provisioned node exists but is not serving yet; publish 0 so the gauge has
+	// a series from process start. (An unprovisioned node has no id to label yet.)
+	node.setReadyMetric(false)
+
 	return node, nil
+}
+
+// clusterConfigPath returns the path of the node's persisted applied cluster
+// config within its data dir.
+func clusterConfigPath(baseDir string) string {
+	return filepath.Join(baseDir, "config", "cluster.json")
+}
+
+// loadConfig returns the node's persisted cluster config, or (nil, nil) when no
+// config has been persisted yet (the node is unprovisioned and awaits Bootstrap).
+// A persisted config/cluster.json is authoritative: it is how a node resumes the
+// config it last applied across restarts.
+func loadConfig(path string) (*cluster.Config, error) {
+	_, err := os.Stat(path)
+	switch {
+	case err == nil:
+		return cluster.LoadConfigFromFile(path)
+	case errors.Is(err, os.ErrNotExist):
+		return nil, nil
+	default:
+		return nil, err
+	}
+}
+
+// nodeIdentity is the node's stable local identity, persisted in config/node.json.
+type nodeIdentity struct {
+	NodeId  string `json:"node_id"`
+	Version int    `json:"version"`
+}
+
+func nodeIdentityPath(baseDir string) string {
+	return filepath.Join(baseDir, "config", "node.json")
+}
+
+// readNodeIdentity reads the persisted node id, reporting whether node.json exists.
+func readNodeIdentity(baseDir string) (string, bool, error) {
+	data, err := os.ReadFile(nodeIdentityPath(baseDir))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	var id nodeIdentity
+	if err := json.Unmarshal(data, &id); err != nil {
+		return "", false, err
+	}
+	return id.NodeId, true, nil
+}
+
+// writeNodeIdentity persists the node id to config/node.json.
+func writeNodeIdentity(baseDir string, nodeId string) error {
+	if err := os.MkdirAll(filepath.Join(baseDir, "config"), 0755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(nodeIdentity{NodeId: nodeId, Version: 1}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(nodeIdentityPath(baseDir), data, 0644)
 }

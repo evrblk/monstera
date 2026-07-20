@@ -2,6 +2,7 @@ package monstera
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand/v2"
@@ -13,6 +14,11 @@ import (
 
 	"github.com/evrblk/monstera/cluster"
 	"github.com/evrblk/monstera/transport"
+)
+
+var (
+	ErrNoClusterConfig   = errors.New("monstera client has no cluster config yet")
+	ErrAllReplicasFailed = errors.New("all replicas failed")
 )
 
 // ClientConfig holds tunable parameters for Client behavior.
@@ -55,32 +61,81 @@ type Client struct {
 	clusterConfig *cluster.Config
 	replicaStates map[string]*transport.ReplicaState
 
-	trans  transport.Transport
-	config ClientConfig
+	provider ClusterConfigProvider
+	trans    transport.DataPlane
+	config   ClientConfig
 
+	unwatch         func()
 	refresherCancel context.CancelFunc
 }
 
-// Stop cancels the background health-check goroutine and closes the transport.
+// Stop unsubscribes from the config provider, stops it and the background
+// health-check goroutine, and closes the transport.
 func (c *Client) Stop() {
 	log.Printf("Stopping Monstera Client")
 
 	if c.refresherCancel != nil {
 		c.refresherCancel()
 	}
+	if c.unwatch != nil {
+		c.unwatch()
+	}
+	c.provider.Stop()
 
 	c.trans.Close()
 }
 
-// Start launches the background goroutine that periodically polls all nodes
-// for replica states, used to identify the current leader of each shard.
-func (c *Client) Start() {
-	ctx, cancel := context.WithCancel(context.Background())
-	c.refresherCancel = cancel
+// Start subscribes to the config provider (so topology changes flow into routing
+// and the data plane), starts it, and launches the background goroutine that
+// periodically polls nodes for replica states to identify shard leaders.
+//
+// Start does not block on the initial config: with a PollingClusterConfigProvider the
+// client comes up immediately and begins routing as soon as a config is adopted;
+// requests made before then return an error. It returns an error only if the
+// provider itself fails to start.
+func (c *Client) Start(ctx context.Context) error {
+	// Subscribe before starting the provider so we observe the first config and
+	// every change. Watch fires synchronously with the current config if one is
+	// already available.
+	c.unwatch = c.provider.Watch(c.onConfig)
 
-	go func(monstera *Client, ctx context.Context) {
-		for {
-			for _, n := range c.clusterConfig.ListNodes() {
+	if err := c.provider.Start(ctx); err != nil {
+		c.unwatch()
+		c.unwatch = nil
+		return err
+	}
+
+	refCtx, cancel := context.WithCancel(ctx)
+	c.refresherCancel = cancel
+	go c.refreshLoop(refCtx)
+
+	return nil
+}
+
+// onConfig adopts a new cluster config: it swaps the routing config and pushes it
+// into the data plane (if the data plane resolves addresses from a config).
+func (c *Client) onConfig(cfg *cluster.Config) {
+	c.mu.Lock()
+	c.clusterConfig = cfg
+	c.mu.Unlock()
+
+	if cc, ok := c.trans.(transport.ClusterConfigConsumer); ok {
+		cc.SetClusterConfig(cfg)
+	}
+}
+
+// currentConfig returns the client's current cluster config, snapshotting the
+// pointer under the read lock (it is swapped wholesale by onConfig).
+func (c *Client) currentConfig() *cluster.Config {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.clusterConfig
+}
+
+func (c *Client) refreshLoop(ctx context.Context) {
+	for {
+		if cfg := c.currentConfig(); cfg != nil {
+			for _, n := range cfg.ListNodes() {
 				tctx, tcancel := context.WithTimeout(ctx, c.config.ListReplicaStatesTimeout)
 				states, err := c.trans.ListReplicaStates(tctx, n.Id)
 				tcancel()
@@ -94,22 +149,26 @@ func (c *Client) Start() {
 				}
 				c.mu.Unlock()
 			}
-
-			duration := c.config.RefreshIntervalBase + time.Duration(rand.Int64N(int64(c.config.RefreshIntervalJitter)))
-
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(duration):
-				// just wait
-			}
 		}
-	}(c, ctx)
+
+		duration := c.config.RefreshIntervalBase + time.Duration(rand.Int64N(int64(c.config.RefreshIntervalJitter)))
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(duration):
+			// just wait
+		}
+	}
 }
 
 // Read routes a read request to the shard responsible for shardKey.
 func (c *Client) Read(ctx context.Context, applicationName string, shardKey []byte, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
-	shard, err := c.clusterConfig.FindShardByShardKey(applicationName, shardKey)
+	cfg := c.currentConfig()
+	if cfg == nil {
+		return nil, ErrNoClusterConfig
+	}
+	shard, err := cfg.FindShardByShardKey(applicationName, shardKey)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +179,11 @@ func (c *Client) Read(ctx context.Context, applicationName string, shardKey []by
 // ReadShard sends a read request directly to the specified shard by ID,
 // bypassing shard-key routing.
 func (c *Client) ReadShard(ctx context.Context, applicationName string, shardId string, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
-	shard, err := c.clusterConfig.GetShard(shardId)
+	cfg := c.currentConfig()
+	if cfg == nil {
+		return nil, ErrNoClusterConfig
+	}
+	shard, err := cfg.GetShard(shardId)
 	if err != nil {
 		return nil, err
 	}
@@ -171,12 +234,16 @@ func (c *Client) readShard(ctx context.Context, applicationName string, shard *c
 		continue
 	}
 
-	return nil, fmt.Errorf("all replicas failed")
+	return nil, ErrAllReplicasFailed
 }
 
 // Update routes a write request to the shard responsible for shardKey.
 func (c *Client) Update(ctx context.Context, applicationName string, shardKey []byte, payload []byte) ([]byte, error) {
-	shard, err := c.clusterConfig.FindShardByShardKey(applicationName, shardKey)
+	cfg := c.currentConfig()
+	if cfg == nil {
+		return nil, ErrNoClusterConfig
+	}
+	shard, err := cfg.FindShardByShardKey(applicationName, shardKey)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +254,11 @@ func (c *Client) Update(ctx context.Context, applicationName string, shardKey []
 // UpdateShard sends a write request directly to the specified shard by ID,
 // bypassing shard-key routing.
 func (c *Client) UpdateShard(ctx context.Context, applicationName string, shardId string, payload []byte) ([]byte, error) {
-	shard, err := c.clusterConfig.GetShard(shardId)
+	cfg := c.currentConfig()
+	if cfg == nil {
+		return nil, ErrNoClusterConfig
+	}
+	shard, err := cfg.GetShard(shardId)
 	if err != nil {
 		return nil, err
 	}
@@ -232,11 +303,15 @@ func (c *Client) updateShard(ctx context.Context, applicationName string, shard 
 		continue
 	}
 
-	return nil, fmt.Errorf("all replicas failed")
+	return nil, ErrAllReplicasFailed
 }
 
 func (c *Client) ListShards(applicationName string) ([]*cluster.Shard, error) {
-	return c.clusterConfig.ListShards(applicationName)
+	cfg := c.currentConfig()
+	if cfg == nil {
+		return nil, ErrNoClusterConfig
+	}
+	return cfg.ListShards(applicationName)
 }
 
 // shuffleReplicas returns a randomly ordered copy of replicas.
@@ -282,14 +357,25 @@ func (c *Client) getLeader(replicas []*cluster.Replica) *cluster.Replica {
 	return replicas[rand.IntN(len(replicas))] // this is a fallback
 }
 
-// NewMonsteraClient creates a Client. Call Start to begin background health checks.
-func NewMonsteraClient(clusterConfig *cluster.Config, trans transport.Transport, config ClientConfig) *Client {
-	return &Client{
-		clusterConfig: clusterConfig,
+// NewMonsteraClient creates a Client fed by the given config provider. Call Start
+// to subscribe to config changes and begin background leader-state health checks.
+//
+// If the provider already has a config (e.g. a StaticClusterConfigProvider), it is
+// adopted eagerly here so the client is usable without Start; a
+// PollingClusterConfigProvider has no config until Start, so gateways must call Start.
+func NewMonsteraClient(provider ClusterConfigProvider, trans transport.DataPlane, config ClientConfig) *Client {
+	c := &Client{
+		provider:      provider,
 		trans:         trans,
 		config:        config,
 		replicaStates: make(map[string]*transport.ReplicaState),
 	}
+
+	if cfg := provider.Latest(); cfg != nil {
+		c.onConfig(cfg)
+	}
+
+	return c
 }
 
 // isErrorRetryableOnTheSameReplica reports whether the error indicates a

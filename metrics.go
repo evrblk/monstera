@@ -20,14 +20,14 @@ var (
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: time.Hour,
-	}, []string{"application", "shard", "replica"})
+	}, []string{"node", "application", "shard", "replica"})
 
 	// commitsTotal counts committed log entries applied to the application core.
 	// Incremented on every replica, so it reflects local apply throughput.
 	commitsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "monstera_raft_commits_total",
 		Help: "Number of committed log entries applied to the application core",
-	}, []string{"application", "shard", "replica"})
+	}, []string{"node", "application", "shard", "replica"})
 
 	// replicaUpdateDuration measures a replica Update end to end: encoding the
 	// command and running it through Raft (replicate, commit, apply). Recorded
@@ -38,7 +38,7 @@ var (
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: time.Hour,
-	}, []string{"application", "shard", "replica"})
+	}, []string{"node", "application", "shard", "replica"})
 
 	// replicaReadDuration measures a replica Read served locally by the core.
 	// Recorded on both success and failure (including recovered panics).
@@ -48,19 +48,19 @@ var (
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: time.Hour,
-	}, []string{"application", "shard", "replica"})
+	}, []string{"node", "application", "shard", "replica"})
 
 	// replicaUpdatesTotal counts replica Updates by result (ok/error).
 	replicaUpdatesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "monstera_replica_updates_total",
 		Help: "Number of replica Updates by result",
-	}, []string{"application", "shard", "replica", "result"})
+	}, []string{"node", "application", "shard", "replica", "result"})
 
 	// replicaReadsTotal counts replica Reads by result (ok/error).
 	replicaReadsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "monstera_replica_reads_total",
 		Help: "Number of replica Reads by result",
-	}, []string{"application", "shard", "replica", "result"})
+	}, []string{"node", "application", "shard", "replica", "result"})
 
 	// replicaCommandBytes measures the size in bytes of the encoded command
 	// handed to Raft on each Update.
@@ -70,7 +70,25 @@ var (
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: time.Hour,
-	}, []string{"application", "shard", "replica"})
+	}, []string{"node", "application", "shard", "replica"})
+
+	// nodeReady is 1 while the node is serving reads and updates (READY) and 0
+	// otherwise (INITIAL, UNPROVISIONED, or STOPPED). Labeled by node id; the node
+	// updates it on every lifecycle transition. It has no series until the node has
+	// an id (a never-bootstrapped node has none yet).
+	nodeReady = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "monstera_node_ready",
+		Help: "Whether the Monstera node is serving requests (1) or not (0)",
+	}, []string{"node"})
+
+	// configVersion is the version of the cluster config the node currently has
+	// applied. Labeled by node id; the node updates it whenever its applied config
+	// changes (Bootstrap, restart, UpdateClusterConfig). Comparing it across nodes
+	// shows config rollout progress. It has no series until the node has an id.
+	configVersion = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "monstera_config_version_number",
+		Help: "Version number of the cluster config the node currently has applied",
+	}, []string{"node"})
 )
 
 // RegisterMetrics registers all Prometheus metrics emitted by the Monstera
@@ -88,6 +106,8 @@ func RegisterMetrics(registerer prometheus.Registerer) {
 		replicaUpdatesTotal,
 		replicaReadsTotal,
 		replicaCommandBytes,
+		nodeReady,
+		configVersion,
 	}
 	collectors = append(collectors, raft.Collectors()...)
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/evrblk/monstera"
 	"github.com/evrblk/monstera/cluster"
+	"github.com/evrblk/monstera/internal/integration_test/testcore"
 	"github.com/evrblk/monstera/transport/grpc"
 )
 
@@ -103,21 +104,12 @@ func NewCluster(clusterConfig *cluster.Config) []localNode {
 	for _, n := range clusterConfig.Nodes {
 		baseDir := fmt.Sprintf("/tmp/monstera/%d/%s", rand.Uint64(), n.Id)
 
-		coreDescriptors := monstera.ApplicationCoreDescriptors{
-			"Core": {
-				CoreFactoryFunc: func(shard *cluster.Shard, replica *cluster.Replica) monstera.ApplicationCore {
-					return NewPlaygroundCore()
-				},
-				RestoreSnapshotOnStart: false,
-			},
-		}
-
-		trans := grpc.NewGrpcTransport(clusterConfig)
+		trans := grpc.NewDataPlaneClient()
 
 		nodeConfig := monstera.DefaultMonsteraNodeConfig
 		nodeConfig.UseInMemoryRaftStore = true
 
-		monsteraNode, err := monstera.NewNode(baseDir, n.Id, clusterConfig, coreDescriptors, nodeConfig, trans)
+		monsteraNode, err := monstera.NewNode(baseDir, testcore.PlaygroundDescriptors(), nodeConfig, trans)
 		if err != nil {
 			panic(err)
 		}
@@ -129,7 +121,12 @@ func NewCluster(clusterConfig *cluster.Config) []localNode {
 			monsteraServer: monsteraServer,
 		})
 
+		// Fresh data dir: the node comes up UNPROVISIONED; bootstrap it in-process
+		// with the cluster config (mirrors an admin Bootstrap over the wire).
 		monsteraNode.Start()
+		if err := monsteraNode.Bootstrap(context.Background(), n.Id, clusterConfig); err != nil {
+			panic(err)
+		}
 
 		go func() {
 			err := monsteraServer.Serve(n.GrpcAddress)
@@ -142,10 +139,10 @@ func NewCluster(clusterConfig *cluster.Config) []localNode {
 	return nodes
 }
 
-func NewMonsteraStub(clusterConfig *cluster.Config) *PlaygroundApiMonsteraStub {
-	trans := grpc.NewGrpcTransport(clusterConfig)
-	monsteraClient := monstera.NewMonsteraClient(clusterConfig, trans, monstera.DefaultClientConfig())
-	return NewPlaygroundApiMonsteraStub(monsteraClient)
+func NewMonsteraStub(clusterConfig *cluster.Config) *testcore.PlaygroundApiMonsteraStub {
+	trans := grpc.NewDataPlaneClient()
+	monsteraClient := monstera.NewMonsteraClient(monstera.NewStaticClusterConfigProvider(clusterConfig), trans, monstera.DefaultClientConfig())
+	return testcore.NewPlaygroundApiMonsteraStub(monsteraClient)
 }
 
 func NewTestClusterConfig() *cluster.Config {
@@ -205,7 +202,7 @@ func NewTestClusterConfig() *cluster.Config {
 		{Id: "node_03", GrpcAddress: "localhost:9003"},
 	}
 
-	clusterConfig, err := cluster.LoadConfig(applications, nodes, 1)
+	clusterConfig, err := cluster.LoadConfig(applications, nodes, nil, 1)
 	if err != nil {
 		panic(err)
 	}

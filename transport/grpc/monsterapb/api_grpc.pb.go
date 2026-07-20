@@ -26,6 +26,8 @@ const (
 	MonsteraApi_LeadershipTransfer_FullMethodName   = "/com.evrblk.monstera.monsterapb.MonsteraApi/LeadershipTransfer"
 	MonsteraApi_TriggerSnapshot_FullMethodName      = "/com.evrblk.monstera.monsterapb.MonsteraApi/TriggerSnapshot"
 	MonsteraApi_UpdateClusterConfig_FullMethodName  = "/com.evrblk.monstera.monsterapb.MonsteraApi/UpdateClusterConfig"
+	MonsteraApi_GetClusterConfig_FullMethodName     = "/com.evrblk.monstera.monsterapb.MonsteraApi/GetClusterConfig"
+	MonsteraApi_Bootstrap_FullMethodName            = "/com.evrblk.monstera.monsterapb.MonsteraApi/Bootstrap"
 	MonsteraApi_RaftMessage_FullMethodName          = "/com.evrblk.monstera.monsterapb.MonsteraApi/RaftMessage"
 )
 
@@ -40,6 +42,8 @@ type MonsteraApiClient interface {
 	LeadershipTransfer(ctx context.Context, in *LeadershipTransferRequest, opts ...grpc.CallOption) (*LeadershipTransferResponse, error)
 	TriggerSnapshot(ctx context.Context, in *TriggerSnapshotRequest, opts ...grpc.CallOption) (*TriggerSnapshotResponse, error)
 	UpdateClusterConfig(ctx context.Context, in *UpdateClusterConfigRequest, opts ...grpc.CallOption) (*UpdateClusterConfigResponse, error)
+	GetClusterConfig(ctx context.Context, in *GetClusterConfigRequest, opts ...grpc.CallOption) (*GetClusterConfigResponse, error)
+	Bootstrap(ctx context.Context, in *BootstrapRequest, opts ...grpc.CallOption) (*BootstrapResponse, error)
 	RaftMessage(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RaftMessageRequest, RaftMessageResponse], error)
 }
 
@@ -121,6 +125,26 @@ func (c *monsteraApiClient) UpdateClusterConfig(ctx context.Context, in *UpdateC
 	return out, nil
 }
 
+func (c *monsteraApiClient) GetClusterConfig(ctx context.Context, in *GetClusterConfigRequest, opts ...grpc.CallOption) (*GetClusterConfigResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetClusterConfigResponse)
+	err := c.cc.Invoke(ctx, MonsteraApi_GetClusterConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *monsteraApiClient) Bootstrap(ctx context.Context, in *BootstrapRequest, opts ...grpc.CallOption) (*BootstrapResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BootstrapResponse)
+	err := c.cc.Invoke(ctx, MonsteraApi_Bootstrap_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *monsteraApiClient) RaftMessage(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[RaftMessageRequest, RaftMessageResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &MonsteraApi_ServiceDesc.Streams[0], MonsteraApi_RaftMessage_FullMethodName, cOpts...)
@@ -145,6 +169,8 @@ type MonsteraApiServer interface {
 	LeadershipTransfer(context.Context, *LeadershipTransferRequest) (*LeadershipTransferResponse, error)
 	TriggerSnapshot(context.Context, *TriggerSnapshotRequest) (*TriggerSnapshotResponse, error)
 	UpdateClusterConfig(context.Context, *UpdateClusterConfigRequest) (*UpdateClusterConfigResponse, error)
+	GetClusterConfig(context.Context, *GetClusterConfigRequest) (*GetClusterConfigResponse, error)
+	Bootstrap(context.Context, *BootstrapRequest) (*BootstrapResponse, error)
 	RaftMessage(grpc.BidiStreamingServer[RaftMessageRequest, RaftMessageResponse]) error
 	mustEmbedUnimplementedMonsteraApiServer()
 }
@@ -176,6 +202,12 @@ func (UnimplementedMonsteraApiServer) TriggerSnapshot(context.Context, *TriggerS
 }
 func (UnimplementedMonsteraApiServer) UpdateClusterConfig(context.Context, *UpdateClusterConfigRequest) (*UpdateClusterConfigResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateClusterConfig not implemented")
+}
+func (UnimplementedMonsteraApiServer) GetClusterConfig(context.Context, *GetClusterConfigRequest) (*GetClusterConfigResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetClusterConfig not implemented")
+}
+func (UnimplementedMonsteraApiServer) Bootstrap(context.Context, *BootstrapRequest) (*BootstrapResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Bootstrap not implemented")
 }
 func (UnimplementedMonsteraApiServer) RaftMessage(grpc.BidiStreamingServer[RaftMessageRequest, RaftMessageResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method RaftMessage not implemented")
@@ -327,6 +359,42 @@ func _MonsteraApi_UpdateClusterConfig_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MonsteraApi_GetClusterConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetClusterConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MonsteraApiServer).GetClusterConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MonsteraApi_GetClusterConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MonsteraApiServer).GetClusterConfig(ctx, req.(*GetClusterConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MonsteraApi_Bootstrap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BootstrapRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MonsteraApiServer).Bootstrap(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MonsteraApi_Bootstrap_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MonsteraApiServer).Bootstrap(ctx, req.(*BootstrapRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _MonsteraApi_RaftMessage_Handler(srv interface{}, stream grpc.ServerStream) error {
 	return srv.(MonsteraApiServer).RaftMessage(&grpc.GenericServerStream[RaftMessageRequest, RaftMessageResponse]{ServerStream: stream})
 }
@@ -368,6 +436,14 @@ var MonsteraApi_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateClusterConfig",
 			Handler:    _MonsteraApi_UpdateClusterConfig_Handler,
+		},
+		{
+			MethodName: "GetClusterConfig",
+			Handler:    _MonsteraApi_GetClusterConfig_Handler,
+		},
+		{
+			MethodName: "Bootstrap",
+			Handler:    _MonsteraApi_Bootstrap_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -28,7 +28,7 @@ func (s *GrpcServer) Serve(address string) error {
 
 	lis, err := net.Listen("tcp", address)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	s.lis = lis
 
@@ -41,7 +41,9 @@ func (s *GrpcServer) Serve(address string) error {
 func (s *GrpcServer) Stop() {
 	s.logger.Printf("Stopping gRPC server")
 
-	s.srv.GracefulStop()
+	if s.srv != nil {
+		s.srv.GracefulStop()
+	}
 }
 
 func NewGrpcServer(node *monstera.Node) *GrpcServer {
@@ -163,6 +165,24 @@ func (h *handler) UpdateClusterConfig(ctx context.Context, req *monsterapb.Updat
 	}
 
 	return &monsterapb.UpdateClusterConfigResponse{}, nil
+}
+
+// GetClusterConfig returns the cluster config this node is currently running
+// with (including its version), for inspecting config rollout across the cluster.
+func (h *handler) GetClusterConfig(ctx context.Context, req *monsterapb.GetClusterConfigRequest) (*monsterapb.GetClusterConfigResponse, error) {
+	return &monsterapb.GetClusterConfigResponse{
+		Config: h.monsteraNode.GetClusterConfig(),
+	}, nil
+}
+
+// Bootstrap provisions an unprovisioned node with its id and initial cluster config.
+func (h *handler) Bootstrap(ctx context.Context, req *monsterapb.BootstrapRequest) (*monsterapb.BootstrapResponse, error) {
+	err := h.monsteraNode.Bootstrap(ctx, req.NodeId, req.Config)
+	if err != nil {
+		h.logger.Printf("Error calling MonsteraNode.Bootstrap: %v", err)
+		return nil, err
+	}
+	return &monsterapb.BootstrapResponse{}, nil
 }
 
 func (h *handler) RaftMessage(stream grpc.BidiStreamingServer[monsterapb.RaftMessageRequest, monsterapb.RaftMessageResponse]) error {

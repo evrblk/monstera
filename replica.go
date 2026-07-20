@@ -18,6 +18,7 @@ import (
 
 // replica manages a single Raft replica for one shard.
 type replica struct {
+	nodeId          string
 	applicationName string
 	shardId         string
 	replicaId       string
@@ -38,8 +39,8 @@ func (r *replica) Read(request []byte) (response *ReadResponse, err error) {
 		if err != nil {
 			result = "error"
 		}
-		replicaReadDuration.WithLabelValues(r.applicationName, r.shardId, r.replicaId).Observe(time.Since(t1).Seconds())
-		replicaReadsTotal.WithLabelValues(r.applicationName, r.shardId, r.replicaId, result).Inc()
+		replicaReadDuration.WithLabelValues(r.nodeId, r.applicationName, r.shardId, r.replicaId).Observe(time.Since(t1).Seconds())
+		replicaReadsTotal.WithLabelValues(r.nodeId, r.applicationName, r.shardId, r.replicaId, result).Inc()
 	}()
 
 	defer func() {
@@ -60,8 +61,8 @@ func (r *replica) Update(request []byte) (updateResponse *UpdateResponse, err er
 		if err != nil {
 			result = "error"
 		}
-		replicaUpdateDuration.WithLabelValues(r.applicationName, r.shardId, r.replicaId).Observe(time.Since(t1).Seconds())
-		replicaUpdatesTotal.WithLabelValues(r.applicationName, r.shardId, r.replicaId, result).Inc()
+		replicaUpdateDuration.WithLabelValues(r.nodeId, r.applicationName, r.shardId, r.replicaId).Observe(time.Since(t1).Seconds())
+		replicaUpdatesTotal.WithLabelValues(r.nodeId, r.applicationName, r.shardId, r.replicaId, result).Inc()
 	}()
 
 	cmdBytes, err := r.commandCodec.Encode(&replicationpb.MonsteraCommand{
@@ -72,7 +73,7 @@ func (r *replica) Update(request []byte) (updateResponse *UpdateResponse, err er
 		return nil, err
 	}
 
-	replicaCommandBytes.WithLabelValues(r.applicationName, r.shardId, r.replicaId).Observe(float64(len(cmdBytes)))
+	replicaCommandBytes.WithLabelValues(r.nodeId, r.applicationName, r.shardId, r.replicaId).Observe(float64(len(cmdBytes)))
 
 	response, err := r.raft.Update(cmdBytes)
 	if err != nil {
@@ -120,6 +121,18 @@ func (r *replica) Bootstrap(servers []raft.RaftServer) error {
 	return r.raft.Bootstrap(servers)
 }
 
+func (r *replica) AddVoter(replicaId string, nodeId string) error {
+	return r.raft.AddVoter(replicaId, nodeId)
+}
+
+func (r *replica) RemoveServer(replicaId string) error {
+	return r.raft.RemoveServer(replicaId)
+}
+
+func (r *replica) GetConfiguration() ([]raft.RaftServer, error) {
+	return r.raft.GetConfiguration()
+}
+
 func (r *replica) IsBootstrapped() bool {
 	return r.raft.IsBootstrapped()
 }
@@ -144,18 +157,23 @@ func (r *replica) GetReplicaId() string {
 	return r.replicaId
 }
 
+// newReplica creates a replica hosted on the node identified by nodeId. The
+// node id doubles as this replica's Raft transport address and labels its
+// metrics.
 func newReplica(baseDir string, applicationName string, shardId string, replicaId string,
-	myAddress string, core ApplicationCore, trans transport.Transport, raftStore *store.BadgerStore, restoreSnapshotOnStart bool, updateTimeout time.Duration) *replica {
+	nodeId string, core ApplicationCore, trans transport.DataPlane, raftStore *store.BadgerStore, restoreSnapshotOnStart bool, updateTimeout time.Duration) *replica {
 	commandCodec := &replication.ProtoCommandCodec{}
 	adapter := &appCoreAdapter{
 		core:            core,
 		commandCodec:    commandCodec,
+		nodeId:          nodeId,
 		applicationName: applicationName,
 		shardId:         shardId,
 		replicaId:       replicaId,
 	}
 
 	rep := &replica{
+		nodeId:          nodeId,
 		applicationName: applicationName,
 		shardId:         shardId,
 		replicaId:       replicaId,
@@ -164,7 +182,7 @@ func newReplica(baseDir string, applicationName string, shardId string, replicaI
 		logger:          log.New(os.Stderr, fmt.Sprintf("[%s]", replicaId), log.LstdFlags),
 	}
 
-	rep.raft = raft.NewRaft(baseDir, myAddress, applicationName, shardId, replicaId, adapter, trans, raftStore, restoreSnapshotOnStart, updateTimeout)
+	rep.raft = raft.NewRaft(baseDir, nodeId, applicationName, shardId, replicaId, adapter, trans, raftStore, restoreSnapshotOnStart, updateTimeout)
 
 	return rep
 }
@@ -176,8 +194,9 @@ type appCoreAdapter struct {
 	core         ApplicationCore
 	commandCodec replication.CommandCodec
 
-	// applicationName, shardId and replicaId identify this replica in the
-	// apply/commit/snapshot metrics emitted at this boundary.
+	// nodeId, applicationName, shardId and replicaId identify this replica in
+	// the apply/commit/snapshot metrics emitted at this boundary.
+	nodeId          string
 	applicationName string
 	shardId         string
 	replicaId       string
@@ -212,8 +231,8 @@ func (a *appCoreAdapter) Apply(request []byte) any {
 		if err != nil {
 			panic(err)
 		}
-		fsmApplyDuration.WithLabelValues(a.applicationName, a.shardId, a.replicaId).Observe(time.Since(t1).Seconds())
-		commitsTotal.WithLabelValues(a.applicationName, a.shardId, a.replicaId).Inc()
+		fsmApplyDuration.WithLabelValues(a.nodeId, a.applicationName, a.shardId, a.replicaId).Observe(time.Since(t1).Seconds())
+		commitsTotal.WithLabelValues(a.nodeId, a.applicationName, a.shardId, a.replicaId).Inc()
 		return resp
 	default:
 		panic(fmt.Sprintf("unknown command type: %v", cmd.Type))
@@ -223,6 +242,7 @@ func (a *appCoreAdapter) Apply(request []byte) any {
 func (a *appCoreAdapter) Snapshot() raft.AppCoreSnapshot {
 	return &instrumentedSnapshot{
 		inner:           a.core.Snapshot(),
+		nodeId:          a.nodeId,
 		applicationName: a.applicationName,
 		shardId:         a.shardId,
 		replicaId:       a.replicaId,
@@ -236,7 +256,7 @@ func (a *appCoreAdapter) Restore(reader io.ReadCloser) error {
 	t1 := time.Now()
 	cr := &countingReadCloser{r: reader}
 	err := a.core.Restore(cr)
-	raft.RecordSnapshot(a.applicationName, a.shardId, a.replicaId, "restore", time.Since(t1), cr.n, err)
+	raft.RecordSnapshot(a.nodeId, a.applicationName, a.shardId, a.replicaId, "restore", time.Since(t1), cr.n, err)
 	return err
 }
 
@@ -250,6 +270,7 @@ func (a *appCoreAdapter) Close() {
 type instrumentedSnapshot struct {
 	inner ApplicationCoreSnapshot
 
+	nodeId          string
 	applicationName string
 	shardId         string
 	replicaId       string
@@ -261,7 +282,7 @@ func (s *instrumentedSnapshot) Write(w io.Writer) error {
 	t1 := time.Now()
 	cw := &countingWriter{w: w}
 	err := s.inner.Write(cw)
-	raft.RecordSnapshot(s.applicationName, s.shardId, s.replicaId, "persist", time.Since(t1), cw.n, err)
+	raft.RecordSnapshot(s.nodeId, s.applicationName, s.shardId, s.replicaId, "persist", time.Since(t1), cw.n, err)
 	return err
 }
 

@@ -15,6 +15,8 @@ service MonsteraApi {
   rpc LeadershipTransfer(LeadershipTransferRequest) returns (LeadershipTransferResponse) {}
   rpc TriggerSnapshot(TriggerSnapshotRequest) returns (TriggerSnapshotResponse) {}
   rpc UpdateClusterConfig(UpdateClusterConfigRequest) returns (UpdateClusterConfigResponse) {}
+  rpc GetClusterConfig(GetClusterConfigRequest) returns (GetClusterConfigResponse) {}
+  rpc Bootstrap(BootstrapRequest) returns (BootstrapResponse) {}
 
   rpc RaftMessage(stream RaftMessageRequest) returns (stream RaftMessageResponse) {}
 }
@@ -99,8 +101,8 @@ message RaftSnapshot {
 enum RaftState {
   RAFT_STATE_INVALID = 0;
   RAFT_STATE_FOLLOWER = 1;
-  RAFT_STATE_LEADER = 2;
-  RAFT_STATE_CANDIDATE = 3;
+  RAFT_STATE_CANDIDATE = 2;
+  RAFT_STATE_LEADER = 3;
   RAFT_STATE_SHUTDOWN = 4;
 }
 
@@ -109,6 +111,19 @@ message UpdateClusterConfigRequest {
 }
 
 message UpdateClusterConfigResponse {}
+
+message GetClusterConfigRequest {}
+
+message GetClusterConfigResponse {
+  evrblk.monstera.cluster.Config config = 1;
+}
+
+message BootstrapRequest {
+  string node_id = 1;
+  evrblk.monstera.cluster.Config config = 2;
+}
+
+message BootstrapResponse {}
 
 message RaftMessageRequest {
   string replica_id = 1;

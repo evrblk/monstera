@@ -30,13 +30,13 @@ var (
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: time.Hour,
-	}, []string{"application", "shard", "replica"})
+	}, []string{"node", "application", "shard", "replica"})
 
 	// applyErrorsTotal counts failed Raft Apply calls, classified by reason.
 	applyErrorsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "monstera_raft_apply_errors_total",
 		Help: "Number of failed Raft Apply calls by reason",
-	}, []string{"application", "shard", "replica", "reason"})
+	}, []string{"node", "application", "shard", "replica", "reason"})
 
 	// Snapshot metrics are shared across two layers: the "install" op is emitted
 	// from this package (receiving a snapshot streamed from the leader), while
@@ -50,7 +50,7 @@ var (
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: time.Hour,
-	}, []string{"application", "shard", "replica", "op"})
+	}, []string{"node", "application", "shard", "replica", "op"})
 
 	snapshotBytes = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:                            "monstera_raft_snapshot_bytes",
@@ -58,12 +58,12 @@ var (
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: time.Hour,
-	}, []string{"application", "shard", "replica", "op"})
+	}, []string{"node", "application", "shard", "replica", "op"})
 
 	snapshotsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "monstera_raft_snapshots_total",
 		Help: "Number of Raft snapshot operations by op and result",
-	}, []string{"application", "shard", "replica", "op", "result"})
+	}, []string{"node", "application", "shard", "replica", "op", "result"})
 )
 
 // RecordSnapshot records metrics for a single Raft snapshot operation. op is one
@@ -71,14 +71,14 @@ var (
 // recorded; on success the duration and byte size are observed too. It is the
 // single emission point for the snapshot metric family, called both from this
 // package (install) and from the monstera package (persist, restore).
-func RecordSnapshot(applicationName string, shardId string, replicaId string, op string, duration time.Duration, bytes int64, err error) {
+func RecordSnapshot(nodeId string, applicationName string, shardId string, replicaId string, op string, duration time.Duration, bytes int64, err error) {
 	if err != nil {
-		snapshotsTotal.WithLabelValues(applicationName, shardId, replicaId, op, "error").Inc()
+		snapshotsTotal.WithLabelValues(nodeId, applicationName, shardId, replicaId, op, "error").Inc()
 		return
 	}
-	snapshotDuration.WithLabelValues(applicationName, shardId, replicaId, op).Observe(duration.Seconds())
-	snapshotBytes.WithLabelValues(applicationName, shardId, replicaId, op).Observe(float64(bytes))
-	snapshotsTotal.WithLabelValues(applicationName, shardId, replicaId, op, "ok").Inc()
+	snapshotDuration.WithLabelValues(nodeId, applicationName, shardId, replicaId, op).Observe(duration.Seconds())
+	snapshotBytes.WithLabelValues(nodeId, applicationName, shardId, replicaId, op).Observe(float64(bytes))
+	snapshotsTotal.WithLabelValues(nodeId, applicationName, shardId, replicaId, op, "ok").Inc()
 }
 
 // applyErrorReason classifies an error returned by hraft.Apply into a small,

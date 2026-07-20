@@ -1,4 +1,4 @@
-package test
+package testcore
 
 import (
 	"context"
@@ -8,8 +8,17 @@ import (
 	"github.com/evrblk/monstera/utils"
 )
 
+// PlaygroundApiMonsteraStub is the client-side counterpart of PlaygroundCore: it
+// encodes typed key/value calls into the byte payloads PlaygroundCore expects and
+// routes them through a monstera.Client.
 type PlaygroundApiMonsteraStub struct {
 	monsteraClient *monstera.Client
+}
+
+func NewPlaygroundApiMonsteraStub(monsteraClient *monstera.Client) *PlaygroundApiMonsteraStub {
+	return &PlaygroundApiMonsteraStub{
+		monsteraClient: monsteraClient,
+	}
 }
 
 func (s *PlaygroundApiMonsteraStub) Read(ctx context.Context, key uint64) (string, error) {
@@ -30,13 +39,7 @@ func (s *PlaygroundApiMonsteraStub) Update(ctx context.Context, key uint64, valu
 	return string(responseBytes), err
 }
 
-func NewPlaygroundApiMonsteraStub(monsteraClient *monstera.Client) *PlaygroundApiMonsteraStub {
-	return &PlaygroundApiMonsteraStub{
-		monsteraClient: monsteraClient,
-	}
-}
-
-// createRequestBytes creates a request byte array with key and value
+// createRequestBytes encodes an update payload: 8-byte big-endian key + value.
 func createRequestBytes(key uint64, value string) []byte {
 	request := make([]byte, 8+len(value))
 	binary.BigEndian.PutUint64(request[:8], key)
@@ -44,7 +47,7 @@ func createRequestBytes(key uint64, value string) []byte {
 	return request
 }
 
-// createKeyBytes creates a byte array for a key
+// createKeyBytes encodes a read payload: 8-byte big-endian key.
 func createKeyBytes(key uint64) []byte {
 	keyBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(keyBytes, key)

@@ -4,8 +4,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
@@ -13,7 +14,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
-func TestClusterConfigBuilder(t *testing.T) {
+func TestConfig_Builder(t *testing.T) {
 	clusterConfig := CreateEmptyConfig()
 
 	n1, err := clusterConfig.CreateNode("node_1", "localhost:9001")
@@ -68,7 +69,7 @@ func TestClusterConfigBuilder(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestClusterConfigFindShard(t *testing.T) {
+func TestConfig_FindShard(t *testing.T) {
 	applications := []*Application{
 		{
 			Name:              "test.app_01",
@@ -175,7 +176,7 @@ func TestClusterConfigFindShard(t *testing.T) {
 		{Id: "node_3", GrpcAddress: "localhost:9003"},
 	}
 
-	clusterConfig, err := LoadConfig(applications, nodes, time.Now().UnixMilli())
+	clusterConfig, err := LoadConfig(applications, nodes, nil, 1)
 	require.NoError(t, err)
 
 	p, err := clusterConfig.FindShardByShardKey("test.app_01", []byte{0x14, 0x90, 0x2f, 0x1e})
@@ -214,7 +215,7 @@ func TestClusterConfigFindShard(t *testing.T) {
 	require.Equal(t, "shrd_10", p.Id)
 }
 
-func TestClusterConfigValidate(t *testing.T) {
+func TestConfig_Validate(t *testing.T) {
 	// Test valid configuration
 	t.Run("valid configuration", func(t *testing.T) {
 		validConfig := &Config{
@@ -984,7 +985,7 @@ func TestClusterConfigValidate(t *testing.T) {
 	})
 }
 
-func TestClusterConfigValidate_ShardCoverage(t *testing.T) {
+func TestConfig_Validate_ShardCoverage(t *testing.T) {
 	baseNodes := []*Node{
 		{Id: "node_1", GrpcAddress: "localhost:9001"},
 		{Id: "node_2", GrpcAddress: "localhost:9002"},
@@ -1411,7 +1412,7 @@ func TestValidateTransition(t *testing.T) {
 	})
 }
 
-func TestClusterConfig_Marshaling(t *testing.T) {
+func TestConfigMarshaling(t *testing.T) {
 	config := &Config{
 		Applications: []*Application{
 			{
@@ -1474,6 +1475,178 @@ func TestClusterConfig_Marshaling(t *testing.T) {
 
 		require.True(t, cmp.Equal(config, actual, protocmp.Transform()))
 	})
+}
+
+func TestConfig_AddReplica(t *testing.T) {
+	c := newValidConfig(t)
+	shard, err := c.ListShards("Core")
+	require.NoError(t, err)
+	shardId := shard[0].Id
+
+	// Happy path: explicit id is used verbatim.
+	r, err := c.AddReplica("Core", shardId, "explicit_replica_id", "node_1")
+	require.NoError(t, err)
+	require.Equal(t, "explicit_replica_id", r.Id)
+	require.Equal(t, "node_1", r.NodeId)
+
+	got, err := c.GetReplica("explicit_replica_id")
+	require.NoError(t, err)
+	require.Equal(t, r, got)
+
+	// Duplicate id anywhere in the config is rejected.
+	_, err = c.AddReplica("Core", shardId, "explicit_replica_id", "node_2")
+	require.ErrorIs(t, err, errReplicaAlreadyExists)
+
+	// Unknown shard / application.
+	_, err = c.AddReplica("Core", "no_such_shard", "another_id", "node_1")
+	require.ErrorIs(t, err, errShardNotFound)
+	_, err = c.AddReplica("NoSuchApp", shardId, "another_id", "node_1")
+	require.ErrorIs(t, err, errApplicationNotFound)
+}
+
+func TestConfig_MetadataRoundTrip(t *testing.T) {
+	// Config-level metadata must survive a marshal/unmarshal round-trip through
+	// both encodings (it used to be silently dropped by the loaders).
+	c := newValidConfig(t)
+	c.Metadata = []*Metadata{
+		{Key: "region", Value: "us-east"},
+		{Key: "env", Value: "prod"},
+	}
+	require.NoError(t, c.Validate())
+
+	t.Run("JSON", func(t *testing.T) {
+		data, err := WriteConfigToJson(c)
+		require.NoError(t, err)
+		got, err := LoadConfigFromJson(data)
+		require.NoError(t, err)
+		require.True(t, cmp.Equal(c, got, protocmp.Transform()))
+	})
+
+	t.Run("Protobuf", func(t *testing.T) {
+		data, err := WriteConfigToProto(c)
+		require.NoError(t, err)
+		got, err := LoadConfigFromProto(data)
+		require.NoError(t, err)
+		require.True(t, cmp.Equal(c, got, protocmp.Transform()))
+	})
+
+	t.Run("duplicate config metadata key rejected", func(t *testing.T) {
+		bad := newValidConfig(t)
+		bad.Metadata = []*Metadata{
+			{Key: "dup", Value: "a"},
+			{Key: "dup", Value: "b"},
+		}
+		err := bad.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "duplicate metadata key dup for config")
+	})
+}
+
+func TestConfig_FindShardByShardKey_InvalidKeyLength(t *testing.T) {
+	c := newValidConfig(t)
+
+	_, err := c.FindShardByShardKey("Core", nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid shard key length")
+
+	_, err = c.FindShardByShardKey("Core", []byte{0x00, 0x00, 0x00, 0x00, 0x00})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid shard key length")
+
+	// A shorter-than-4-byte key is still accepted and resolves.
+	s, err := c.FindShardByShardKey("Core", []byte{0x00, 0x90})
+	require.NoError(t, err)
+	require.NotNil(t, s)
+}
+
+func TestShard_UnmarshalJSON_RejectsOverlongBounds(t *testing.T) {
+	// A bounds string longer than 8 hex chars would overflow the fixed 4-byte
+	// destination in hex.Decode; it must be rejected rather than panic.
+	var s Shard
+	err := s.UnmarshalJSON([]byte(`{"id":"x","lower_bound":"000000000000","upper_bound":"ffffffff"}`))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "too long")
+}
+
+func TestConfig_ListReturnsCopies(t *testing.T) {
+	// The slices returned by the list methods are copies, so appending to them
+	// must not mutate the config.
+	c := newValidConfig(t)
+
+	nodes := c.ListNodes()
+	nodes = append(nodes, &Node{Id: "extra", GrpcAddress: "localhost:1"})
+	require.Len(t, c.ListNodes(), len(nodes)-1)
+
+	apps := c.ListApplications()
+	apps = append(apps, &Application{Name: "extra"})
+	require.Len(t, c.ListApplications(), len(apps)-1)
+}
+
+func TestConfig_Hash(t *testing.T) {
+	c := newValidConfig(t)
+
+	h1, err := c.Hash()
+	require.NoError(t, err)
+	require.NotEmpty(t, h1)
+
+	// Stable across a proto marshal/unmarshal round-trip.
+	data, err := WriteConfigToProto(c)
+	require.NoError(t, err)
+	c2, err := LoadConfigFromProto(data)
+	require.NoError(t, err)
+	h2, err := c2.Hash()
+	require.NoError(t, err)
+	require.Equal(t, h1, h2)
+
+	// Changes when the config changes (topology).
+	shard, err := c2.ListShards("Core")
+	require.NoError(t, err)
+	_, err = c2.AddReplica("Core", shard[0].Id, "new_replica_id", "node_1")
+	require.NoError(t, err)
+	h3, err := c2.Hash()
+	require.NoError(t, err)
+	require.NotEqual(t, h1, h3)
+
+	// Changes when only the version changes.
+	c3, err := LoadConfigFromProto(data)
+	require.NoError(t, err)
+	c3.IncrementVersion()
+	h4, err := c3.Hash()
+	require.NoError(t, err)
+	require.NotEqual(t, h1, h4)
+}
+
+// newValidConfig builds a valid 3-node, single-application, two-shard config
+// (each shard fully replicated across the three nodes).
+func newValidConfig(t *testing.T) *Config {
+	t.Helper()
+
+	c := CreateEmptyConfig()
+
+	n1, err := c.CreateNode("node_1", "localhost:9001")
+	require.NoError(t, err)
+	n2, err := c.CreateNode("node_2", "localhost:9002")
+	require.NoError(t, err)
+	n3, err := c.CreateNode("node_3", "localhost:9003")
+	require.NoError(t, err)
+
+	a, err := c.CreateApplication("Core", "Core", 3)
+	require.NoError(t, err)
+
+	s1, err := c.CreateShard(a.Name, []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, "")
+	require.NoError(t, err)
+	s2, err := c.CreateShard(a.Name, []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, "")
+	require.NoError(t, err)
+
+	for _, s := range []*Shard{s1, s2} {
+		for _, n := range []*Node{n1, n2, n3} {
+			_, err := c.CreateReplica(a.Name, s.Id, n.Id)
+			require.NoError(t, err)
+		}
+	}
+
+	require.NoError(t, c.Validate())
+	return c
 }
 
 // cloneConfig creates a deep copy of a ClusterConfig for test mutation
@@ -1569,7 +1742,7 @@ func BenchmarkClusterConfigFindShard(b *testing.B) {
 		}
 	}
 
-	clusterConfig, err := LoadConfig(applications, nodes, time.Now().UnixMilli())
+	clusterConfig, err := LoadConfig(applications, nodes, nil, 1)
 	if err != nil {
 		b.Fatalf("failed to create config: %v", err)
 	}
@@ -1597,4 +1770,36 @@ func BenchmarkClusterConfigFindShard(b *testing.B) {
 			b.Fatalf("FindShard failed: %v", err)
 		}
 	}
+}
+
+func TestConfig_WriteConfigToFile_Atomic(t *testing.T) {
+	c := newValidConfig(t)
+	dir := t.TempDir()
+
+	for _, name := range []string{"cluster.json", "cluster.pb"} {
+		path := filepath.Join(dir, name)
+
+		require.NoError(t, WriteConfigToFile(c, path))
+
+		got, err := LoadConfigFromFile(path)
+		require.NoError(t, err)
+		require.Equal(t, c.Version, got.Version)
+		require.Len(t, got.Applications, len(c.Applications))
+		require.Len(t, got.Nodes, len(c.Nodes))
+
+		// Overwriting an existing file must succeed (atomic rename over the target).
+		c.IncrementVersion()
+		require.NoError(t, WriteConfigToFile(c, path))
+		got, err = LoadConfigFromFile(path)
+		require.NoError(t, err)
+		require.Equal(t, c.Version, got.Version)
+	}
+
+	// No temporary files may be left behind after successful writes.
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 2, "expected only the two config files, found leftovers: %v", entries)
+
+	// Unsupported extension is still rejected.
+	require.Error(t, WriteConfigToFile(c, filepath.Join(dir, "cluster.txt")))
 }

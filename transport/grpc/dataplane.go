@@ -13,20 +13,31 @@ import (
 	"github.com/evrblk/monstera/transport/grpc/monsterapb"
 )
 
-// GrpcTransport is the gRPC-backed implementation of transport.Transport.
-type GrpcTransport struct {
+// DataPlaneClient is the gRPC-backed implementation of transport.DataPlane. It
+// addresses nodes by nodeId, resolving nodeId -> gRPC address from the cluster
+// config swapped in via SetClusterConfig, and owns the pooled connections and the
+// persistent multiplexed Raft streams.
+//
+// It is constructed without a config: the config owner (a monstera.Node, or a
+// monstera.Client via its config provider) pushes it in with SetClusterConfig.
+// Until then, calls fail with a clear error rather than dereferencing a nil config.
+type DataPlaneClient struct {
+	// configMu guards clusterConfig, which is swapped by SetClusterConfig when the
+	// cluster topology changes. It is nil until the owner pushes the first config.
+	configMu      sync.RWMutex
 	clusterConfig *cluster.Config
-	pool          *GrpcClientPool[monsterapb.MonsteraApiClient]
+
+	pool *GrpcClientPool[monsterapb.MonsteraApiClient]
 
 	streamsMu sync.Mutex
 	streams   map[string]*raftMessageStream
 }
 
-var _ transport.Transport = &GrpcTransport{}
+var _ transport.DataPlane = &DataPlaneClient{}
+var _ transport.ClusterConfigConsumer = &DataPlaneClient{}
 
-func NewGrpcTransport(clusterConfig *cluster.Config) *GrpcTransport {
-	return &GrpcTransport{
-		clusterConfig: clusterConfig,
+func NewDataPlaneClient() *DataPlaneClient {
+	return &DataPlaneClient{
 		pool: NewGrpcClientPool[monsterapb.MonsteraApiClient](func(conn *grpc.ClientConn) monsterapb.MonsteraApiClient {
 			return monsterapb.NewMonsteraApiClient(conn)
 		}),
@@ -34,8 +45,154 @@ func NewGrpcTransport(clusterConfig *cluster.Config) *GrpcTransport {
 	}
 }
 
-func (t *GrpcTransport) getConnection(nodeId string) (monsterapb.MonsteraApiClient, error) {
-	node, err := t.clusterConfig.GetNode(nodeId)
+// SetClusterConfig updates the transport's view of the cluster so it can resolve
+// newly added nodes and stops pooling connections/streams to nodes that were
+// removed or re-addressed. New nodes are dialed lazily on next use.
+func (t *DataPlaneClient) SetClusterConfig(config *cluster.Config) {
+	if config == nil {
+		return
+	}
+
+	t.configMu.Lock()
+	old := t.clusterConfig
+	t.clusterConfig = config
+	t.configMu.Unlock()
+
+	newAddrs := make(map[string]bool, len(config.Nodes))
+	newIds := make(map[string]bool, len(config.Nodes))
+	for _, n := range config.Nodes {
+		newAddrs[n.GrpcAddress] = true
+		newIds[n.Id] = true
+	}
+
+	if old != nil {
+		for _, n := range old.Nodes {
+			if !newAddrs[n.GrpcAddress] {
+				t.pool.DeleteConnection(n.GrpcAddress)
+			}
+		}
+	}
+
+	// Drop raft-message streams to nodes no longer in the config.
+	t.streamsMu.Lock()
+	for id, s := range t.streams {
+		if !newIds[id] {
+			s.cancel()
+			delete(t.streams, id)
+		}
+	}
+	t.streamsMu.Unlock()
+}
+
+func (t *DataPlaneClient) ListReplicaStates(ctx context.Context, nodeId string) ([]*transport.ReplicaState, error) {
+	conn, err := t.getConnection(nodeId)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := conn.ListReplicaStates(ctx, &monsterapb.ListReplicaStatesRequest{})
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeReplicaStates(resp)
+}
+
+func (t *DataPlaneClient) Read(ctx context.Context, nodeId string, req *transport.ReadRequest) (*transport.ReadResponse, error) {
+	conn, err := t.getConnection(nodeId)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := conn.Read(ctx, &monsterapb.ReadRequest{
+		Payload:                req.Payload,
+		ShardKey:               req.ShardKey,
+		ApplicationName:        req.ApplicationName,
+		ShardId:                req.ShardId,
+		AllowReadFromFollowers: req.AllowReadFromFollowers,
+		Hops:                   req.Hops,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &transport.ReadResponse{
+		Payload: resp.Payload,
+	}, nil
+}
+
+func (t *DataPlaneClient) Update(ctx context.Context, nodeId string, req *transport.UpdateRequest) (*transport.UpdateResponse, error) {
+	conn, err := t.getConnection(nodeId)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := conn.Update(ctx, &monsterapb.UpdateRequest{
+		Payload:         req.Payload,
+		ShardKey:        req.ShardKey,
+		ApplicationName: req.ApplicationName,
+		ShardId:         req.ShardId,
+		Hops:            req.Hops,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &transport.UpdateResponse{
+		Payload: resp.Payload,
+	}, nil
+}
+
+func (t *DataPlaneClient) RaftMessage(ctx context.Context, nodeId string, req *transport.RaftMessageRequest) (*transport.RaftMessageResponse, error) {
+	if nodeId == "" {
+		return nil, fmt.Errorf("nodeId is required")
+	}
+
+	if req.ReplicaId == "" {
+		return nil, fmt.Errorf("replicaId is required")
+	}
+
+	s, err := t.getOrCreateStream(nodeId)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := s.send(ctx, &monsterapb.RaftMessageRequest{
+		ReplicaId:   req.ReplicaId,
+		MessageType: req.MessageType,
+		Message:     req.Message,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &transport.RaftMessageResponse{
+		MessageType: resp.MessageType,
+		Message:     resp.Message,
+	}, nil
+}
+
+func (t *DataPlaneClient) Close() error {
+	t.streamsMu.Lock()
+	for _, s := range t.streams {
+		s.cancel()
+	}
+	t.streamsMu.Unlock()
+
+	t.pool.Close()
+
+	return nil
+}
+
+func (t *DataPlaneClient) getConnection(nodeId string) (monsterapb.MonsteraApiClient, error) {
+	t.configMu.RLock()
+	cfg := t.clusterConfig
+	t.configMu.RUnlock()
+	if cfg == nil {
+		return nil, fmt.Errorf("no cluster config set on data plane")
+	}
+
+	node, err := cfg.GetNode(nodeId)
 	if err != nil {
 		return nil, fmt.Errorf("clusterConfig.GetNode: %v", err)
 	}
@@ -48,7 +205,7 @@ func (t *GrpcTransport) getConnection(nodeId string) (monsterapb.MonsteraApiClie
 	return conn, nil
 }
 
-func (t *GrpcTransport) getOrCreateStream(nodeId string) (*raftMessageStream, error) {
+func (t *DataPlaneClient) getOrCreateStream(nodeId string) (*raftMessageStream, error) {
 	t.streamsMu.Lock()
 	defer t.streamsMu.Unlock()
 
@@ -74,130 +231,6 @@ func (t *GrpcTransport) getOrCreateStream(nodeId string) (*raftMessageStream, er
 	}
 	t.streams[nodeId] = s
 	return s, nil
-}
-
-func (t *GrpcTransport) ListReplicaStates(ctx context.Context, nodeId string) ([]*transport.ReplicaState, error) {
-	conn, err := t.getConnection(nodeId)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := conn.ListReplicaStates(ctx, &monsterapb.ListReplicaStatesRequest{})
-	if err != nil {
-		return nil, err
-	}
-
-	states := make([]*transport.ReplicaState, len(resp.ReplicaStates))
-	for i, r := range resp.ReplicaStates {
-		var protoState monsterapb.RaftState
-		if r.RaftStats != nil {
-			protoState = r.RaftStats.State
-		}
-
-		var raftState transport.RaftState
-		switch s := protoState; s {
-		case monsterapb.RaftState_RAFT_STATE_FOLLOWER:
-			raftState = transport.RaftStateFollower
-		case monsterapb.RaftState_RAFT_STATE_CANDIDATE:
-			raftState = transport.RaftStateCandidate
-		case monsterapb.RaftState_RAFT_STATE_LEADER:
-			raftState = transport.RaftStateLeader
-		case monsterapb.RaftState_RAFT_STATE_SHUTDOWN:
-			raftState = transport.RaftStateDead
-		default:
-			return nil, fmt.Errorf("unknown raft state: %v", s)
-		}
-
-		states[i] = &transport.ReplicaState{
-			ReplicaId: r.ReplicaId,
-			RaftState: raftState,
-		}
-	}
-	return states, nil
-}
-
-func (t *GrpcTransport) Read(ctx context.Context, nodeId string, req *transport.ReadRequest) (*transport.ReadResponse, error) {
-	conn, err := t.getConnection(nodeId)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := conn.Read(ctx, &monsterapb.ReadRequest{
-		Payload:                req.Payload,
-		ShardKey:               req.ShardKey,
-		ApplicationName:        req.ApplicationName,
-		ShardId:                req.ShardId,
-		AllowReadFromFollowers: req.AllowReadFromFollowers,
-		Hops:                   req.Hops,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &transport.ReadResponse{
-		Payload: resp.Payload,
-	}, nil
-}
-
-func (t *GrpcTransport) Update(ctx context.Context, nodeId string, req *transport.UpdateRequest) (*transport.UpdateResponse, error) {
-	conn, err := t.getConnection(nodeId)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := conn.Update(ctx, &monsterapb.UpdateRequest{
-		Payload:         req.Payload,
-		ShardKey:        req.ShardKey,
-		ApplicationName: req.ApplicationName,
-		ShardId:         req.ShardId,
-		Hops:            req.Hops,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &transport.UpdateResponse{
-		Payload: resp.Payload,
-	}, nil
-}
-
-func (t *GrpcTransport) RaftMessage(ctx context.Context, nodeId string, req *transport.RaftMessageRequest) (*transport.RaftMessageResponse, error) {
-	if nodeId == "" {
-		panic(fmt.Errorf("nodeId is required"))
-	}
-
-	if req.ReplicaId == "" {
-		panic(fmt.Errorf("replicaId is required"))
-	}
-
-	s, err := t.getOrCreateStream(nodeId)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := s.send(ctx, &monsterapb.RaftMessageRequest{
-		ReplicaId:   req.ReplicaId,
-		MessageType: req.MessageType,
-		Message:     req.Message,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &transport.RaftMessageResponse{
-		MessageType: resp.MessageType,
-		Message:     resp.Message,
-	}, nil
-}
-
-func (t *GrpcTransport) Close() {
-	t.streamsMu.Lock()
-	for _, s := range t.streams {
-		s.cancel()
-	}
-	t.streamsMu.Unlock()
-
-	t.pool.Close()
 }
 
 // raftMessageStream manages a persistent bidirectional gRPC stream for raft messages.

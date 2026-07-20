@@ -62,7 +62,9 @@ type Raft struct {
 	hfss      *hraft.FileSnapshotStore
 	transport *RaftTransport
 
-	// applicationName, shardId and replicaId identify this replica in metrics.
+	// nodeId, applicationName, shardId and replicaId identify this replica in
+	// metrics.
+	nodeId          string
 	applicationName string
 	shardId         string
 	replicaId       string
@@ -123,11 +125,11 @@ func (r *Raft) Update(request []byte) (any, error) {
 	t1 := time.Now()
 	f := r.hraft.Apply(request, r.updateTimeout)
 	err := f.Error()
-	applyDuration.WithLabelValues(r.applicationName, r.shardId, r.replicaId).Observe(time.Since(t1).Seconds())
+	applyDuration.WithLabelValues(r.nodeId, r.applicationName, r.shardId, r.replicaId).Observe(time.Since(t1).Seconds())
 	if err != nil {
 		// TODO retry
 		// TODO what if FSM panics?
-		applyErrorsTotal.WithLabelValues(r.applicationName, r.shardId, r.replicaId, applyErrorReason(err)).Inc()
+		applyErrorsTotal.WithLabelValues(r.nodeId, r.applicationName, r.shardId, r.replicaId, applyErrorReason(err)).Inc()
 		return nil, err
 	}
 
@@ -301,6 +303,42 @@ func (r *Raft) Bootstrap(servers []RaftServer) error {
 	return nil
 }
 
+// AddVoter adds (or promotes to voter) a member of this Raft group. It must be
+// called on the leader. prevIndex 0 means "apply against the latest
+// configuration"; the change is committed through the Raft log, so it is durable
+// and idempotent (adding an existing voter is a no-op).
+func (r *Raft) AddVoter(replicaId string, nodeId string) error {
+	f := r.hraft.AddVoter(hraft.ServerID(replicaId), hraft.ServerAddress(nodeId), 0, r.updateTimeout)
+	return f.Error()
+}
+
+// RemoveServer removes a member from this Raft group. It must be called on the
+// leader. Removing an absent member is a no-op.
+func (r *Raft) RemoveServer(replicaId string) error {
+	f := r.hraft.RemoveServer(hraft.ServerID(replicaId), 0, r.updateTimeout)
+	return f.Error()
+}
+
+// GetConfiguration returns the current Raft group membership — the durable,
+// actual set of members (independent of the cluster config). Used to reconcile
+// membership against the desired config.
+func (r *Raft) GetConfiguration() ([]RaftServer, error) {
+	f := r.hraft.GetConfiguration()
+	if err := f.Error(); err != nil {
+		return nil, err
+	}
+
+	servers := f.Configuration().Servers
+	result := make([]RaftServer, len(servers))
+	for i, s := range servers {
+		result[i] = RaftServer{
+			ReplicaId: string(s.ID),
+			NodeId:    string(s.Address),
+		}
+	}
+	return result, nil
+}
+
 func (r *Raft) RaftMessage(request *transport.RaftMessageRequest) (*transport.RaftMessageResponse, error) {
 	switch request.MessageType {
 	case AppendEntriesRequest:
@@ -438,7 +476,7 @@ func (r *Raft) finishSnapshotSession(session *snapshotSession) (*transport.RaftM
 	r.snapshotSessionMu.Unlock()
 
 	result := <-session.resultCh
-	RecordSnapshot(r.applicationName, r.shardId, r.replicaId, "install", time.Since(session.startTime), session.bytesReceived, result.err)
+	RecordSnapshot(r.nodeId, r.applicationName, r.shardId, r.replicaId, "install", time.Since(session.startTime), session.bytesReceived, result.err)
 	if result.err != nil {
 		return nil, result.err
 	}
@@ -523,7 +561,10 @@ func (r *Raft) installSnapshot(request *hraft.InstallSnapshotRequest, data io.Re
 	return resp.Response.(*hraft.InstallSnapshotResponse), nil
 }
 
-func NewRaft(baseDir string, myAddress string, applicationName string, shardId string, replicaId string, core AppCore, trans transport.Transport, raftStore *store.BadgerStore, restoreSnapshotOnStart bool, updateTimeout time.Duration) *Raft {
+// NewRaft creates a Raft replica. nodeId is the id of the node hosting this
+// replica; it doubles as the Raft transport address (peers are addressed by
+// node id, see AddVoter) and labels this replica's metrics.
+func NewRaft(baseDir string, nodeId string, applicationName string, shardId string, replicaId string, core AppCore, trans transport.DataPlane, raftStore *store.BadgerStore, restoreSnapshotOnStart bool, updateTimeout time.Duration) *Raft {
 	cfg := hraft.DefaultConfig()
 	cfg.LocalID = hraft.ServerID(replicaId)
 	cfg.Logger = hclog.New(&hclog.LoggerOptions{
@@ -536,8 +577,11 @@ func NewRaft(baseDir string, myAddress string, applicationName string, shardId s
 	cfg.ElectionTimeout = 2 * time.Second
 	cfg.HeartbeatTimeout = 2 * time.Second
 
-	raftDir := filepath.Join(baseDir, replicaId, "raft")
-	if err := os.MkdirAll(raftDir, os.ModePerm); err != nil {
+	// Per-replica snapshot store lives under a single top-level snapshots/ dir:
+	// <baseDir>/snapshots/<replicaId>. (hraft.NewFileSnapshotStore manages its own
+	// "snapshots" subdir beneath the path it is given.)
+	snapshotDir := filepath.Join(baseDir, "snapshots", replicaId)
+	if err := os.MkdirAll(snapshotDir, os.ModePerm); err != nil {
 		panic(err)
 	}
 
@@ -545,12 +589,12 @@ func NewRaft(baseDir string, myAddress string, applicationName string, shardId s
 
 	hstore := NewHraftBadgerStore(raftStore, []byte(replicaId), logCodec)
 
-	hfss, err := hraft.NewFileSnapshotStore(raftDir, 3, os.Stderr)
+	hfss, err := hraft.NewFileSnapshotStore(snapshotDir, 3, os.Stderr)
 	if err != nil {
-		panic(fmt.Errorf("raft.NewFileSnapshotStore(%q, ...): %v", raftDir, err))
+		panic(fmt.Errorf("raft.NewFileSnapshotStore(%q, ...): %v", snapshotDir, err))
 	}
 
-	transport := NewRaftTransport(myAddress, trans)
+	transport := NewRaftTransport(nodeId, trans)
 
 	fsm := NewFSMAdapter(core)
 
@@ -564,6 +608,7 @@ func NewRaft(baseDir string, myAddress string, applicationName string, shardId s
 		hstore:          hstore,
 		hfss:            hfss,
 		transport:       transport,
+		nodeId:          nodeId,
 		applicationName: applicationName,
 		shardId:         shardId,
 		replicaId:       replicaId,

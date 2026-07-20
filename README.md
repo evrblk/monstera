@@ -1,12 +1,11 @@
 # Monstera
 
 [![Go](https://github.com/evrblk/monstera/actions/workflows/go.yml/badge.svg)](https://github.com/evrblk/monstera/actions/workflows/go.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/evrblk/monstera)](https://goreportcard.com/report/github.com/evrblk/monstera)
 
 ![Monstera leaf](monstera.jpg)
 
-Monstera is a framework that allows you to write stateful application logic in pure Go with all data in memory or on 
-disk without worrying about scalability and availability. Monstera takes care of replication, sharding, snapshotting, 
+Monstera is a framework for writing stateful applications in pure Go with all data in memory or on disk without 
+worrying about scalability and availability. Monstera takes care of replication, sharding, snapshotting, 
 and rebalancing.
 
 Monstera is a half-technical and half-mental framework. The tech part of it has a pretty small surface. It leaves a 

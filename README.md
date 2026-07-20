@@ -1,6 +1,7 @@
 # Monstera
 
-[![Go](https://github.com/evrblk/monstera/actions/workflows/go.yml/badge.svg)](https://github.com/evrblk/monstera/actions/workflows/go.yml)
+[![Test](https://github.com/evrblk/monstera/actions/workflows/go.yml/badge.svg)](https://github.com/evrblk/monstera/actions/workflows/go.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/evrblk/monstera.svg)](https://pkg.go.dev/github.com/evrblk/monstera)
 
 ![Monstera leaf](monstera.jpg)
 

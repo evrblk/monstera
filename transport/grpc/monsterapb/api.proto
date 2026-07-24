@@ -4,7 +4,7 @@ package com.evrblk.monstera.monsterapb;
 
 import "cluster/config.proto";
 
-option go_package = "github.com/evrblk/monstera/internal/monsterapb";
+option go_package = "github.com/evrblk/monstera/transport/grpc/monsterapb";
 
 service MonsteraApi {
   rpc Update(UpdateRequest) returns (UpdateResponse) {}

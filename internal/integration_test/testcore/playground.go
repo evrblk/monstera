@@ -19,9 +19,9 @@ import (
 // values are strings. It supports snapshot/restore so tests can exercise Raft
 // snapshotting and read-after-write behavior.
 //
-// Its Restore honors the PORTABLE, bounds-filtered contract (see
-// docs/snapshot-and-restore.md): the snapshot stream carries logical rows with
-// no shard identity, and Restore keeps only the rows whose shard key falls
+// Its Restore honors the portable, bounds-filtered snapshot contract: the
+// snapshot stream carries logical rows with no shard identity, and Restore
+// keeps only the rows whose shard key falls
 // within this core's bounds. A same-shard restore keeps everything; a restore
 // from a splitting parent's snapshot keeps exactly this child's half.
 type PlaygroundCore struct {

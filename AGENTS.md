@@ -39,3 +39,4 @@ make lint                     # run linter, statick check, go vet
 - Use table-driven tests when appropriate
 - Use `testify/require` for test assertions
 - In tests use `EqualValues` when comparing integers instead of `Equal` with a typecast
+- Do not mention in comments things from the past (what was replaced) and do not mention design docs and implementation phases

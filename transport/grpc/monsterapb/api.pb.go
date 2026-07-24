@@ -1503,7 +1503,7 @@ const file_transport_grpc_monsterapb_api_proto_rawDesc = "" +
 	"\x13UpdateClusterConfig\x12:.com.evrblk.monstera.monsterapb.UpdateClusterConfigRequest\x1a;.com.evrblk.monstera.monsterapb.UpdateClusterConfigResponse\"\x00\x12\x87\x01\n" +
 	"\x10GetClusterConfig\x127.com.evrblk.monstera.monsterapb.GetClusterConfigRequest\x1a8.com.evrblk.monstera.monsterapb.GetClusterConfigResponse\"\x00\x12r\n" +
 	"\tBootstrap\x120.com.evrblk.monstera.monsterapb.BootstrapRequest\x1a1.com.evrblk.monstera.monsterapb.BootstrapResponse\"\x00\x12|\n" +
-	"\vRaftMessage\x122.com.evrblk.monstera.monsterapb.RaftMessageRequest\x1a3.com.evrblk.monstera.monsterapb.RaftMessageResponse\"\x00(\x010\x01B0Z.github.com/evrblk/monstera/internal/monsterapbb\x06proto3"
+	"\vRaftMessage\x122.com.evrblk.monstera.monsterapb.RaftMessageRequest\x1a3.com.evrblk.monstera.monsterapb.RaftMessageResponse\"\x00(\x010\x01B6Z4github.com/evrblk/monstera/transport/grpc/monsterapbb\x06proto3"
 
 var (
 	file_transport_grpc_monsterapb_api_proto_rawDescOnce sync.Once

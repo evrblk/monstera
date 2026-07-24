@@ -17,10 +17,10 @@ import (
 	"github.com/evrblk/monstera/transport/grpc"
 )
 
-// TestSplitShardSequenceLiveCutover is the Phase-3/5 acceptance test: the full
-// PlanSplitShard sequence (declare -> seed -> CUTOFF -> flip -> bake) runs
+// TestSplitShardSequenceLiveCutover is the acceptance test for the full
+// PlanSplitShard sequence (declare -> seed -> CUTOFF -> flip -> bake) running
 // over a real 3-node gRPC cluster while a writer keeps writing THROUGH the
-// cutoff. It proves the two headline guarantees of notes/shard-split-design.md:
+// cutoff. It proves the split's two headline guarantees:
 //
 //   - Zero write downtime: not a single write fails during the whole split —
 //     writes that hit the frozen parent are re-routed to the children

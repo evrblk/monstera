@@ -244,10 +244,6 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
   children), inactive-parent cleanup (design phase 7).
 - gRPC conns are insecure, no dial options/TLS yet. Raft bidi stream is one per node pair
   (potential head-of-line blocking across replicas).
-- `notes/` design docs drift: `transport-planes-design.md` claims the proto is unchanged (it gained
-  `Bootstrap`/`GetClusterConfig` and a RaftState enum-order fix); `sequences-design.md` predates the
-  `bake` step and the `cluster` (not `control`) CLI naming. Proto `go_package` still points at an old
-  `internal/monsterapb` path.
 
 ## Build & test
 

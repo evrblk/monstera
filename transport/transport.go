@@ -49,8 +49,8 @@ type DataPlane interface {
 // installing).
 //
 // Required by monstera's polling config provider (GetClusterConfig), the admin
-// CLI (Bootstrap/UpdateClusterConfig), the sequence executor (see
-// notes/sequences-design.md), and debug/ops tooling. Traffic is infrequent.
+// CLI (Bootstrap/UpdateClusterConfig), the sequence executor (the control
+// package), and debug/ops tooling. Traffic is infrequent.
 type AdminPlane interface {
 	// Bootstrap provisions an unprovisioned node at address: it assigns the node
 	// nodeId and installs the initial cluster config. Rejected once provisioned.

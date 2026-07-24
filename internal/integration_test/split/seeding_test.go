@@ -1,8 +1,8 @@
-// Package split holds integration tests for shard-split seeding (Phase 2 of
-// notes/shard-split-design.md): dormant children of a splitting shard are
-// seeded node-locally while the parent keeps serving writes, observable via
-// ListReplicaStates, and — once seeded — promotable into serving replicas
-// that hold exactly the parent's data partitioned by key range.
+// Package split holds integration tests for shard splitting: dormant children
+// of a splitting shard are seeded node-locally while the parent keeps serving
+// writes, observable via ListReplicaStates, and — once seeded — promotable
+// into serving replicas that hold exactly the parent's data partitioned by
+// key range.
 package split
 
 import (
@@ -27,7 +27,7 @@ const (
 	child2Shard = "Core_c2" // [0x80000000, 0xffffffff]
 )
 
-// TestSplitSeedingOverGrpc drives a full Phase-2 split seeding pass on a real
+// TestSplitSeedingOverGrpc drives a full split seeding pass on a real
 // 3-node gRPC cluster with an in-memory core (CoreTypeInMemory):
 //
 //  1. a single full-range shard serves writes;
@@ -44,8 +44,8 @@ const (
 //     stamped-key routing, NOOP fillers and the bounds-filtered portable
 //     Restore end to end.
 //
-// (The atomic cutoff — freeze + re-route under live writes — is Phase 3;
-// writes are stopped before the flip here.)
+// (The atomic cutoff — freeze + re-route under live writes — is covered by
+// TestSplitShardSequenceLiveCutover; writes are stopped before the flip here.)
 func TestSplitSeedingOverGrpc(t *testing.T) {
 	var addrs [3]string
 	copy(addrs[:], testutils.FreeAddrs(t, 3))

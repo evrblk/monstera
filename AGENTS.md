@@ -1,11 +1,25 @@
 # Monstera Development Guide
 
+## Development stage: no backward compatibility
+
+Monstera is being actively developed and has no wide adoption yet. We do NOT care about
+backward compatibility or breaking interface changes at the moment — do not weaken a design to
+preserve existing interfaces, wire formats, serialized state, or on-disk layouts. The goal is
+the best possible design and implementation now; compatibility guarantees come later, once
+there is wide adoption. When a breaking change is the better design, make it (and update all
+callers, including sibling repos like `grackle`), rather than adding compatibility shims,
+optional escape hatches, or versioned/legacy paths. In protobufs specifically: do not add
+`reserved` statements for removed fields and do not preserve old field numbers — renumber
+fields freely to keep the schema clean.
+
 ## Architecture
 
 Read [`ARCHITECTURE.md`](./ARCHITECTURE.md) first — it is a dense orientation to the codebase
 (request path, key files, invariants, concurrency map, codegen model, and open issues) written
-for effective work on deep features without re-researching the codebase each session. See
-`notes/` for review findings and `docs/` for user-facing documentation.
+for effective work on deep features without re-researching the codebase each session. See 
+`docs/` for user-facing documentation.
+
+Keep `ARCHITECTURE.md` updated when any significant change or feature is done.
 
 ## Build & Test Commands
 

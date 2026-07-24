@@ -81,6 +81,12 @@ type AdminPlane interface {
 	// Raft leadership to another replica in its group (used for graceful drain).
 	LeadershipTransfer(ctx context.Context, address string, replicaId string) error
 
+	// SplitCutoff proposes the shard-split CUTOFF command through the given
+	// shard's replica on the node at address. The replica must be the shard's
+	// Raft leader (the caller locates it via ListReplicaStates). Idempotent:
+	// a cutoff on an already-frozen shard is a no-op success.
+	SplitCutoff(ctx context.Context, address string, shardId string) error
+
 	// Close releases any resources held by the admin client (connections, etc.).
 	Close() error
 }
@@ -147,6 +153,11 @@ const (
 	RaftStateCandidate
 	RaftStateLeader
 	RaftStateDead
+	// RaftStateSeeding is reported by DORMANT replicas: replicas of an
+	// ACTIVATING shard that run no Raft yet and are being seeded locally by
+	// the shard-split pipeline. Their Stats are zero; seeding progress is in
+	// ReplicaState.SeededIndex.
+	RaftStateSeeding
 )
 
 // ReplicaState holds the observed state of a replica.
@@ -154,6 +165,18 @@ type ReplicaState struct {
 	ReplicaId string
 	RaftState RaftState
 	Stats     RaftStats
+
+	// Seeding is true for dormant replicas of an ACTIVATING shard (split in
+	// progress). SeededIndex is the parent log index this replica's durable
+	// seed has reached; compare against the parent replicas' CommitIndex to
+	// observe catch-up.
+	Seeding     bool
+	SeededIndex uint64
+
+	// Frozen is true once this (parent) replica applied the split CUTOFF: the
+	// shard no longer accepts reads or updates and re-routes them to its
+	// children.
+	Frozen bool
 }
 
 // RaftStats is a transport-level snapshot of a replica's Raft progress. It is

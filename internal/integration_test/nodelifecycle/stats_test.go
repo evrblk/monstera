@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/evrblk/monstera"
-	"github.com/evrblk/monstera/cluster"
+	"github.com/evrblk/monstera/internal/integration_test/testutils"
 	"github.com/evrblk/monstera/transport"
 	"github.com/evrblk/monstera/transport/local"
 )
@@ -18,13 +18,13 @@ import (
 // tell whether a replica has caught up to the leader. Exercised over the in-memory
 // local transport.
 func TestListReplicaStatesCarriesStats(t *testing.T) {
-	config := newConfig(t)
+	config := testutils.SingleShardLocalConfig(t, 3, 3)
 	trans := local.NewLocalTransport()
 	t.Cleanup(func() { _ = trans.Close() })
 
 	nodes := make([]*monstera.Node, 0, len(config.Nodes))
 	for _, n := range config.Nodes {
-		node := startNode(t, t.TempDir(), n.Id, config, trans, true)
+		node := testutils.StartLocalNode(t, t.TempDir(), n.Id, config, trans, true)
 		nodes = append(nodes, node)
 	}
 	t.Cleanup(func() {
@@ -76,30 +76,4 @@ func TestListReplicaStatesCarriesStats(t *testing.T) {
 		}
 		return false
 	}, 10*time.Second, 200*time.Millisecond, "leader never reported non-zero RaftStats")
-}
-
-func newConfig(t *testing.T) *cluster.Config {
-	t.Helper()
-
-	c := cluster.CreateEmptyConfig()
-	n1, err := c.CreateNode("node_1", "node_1")
-	require.NoError(t, err)
-	n2, err := c.CreateNode("node_2", "node_2")
-	require.NoError(t, err)
-	n3, err := c.CreateNode("node_3", "node_3")
-	require.NoError(t, err)
-
-	a, err := c.CreateApplication("Core", "Core", 3)
-	require.NoError(t, err)
-
-	s, err := c.CreateShard(a.Name, []byte{0x00, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, "")
-	require.NoError(t, err)
-
-	for _, n := range []*cluster.Node{n1, n2, n3} {
-		_, err := c.CreateReplica(a.Name, s.Id, n.Id)
-		require.NoError(t, err)
-	}
-
-	require.NoError(t, c.Validate())
-	return c
 }

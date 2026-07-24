@@ -9,6 +9,7 @@ import (
 
 	"github.com/evrblk/monstera"
 	"github.com/evrblk/monstera/internal/integration_test/testcore"
+	"github.com/evrblk/monstera/internal/integration_test/testutils"
 	"github.com/evrblk/monstera/transport"
 	"github.com/evrblk/monstera/transport/local"
 )
@@ -18,7 +19,7 @@ import (
 // provisions it to READY and persists its identity + config, and on restart
 // resumes from disk without a config or node id passed in.
 func TestBootstrapUnprovisionedNode(t *testing.T) {
-	config := newConfig(t) // 3 nodes, one shard, three replicas
+	config := testutils.SingleShardLocalConfig(t, 3, 3) // 3 nodes, one shard, three replicas
 	shardId := config.Applications[0].Shards[0].Id
 	baseDir := t.TempDir()
 

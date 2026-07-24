@@ -25,7 +25,14 @@ type CommandType int32
 
 const (
 	CommandType_COMMAND_TYPE_INVALID CommandType = 0
-	CommandType_COMMAND_TYPE_UPDATE  CommandType = 1
+	// An application update; payload is the application request.
+	CommandType_COMMAND_TYPE_UPDATE CommandType = 1
+	// No-op: applied without touching the core. Used as the index-contiguity
+	// filler in seeded child logs (the sibling's routed entries).
+	CommandType_COMMAND_TYPE_NOOP CommandType = 2
+	// Shard-split cutoff: freezes the (parent) shard at this entry's index and
+	// activates its children. Payload is a Cutoff message.
+	CommandType_COMMAND_TYPE_CUTOFF CommandType = 3
 )
 
 // Enum value maps for CommandType.
@@ -33,10 +40,14 @@ var (
 	CommandType_name = map[int32]string{
 		0: "COMMAND_TYPE_INVALID",
 		1: "COMMAND_TYPE_UPDATE",
+		2: "COMMAND_TYPE_NOOP",
+		3: "COMMAND_TYPE_CUTOFF",
 	}
 	CommandType_value = map[string]int32{
 		"COMMAND_TYPE_INVALID": 0,
 		"COMMAND_TYPE_UPDATE":  1,
+		"COMMAND_TYPE_NOOP":    2,
+		"COMMAND_TYPE_CUTOFF":  3,
 	}
 )
 
@@ -68,9 +79,20 @@ func (CommandType) EnumDescriptor() ([]byte, []int) {
 }
 
 type MonsteraCommand struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Payload       []byte                 `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
-	Type          CommandType            `protobuf:"varint,2,opt,name=type,proto3,enum=evrblk.monstera.replication.CommandType" json:"type,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Payload []byte                 `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
+	Type    CommandType            `protobuf:"varint,2,opt,name=type,proto3,enum=evrblk.monstera.replication.CommandType" json:"type,omitempty"`
+	// Shard key of the update, stamped by the leader at propose time only while
+	// this shard is SPLITTING; used to route seeded entries to the child that
+	// owns the key. Empty at all other times (it costs nothing outside a
+	// split), and empty during a split for unsharded updates, which are seeded
+	// to every child.
+	ShardKey []byte `protobuf:"bytes,3,opt,name=shard_key,json=shardKey,proto3" json:"shard_key,omitempty"`
+	// True iff the proposing leader was in splitting mode. Distinguishes a
+	// key-less unsharded update proposed by a splitting-aware leader (seeded to
+	// every child) from an update proposed by a leader that had not applied the
+	// splitting config yet (unroutable: the seeder restarts from a fresh base).
+	Stamped       bool `protobuf:"varint,4,opt,name=stamped,proto3" json:"stamped,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -119,17 +141,91 @@ func (x *MonsteraCommand) GetType() CommandType {
 	return CommandType_COMMAND_TYPE_INVALID
 }
 
+func (x *MonsteraCommand) GetShardKey() []byte {
+	if x != nil {
+		return x.ShardKey
+	}
+	return nil
+}
+
+func (x *MonsteraCommand) GetStamped() bool {
+	if x != nil {
+		return x.Stamped
+	}
+	return false
+}
+
+// Cutoff is the payload of COMMAND_TYPE_CUTOFF.
+type Cutoff struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ParentShardId string                 `protobuf:"bytes,1,opt,name=parent_shard_id,json=parentShardId,proto3" json:"parent_shard_id,omitempty"`
+	ChildShardIds []string               `protobuf:"bytes,2,rep,name=child_shard_ids,json=childShardIds,proto3" json:"child_shard_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Cutoff) Reset() {
+	*x = Cutoff{}
+	mi := &file_internal_replication_replicationpb_replication_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Cutoff) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Cutoff) ProtoMessage() {}
+
+func (x *Cutoff) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_replication_replicationpb_replication_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Cutoff.ProtoReflect.Descriptor instead.
+func (*Cutoff) Descriptor() ([]byte, []int) {
+	return file_internal_replication_replicationpb_replication_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Cutoff) GetParentShardId() string {
+	if x != nil {
+		return x.ParentShardId
+	}
+	return ""
+}
+
+func (x *Cutoff) GetChildShardIds() []string {
+	if x != nil {
+		return x.ChildShardIds
+	}
+	return nil
+}
+
 var File_internal_replication_replicationpb_replication_proto protoreflect.FileDescriptor
 
 const file_internal_replication_replicationpb_replication_proto_rawDesc = "" +
 	"\n" +
-	"4internal/replication/replicationpb/replication.proto\x12\x1bevrblk.monstera.replication\"i\n" +
+	"4internal/replication/replicationpb/replication.proto\x12\x1bevrblk.monstera.replication\"\xa0\x01\n" +
 	"\x0fMonsteraCommand\x12\x18\n" +
 	"\apayload\x18\x01 \x01(\fR\apayload\x12<\n" +
-	"\x04type\x18\x02 \x01(\x0e2(.evrblk.monstera.replication.CommandTypeR\x04type*@\n" +
+	"\x04type\x18\x02 \x01(\x0e2(.evrblk.monstera.replication.CommandTypeR\x04type\x12\x1b\n" +
+	"\tshard_key\x18\x03 \x01(\fR\bshardKey\x12\x18\n" +
+	"\astamped\x18\x04 \x01(\bR\astamped\"X\n" +
+	"\x06Cutoff\x12&\n" +
+	"\x0fparent_shard_id\x18\x01 \x01(\tR\rparentShardId\x12&\n" +
+	"\x0fchild_shard_ids\x18\x02 \x03(\tR\rchildShardIds*p\n" +
 	"\vCommandType\x12\x18\n" +
 	"\x14COMMAND_TYPE_INVALID\x10\x00\x12\x17\n" +
-	"\x13COMMAND_TYPE_UPDATE\x10\x01B?Z=github.com/evrblk/monstera/internal/replication/replicationpbb\x06proto3"
+	"\x13COMMAND_TYPE_UPDATE\x10\x01\x12\x15\n" +
+	"\x11COMMAND_TYPE_NOOP\x10\x02\x12\x17\n" +
+	"\x13COMMAND_TYPE_CUTOFF\x10\x03B?Z=github.com/evrblk/monstera/internal/replication/replicationpbb\x06proto3"
 
 var (
 	file_internal_replication_replicationpb_replication_proto_rawDescOnce sync.Once
@@ -144,10 +240,11 @@ func file_internal_replication_replicationpb_replication_proto_rawDescGZIP() []b
 }
 
 var file_internal_replication_replicationpb_replication_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_internal_replication_replicationpb_replication_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_internal_replication_replicationpb_replication_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_internal_replication_replicationpb_replication_proto_goTypes = []any{
 	(CommandType)(0),        // 0: evrblk.monstera.replication.CommandType
 	(*MonsteraCommand)(nil), // 1: evrblk.monstera.replication.MonsteraCommand
+	(*Cutoff)(nil),          // 2: evrblk.monstera.replication.Cutoff
 }
 var file_internal_replication_replicationpb_replication_proto_depIdxs = []int32{
 	0, // 0: evrblk.monstera.replication.MonsteraCommand.type:type_name -> evrblk.monstera.replication.CommandType
@@ -169,7 +266,7 @@ func file_internal_replication_replicationpb_replication_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_replication_replicationpb_replication_proto_rawDesc), len(file_internal_replication_replicationpb_replication_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

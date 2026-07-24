@@ -30,6 +30,8 @@ func decodeReplicaStates(resp *monsterapb.ListReplicaStatesResponse) ([]*transpo
 			raftState = transport.RaftStateLeader
 		case monsterapb.RaftState_RAFT_STATE_SHUTDOWN:
 			raftState = transport.RaftStateDead
+		case monsterapb.RaftState_RAFT_STATE_SEEDING:
+			raftState = transport.RaftStateSeeding
 		default:
 			return nil, fmt.Errorf("unknown raft state: %v", protoState)
 		}
@@ -51,12 +53,60 @@ func decodeReplicaStates(resp *monsterapb.ListReplicaStatesResponse) ([]*transpo
 		}
 
 		states[i] = &transport.ReplicaState{
-			ReplicaId: r.ReplicaId,
-			RaftState: raftState,
-			Stats:     stats,
+			ReplicaId:   r.ReplicaId,
+			RaftState:   raftState,
+			Stats:       stats,
+			Seeding:     r.Seeding,
+			SeededIndex: r.SeededIndex,
+			Frozen:      r.Frozen,
 		}
 	}
 	return states, nil
+}
+
+// encodeReplicaStates renders the transport-level replica states onto the wire.
+// The inverse of decodeReplicaStates.
+func encodeReplicaStates(states []*transport.ReplicaState) []*monsterapb.ReplicaState {
+	out := make([]*monsterapb.ReplicaState, len(states))
+	for i, s := range states {
+		out[i] = &monsterapb.ReplicaState{
+			ReplicaId: s.ReplicaId,
+			RaftStats: &monsterapb.RaftStats{
+				State:             encodeTransportRaftState(s.RaftState),
+				Term:              s.Stats.Term,
+				LastLogIndex:      s.Stats.LastLogIndex,
+				LastLogTerm:       s.Stats.LastLogTerm,
+				CommitIndex:       s.Stats.CommitIndex,
+				AppliedIndex:      s.Stats.AppliedIndex,
+				FsmPending:        s.Stats.FSMPending,
+				LastSnapshotIndex: s.Stats.LastSnapshotIndex,
+				LastSnapshotTerm:  s.Stats.LastSnapshotTerm,
+				NumPeers:          int32(s.Stats.NumPeers),
+				LastContactNanos:  int64(s.Stats.LastContact),
+			},
+			Seeding:     s.Seeding,
+			SeededIndex: s.SeededIndex,
+			Frozen:      s.Frozen,
+		}
+	}
+	return out
+}
+
+func encodeTransportRaftState(s transport.RaftState) monsterapb.RaftState {
+	switch s {
+	case transport.RaftStateFollower:
+		return monsterapb.RaftState_RAFT_STATE_FOLLOWER
+	case transport.RaftStateCandidate:
+		return monsterapb.RaftState_RAFT_STATE_CANDIDATE
+	case transport.RaftStateLeader:
+		return monsterapb.RaftState_RAFT_STATE_LEADER
+	case transport.RaftStateDead:
+		return monsterapb.RaftState_RAFT_STATE_SHUTDOWN
+	case transport.RaftStateSeeding:
+		return monsterapb.RaftState_RAFT_STATE_SEEDING
+	default:
+		panic(fmt.Sprintf("unknown transport raft state: %v", s))
+	}
 }
 
 // decodeRaftSnapshots converts the wire snapshot metadata into transport-level DTOs.
@@ -73,25 +123,6 @@ func decodeRaftSnapshots(s []*monsterapb.RaftSnapshot) []*transport.RaftSnapshot
 	return ret
 }
 
-// encodeRaftStats renders the structured Raft stats onto the wire message. The
-// field set is Monstera's own contract, independent of the underlying Raft
-// library.
-func encodeRaftStats(s raft.RaftStats) *monsterapb.RaftStats {
-	return &monsterapb.RaftStats{
-		State:             encodeRaftState(s.State),
-		Term:              s.Term,
-		LastLogIndex:      s.LastLogIndex,
-		LastLogTerm:       s.LastLogTerm,
-		CommitIndex:       s.CommitIndex,
-		AppliedIndex:      s.AppliedIndex,
-		FsmPending:        s.FSMPending,
-		LastSnapshotIndex: s.LastSnapshotIndex,
-		LastSnapshotTerm:  s.LastSnapshotTerm,
-		NumPeers:          int32(s.NumPeers),
-		LastContactNanos:  int64(s.LastContact),
-	}
-}
-
 func encodeRaftSnapshots(s []raft.SnapshotMetadata) []*monsterapb.RaftSnapshot {
 	ret := make([]*monsterapb.RaftSnapshot, len(s))
 	for i, s := range s {
@@ -103,19 +134,4 @@ func encodeRaftSnapshots(s []raft.SnapshotMetadata) []*monsterapb.RaftSnapshot {
 		}
 	}
 	return ret
-}
-
-func encodeRaftState(s raft.RaftState) monsterapb.RaftState {
-	switch s {
-	case raft.Follower:
-		return monsterapb.RaftState_RAFT_STATE_FOLLOWER
-	case raft.Candidate:
-		return monsterapb.RaftState_RAFT_STATE_CANDIDATE
-	case raft.Leader:
-		return monsterapb.RaftState_RAFT_STATE_LEADER
-	case raft.Shutdown:
-		return monsterapb.RaftState_RAFT_STATE_SHUTDOWN
-	default:
-		panic(fmt.Sprintf("Unknown enum value %v", s))
-	}
 }

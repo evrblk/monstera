@@ -9,32 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/evrblk/monstera"
 	"github.com/evrblk/monstera/cluster"
-	"github.com/evrblk/monstera/internal/integration_test/testcore"
+	"github.com/evrblk/monstera/internal/integration_test/testutils"
 	"github.com/evrblk/monstera/transport/local"
 )
-
-// startNode constructs and starts a single node on baseDir over the local
-// transport, registering it so it can receive messages. A node with an empty data
-// dir comes up UNPROVISIONED and is bootstrapped in-process with config; a node
-// whose data dir already holds a persisted config resumes it (config is ignored).
-func startNode(t *testing.T, baseDir, nodeId string, config *cluster.Config, trans *local.LocalTransport, inMemory bool) *monstera.Node {
-	t.Helper()
-	nodeConfig := monstera.DefaultMonsteraNodeConfig
-	nodeConfig.UseInMemoryRaftStore = inMemory
-
-	node, err := monstera.NewNode(baseDir, testcore.NopDescriptors(), nodeConfig, trans)
-	require.NoError(t, err)
-	node.Start()
-	if node.NodeState() == monstera.UNPROVISIONED {
-		require.NoError(t, node.Bootstrap(context.Background(), nodeId, config))
-	}
-	// Register under the node's now-assigned id so peers can reach it (a fresh
-	// node has no id until Bootstrap).
-	trans.Register(node)
-	return node
-}
 
 func replicaOnNode(t *testing.T, config *cluster.Config, nodeId string) string {
 	t.Helper()
@@ -54,13 +32,13 @@ func replicaOnNode(t *testing.T, config *cluster.Config, nodeId string) string {
 // TestDataDirLayout checks that a node's data dir is organized as raft/,
 // snapshots/<replicaId>/, config/ — with no top-level per-replica dir.
 func TestDataDirLayout(t *testing.T) {
-	config := newConfig(t)
+	config := testutils.SingleShardLocalConfig(t, 3, 3)
 	baseDir := t.TempDir()
 	trans := local.NewLocalTransport()
 	t.Cleanup(func() { _ = trans.Close() })
 
 	// On-disk raft store so the raft/ dir is materialized.
-	node := startNode(t, baseDir, "node_1", config, trans, false)
+	node := testutils.StartLocalNode(t, baseDir, "node_1", config, trans, false)
 	t.Cleanup(node.Stop)
 
 	replicaId := replicaOnNode(t, config, "node_1")
@@ -85,11 +63,11 @@ func TestDataDirLayout(t *testing.T) {
 // config passed at bootstrap time).
 func TestConfigPersistsAcrossRestart(t *testing.T) {
 	baseDir := t.TempDir()
-	seed := newConfig(t) // version 1
+	seed := testutils.SingleShardLocalConfig(t, 3, 3) // version 1
 	configPath := filepath.Join(baseDir, "config", "cluster.json")
 
 	trans1 := local.NewLocalTransport()
-	node1 := startNode(t, baseDir, "node_1", seed, trans1, true)
+	node1 := testutils.StartLocalNode(t, baseDir, "node_1", seed, trans1, true)
 	require.EqualValues(t, 1, node1.GetClusterConfig().Version)
 
 	// First boot persists the seed.
@@ -112,7 +90,7 @@ func TestConfigPersistsAcrossRestart(t *testing.T) {
 	// Restart with a STALE seed (version 1). The persisted v2 must win.
 	trans2 := local.NewLocalTransport()
 	t.Cleanup(func() { _ = trans2.Close() })
-	node2 := startNode(t, baseDir, "node_1", seed, trans2, true)
+	node2 := testutils.StartLocalNode(t, baseDir, "node_1", seed, trans2, true)
 	t.Cleanup(node2.Stop)
 	require.EqualValues(t, 2, node2.GetClusterConfig().Version)
 }

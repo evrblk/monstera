@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -233,6 +234,76 @@ var moveShardCmd = &cobra.Command{
 	},
 }
 
+var splitShardCmdCfg struct {
+	configPath   string
+	shardId      string
+	splitAt      string
+	bake         time.Duration
+	sequencePath string
+	timeout      time.Duration
+}
+
+var splitShardCmd = &cobra.Command{
+	Use:   "split-shard",
+	Short: "Splits an active shard into two children via a control sequence",
+	Long: "Plans and runs a split-shard control sequence over the admin plane: it declares the split " +
+		"(parent -> splitting, two activating children co-located with the parent's replicas), waits " +
+		"for every node to seed its children, delivers the CUTOFF through the parent's Raft log " +
+		"(freezing the parent and promoting the children with zero write downtime), flips the config " +
+		"(parent -> inactive, children -> active), then bakes for --bake.\n\n" +
+		"--split-at is the first shard key of the second child, 8 hex characters (4 bytes), e.g. " +
+		"80000000 for an even split of a full-range shard.\n\n" +
+		"Progress is checkpointed to --sequence (a temp file if omitted); re-run with the same " +
+		"--config and --sequence to resume after an interruption.",
+	Run: func(cmd *cobra.Command, args []string) {
+		base, err := cluster.LoadConfigFromFile(splitShardCmdCfg.configPath)
+		if err != nil {
+			log.Fatalf("loading cluster config: %v", err)
+		}
+
+		splitAt, err := hex.DecodeString(splitShardCmdCfg.splitAt)
+		if err != nil {
+			log.Fatalf("parsing --split-at: %v", err)
+		}
+
+		seqPath := splitShardCmdCfg.sequencePath
+		if seqPath == "" {
+			seqPath = filepath.Join(os.TempDir(), fmt.Sprintf("monstera-split-shard-%s-%s.json", splitShardCmdCfg.shardId, splitShardCmdCfg.splitAt))
+		}
+
+		var seq *control.Sequence
+		if _, statErr := os.Stat(seqPath); statErr == nil {
+			seq, err = control.LoadSequence(seqPath)
+			if err != nil {
+				log.Fatalf("loading sequence %s: %v", seqPath, err)
+			}
+			log.Printf("Resuming sequence %q from %s (step %d/%d)", seq.Name, seqPath, seq.Cursor+1, len(seq.Steps))
+		} else {
+			seq, err = control.PlanSplitShard(base, splitShardCmdCfg.shardId, splitAt, splitShardCmdCfg.bake)
+			if err != nil {
+				log.Fatalf("planning split-shard: %v", err)
+			}
+			seq.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+			if err := control.SaveSequence(seqPath, seq); err != nil {
+				log.Fatalf("saving sequence: %v", err)
+			}
+			log.Printf("Planned split-shard sequence at %s", seqPath)
+		}
+
+		admin := monsteragrpc.NewAdminClient()
+		defer admin.Close()
+
+		exec := control.NewExecutor(admin, base, seqPath, control.DefaultOptions())
+		ctx, cancel := context.WithTimeout(context.Background(), splitShardCmdCfg.timeout)
+		defer cancel()
+
+		if err := exec.Run(ctx, seq); err != nil {
+			log.Fatalf("split-shard failed: %v", err)
+		}
+		log.Printf("Shard %q split at %s; cluster is at version %d.", splitShardCmdCfg.shardId, splitShardCmdCfg.splitAt, base.Version+2)
+	},
+}
+
 var getConfigCmdCfg struct {
 	nodeAddress string
 	out         string
@@ -316,6 +387,17 @@ func init() {
 	moveShardCmd.PersistentFlags().DurationVarP(&moveShardCmdCfg.bake, "bake", "", 30*time.Second, "Soak time after the new replica catches up, before removing the old one")
 	moveShardCmd.PersistentFlags().StringVarP(&moveShardCmdCfg.sequencePath, "sequence", "", "", "Path to checkpoint/resume the sequence (default: a temp file)")
 	moveShardCmd.PersistentFlags().DurationVarP(&moveShardCmdCfg.timeout, "timeout", "", 5*time.Minute, "Overall deadline for the sequence")
+
+	clusterCmd.AddCommand(splitShardCmd)
+	splitShardCmd.PersistentFlags().StringVarP(&splitShardCmdCfg.configPath, "config", "", "", "Base Monstera cluster config path (the pinned base for the sequence)")
+	panicIfNotNil(splitShardCmd.MarkPersistentFlagRequired("config"))
+	splitShardCmd.PersistentFlags().StringVarP(&splitShardCmdCfg.shardId, "shard-id", "", "", "ID of the (active) shard to split")
+	panicIfNotNil(splitShardCmd.MarkPersistentFlagRequired("shard-id"))
+	splitShardCmd.PersistentFlags().StringVarP(&splitShardCmdCfg.splitAt, "split-at", "", "", "First shard key of the second child, 8 hex chars (e.g. 80000000)")
+	panicIfNotNil(splitShardCmd.MarkPersistentFlagRequired("split-at"))
+	splitShardCmd.PersistentFlags().DurationVarP(&splitShardCmdCfg.bake, "bake", "", 30*time.Second, "Soak time after the flip, before declaring the split done")
+	splitShardCmd.PersistentFlags().StringVarP(&splitShardCmdCfg.sequencePath, "sequence", "", "", "Path to checkpoint/resume the sequence (default: a temp file)")
+	splitShardCmd.PersistentFlags().DurationVarP(&splitShardCmdCfg.timeout, "timeout", "", 10*time.Minute, "Overall deadline for the sequence")
 
 	clusterCmd.AddCommand(getConfigCmd)
 	getConfigCmd.PersistentFlags().StringVarP(&getConfigCmdCfg.nodeAddress, "node-address", "", "", "gRPC address (host:port) of a node to fetch the config from")

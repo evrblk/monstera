@@ -33,7 +33,7 @@ func generateMetrics(f *File) {
 				Id("NativeHistogramMinResetDuration"): Qual("time", "Hour"),
 			},
 			),
-			Op("[]").String().Values(Lit("core"), Lit("method"), Lit("shard"), Lit("replica")),
+			Op("[]").String().Values(Lit("node"), Lit("core"), Lit("method"), Lit("shard"), Lit("replica")),
 		),
 		Id("rpcMethodsTotal").Op("=").Qual("github.com/prometheus/client_golang/prometheus", "NewCounterVec").Call(
 			Qual("github.com/prometheus/client_golang/prometheus", "CounterOpts").Values(Dict{
@@ -41,7 +41,7 @@ func generateMetrics(f *File) {
 				Id("Help"): Lit("Number of Monstera RPC method calls"),
 			},
 			),
-			Op("[]").String().Values(Lit("core"), Lit("method"), Lit("shard"), Lit("replica")),
+			Op("[]").String().Values(Lit("node"), Lit("core"), Lit("method"), Lit("shard"), Lit("replica")),
 		),
 	)
 	f.Line()
@@ -68,6 +68,30 @@ func generateHelpers(f *File) {
 		Id("o").Dot("Observe").Call(Qual("time", "Since").Call(Id("t1")).Dot("Seconds").Call()),
 	)
 	f.Line()
+
+	// checkShardBounds func
+	f.Func().Id("checkShardBounds").Params(
+		Id("shardKey").Index().Byte(),
+		Id("lowerBound").Index().Byte(),
+		Id("upperBound").Index().Byte(),
+	).Params(
+		Error(),
+	).Block(
+		If(
+			Qual("bytes", "Compare").Call(Id("shardKey"), Id("lowerBound")).Op("<").Lit(0).
+				Op("||").
+				Qual("bytes", "Compare").Call(Id("shardKey"), Id("upperBound")).Op(">").Lit(0),
+		).Block(
+			Return(Qual("fmt", "Errorf").Call(
+				Lit("routing violation: shard key %x is outside shard bounds [%x, %x]"),
+				Id("shardKey"),
+				Id("lowerBound"),
+				Id("upperBound"),
+			)),
+		),
+		Return(Nil()),
+	)
+	f.Line()
 }
 
 func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
@@ -76,8 +100,12 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 	coreVarName := firstCharToLower(core.Name) + "Core"
 	corepb := cfg.GoCode.CoreTypesPackage
 	f.Type().Id(adapterName).Struct(
+		Id("nodeId").String(),
 		Id("shardId").String(),
 		Id("replicaId").String(),
+		Line(),
+		Id("shardLowerBound").Index().Byte(),
+		Id("shardUpperBound").Index().Byte(),
 		Line(),
 		Id(coreVarName).Qual(cfg.GoCode.OutputPackage, apiName),
 	)
@@ -89,16 +117,22 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 	f.Func().Id(
 		"New"+adapterName,
 	).Params(
+		Id("nodeId").String(),
 		Id("shardId").String(),
 		Id("replicaId").String(),
+		Id("shardLowerBound").Index().Byte(),
+		Id("shardUpperBound").Index().Byte(),
 		Id(coreVarName).Qual(cfg.GoCode.OutputPackage, apiName),
 	).Params(
 		Op("*").Id(adapterName),
 	).Block(
 		Return(Op("&").Id(adapterName).Values(Dict{
-			Id("shardId"):   Id("shardId"),
-			Id("replicaId"): Id("replicaId"),
-			Id(coreVarName): Id(coreVarName),
+			Id("nodeId"):          Id("nodeId"),
+			Id("shardId"):         Id("shardId"),
+			Id("replicaId"):       Id("replicaId"),
+			Id("shardLowerBound"): Id("shardLowerBound"),
+			Id("shardUpperBound"): Id("shardUpperBound"),
+			Id(coreVarName):       Id(coreVarName),
 		})),
 	)
 	f.Line()
@@ -169,54 +203,68 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 				for _, update := range core.UpdateMethods {
 					g.Case(
 						Lit(update.Number),
-					).Block(
-						Id("rpcMethodsTotal").Dot("WithLabelValues").Call(
+					).BlockFunc(func(g *Group) {
+						g.Id("rpcMethodsTotal").Dot("WithLabelValues").Call(
+							Id("a").Dot("nodeId"),
 							Lit(core.Name),
 							Lit(update.Name),
 							Id("a").Dot("shardId"),
 							Id("a").Dot("replicaId"),
-						).Dot("Inc").Call(),
-						Defer().Id("measureSince").Call(
+						).Dot("Inc").Call()
+						g.Defer().Id("measureSince").Call(
 							Id("rpcMethodDuration").Dot("WithLabelValues").Call(
+								Id("a").Dot("nodeId"),
 								Lit(core.Name),
 								Lit(update.Name),
 								Id("a").Dot("shardId"),
 								Id("a").Dot("replicaId"),
 							),
 							Id("t1"),
-						),
-						Line(),
+						)
+						g.Line()
 
-						Id("methodReq").Op(":=").Qual(corepb, update.Name+"Request").Op("{}"),
-						Id("err").Op(":=").Id("methodReq").Dot("UnmarshalBinary").Call(
+						g.Id("methodReq").Op(":=").Qual(corepb, update.Name+"Request").Op("{}")
+						g.Id("err").Op(":=").Id("methodReq").Dot("UnmarshalBinary").Call(
 							Id("rpcReq").Dot("Data"),
-						),
-						If(
+						)
+						g.If(
 							Id("err").Op("!=").Nil(),
 						).Block(
 							Return(Nil(), Err()),
-						),
-						List(Id("methodResp"), Err()).Op(":=").Id("a").Dot(coreVarName).Dot(update.Name).Call(
-							Op("&").Id(update.Name+"Request").Values(Dict{
+						)
+						if update.Sharded {
+							g.If(
+								Err().Op(":=").Id("checkShardBounds").Call(
+									Id("methodReq").Dot("ShardKey").Call(),
+									Id("a").Dot("shardLowerBound"),
+									Id("a").Dot("shardUpperBound"),
+								),
+								Err().Op("!=").Nil(),
+							).Block(
+								Return(Nil(), Err()),
+							)
+						}
+						g.List(Id("methodResp"), Err()).Op(":=").Id("a").Dot(coreVarName).Dot(update.Name).Call(
+							Op("&").Id(update.Name + "Request").Values(Dict{
 								Id("Payload"): Op("&").Id("methodReq"),
 								Id("Now"):     Id("rpcReq").Dot("Now"),
 							}),
-						),
-						If(
+						)
+						g.If(
 							Id("err").Op("!=").Nil(),
 						).Block(
 							Return(Nil(), Err()),
-						),
-						Id("rpcResp").Dot("Error").Op("=").Id("methodResp").Dot("ApplicationError"),
-						List(Id("methodRespBytes"), Err()).Op(":=").Id("methodResp").Dot("Payload").Dot("MarshalBinary").Call(),
-						If(
+						)
+						g.Id("rpcResp").Dot("Error").Op("=").Id("methodResp").Dot("ApplicationError")
+						g.List(Id("methodRespBytes"), Err()).Op(":=").Id("methodResp").Dot("Payload").Dot("MarshalBinary").Call()
+						g.If(
 							Id("err").Op("!=").Nil(),
 						).Block(
 							Return(Nil(), Err()),
-						),
-						Id("rpcResp").Dot("Data").Op("=").Id("methodRespBytes"),
+						)
+						g.Id("rpcResp").Dot("Data").Op("=").Id("methodRespBytes")
 						// Id("resp").Dot("Events").Op("=").Id("methodResp").Dot("Events"),
-					)
+					})
 				}
 				g.Default().Block(
 					Return(Nil(), Qual("fmt", "Errorf").Call(
@@ -283,54 +331,68 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 				for _, read := range core.ReadMethods {
 					g.Case(
 						Lit(read.Number),
-					).Block(
-						Id("rpcMethodsTotal").Dot("WithLabelValues").Call(
+					).BlockFunc(func(g *Group) {
+						g.Id("rpcMethodsTotal").Dot("WithLabelValues").Call(
+							Id("a").Dot("nodeId"),
 							Lit(core.Name),
 							Lit(read.Name),
 							Id("a").Dot("shardId"),
 							Id("a").Dot("replicaId"),
-						).Dot("Inc").Call(),
-						Defer().Id("measureSince").Call(
+						).Dot("Inc").Call()
+						g.Defer().Id("measureSince").Call(
 							Id("rpcMethodDuration").Dot("WithLabelValues").Call(
+								Id("a").Dot("nodeId"),
 								Lit(core.Name),
 								Lit(read.Name),
 								Id("a").Dot("shardId"),
 								Id("a").Dot("replicaId"),
 							),
 							Id("t1"),
-						),
-						Line(),
+						)
+						g.Line()
 
-						Id("methodReq").Op(":=").Qual(corepb, read.Name+"Request").Op("{}"),
-						Id("err").Op(":=").Id("methodReq").Dot("UnmarshalBinary").Call(
+						g.Id("methodReq").Op(":=").Qual(corepb, read.Name+"Request").Op("{}")
+						g.Id("err").Op(":=").Id("methodReq").Dot("UnmarshalBinary").Call(
 							Id("rpcReq").Dot("Data"),
-						),
-						If(
+						)
+						g.If(
 							Id("err").Op("!=").Nil(),
 						).Block(
 							Return(Nil(), Err()),
-						),
-						List(Id("methodResp"), Err()).Op(":=").Id("a").Dot(coreVarName).Dot(read.Name).Call(
-							Op("&").Id(read.Name+"Request").Values(Dict{
+						)
+						if read.Sharded {
+							g.If(
+								Err().Op(":=").Id("checkShardBounds").Call(
+									Id("methodReq").Dot("ShardKey").Call(),
+									Id("a").Dot("shardLowerBound"),
+									Id("a").Dot("shardUpperBound"),
+								),
+								Err().Op("!=").Nil(),
+							).Block(
+								Return(Nil(), Err()),
+							)
+						}
+						g.List(Id("methodResp"), Err()).Op(":=").Id("a").Dot(coreVarName).Dot(read.Name).Call(
+							Op("&").Id(read.Name + "Request").Values(Dict{
 								Id("Payload"): Op("&").Id("methodReq"),
 								Id("Now"):     Id("rpcReq").Dot("Now"),
 							}),
-						),
-						If(
+						)
+						g.If(
 							Id("err").Op("!=").Nil(),
 						).Block(
 							Return(Nil(), Err()),
-						),
-						Id("rpcResp").Dot("Error").Op("=").Id("methodResp").Dot("ApplicationError"),
-						List(Id("methodRespBytes"), Err()).Op(":=").Id("methodResp").Dot("Payload").Dot("MarshalBinary").Call(),
-						If(
+						)
+						g.Id("rpcResp").Dot("Error").Op("=").Id("methodResp").Dot("ApplicationError")
+						g.List(Id("methodRespBytes"), Err()).Op(":=").Id("methodResp").Dot("Payload").Dot("MarshalBinary").Call()
+						g.If(
 							Id("err").Op("!=").Nil(),
 						).Block(
 							Return(Nil(), Err()),
-						),
-						Id("rpcResp").Dot("Data").Op("=").Id("methodRespBytes"),
+						)
+						g.Id("rpcResp").Dot("Data").Op("=").Id("methodRespBytes")
 						// Id("resp").Dot("Events").Op("=").Id("methodResp").Dot("Events"),
-					)
+					})
 				}
 				g.Default().Block(
 					Return(Nil(), Qual("fmt", "Errorf").Call(

@@ -8,11 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/evrblk/monstera"
-	"github.com/evrblk/monstera/cluster"
 	"github.com/evrblk/monstera/control"
 	"github.com/evrblk/monstera/internal/integration_test/testcore"
-	"github.com/evrblk/monstera/transport"
+	"github.com/evrblk/monstera/internal/integration_test/testutils"
 	"github.com/evrblk/monstera/transport/grpc"
 )
 
@@ -22,34 +20,23 @@ import (
 // until node_4's new replica has actually caught up, so a passing Run proves the
 // catch-up happened; we then assert the membership moved and a leader remains.
 func TestMoveShardSequenceOverGrpc(t *testing.T) {
-	var addrs [4]string
-	for i := range addrs {
-		addrs[i] = freeAddr(t)
-	}
-	base := moveShardBaseConfig(t, addrs)
+	addrs := testutils.FreeAddrs(t, 4)
+	// Replicas on node_1/2/3; node_4 hosts none of this shard yet.
+	base := testutils.SingleShardConfig(t, addrs, 3)
 	shardId := base.Applications[0].Shards[0].Id
-
-	nodeConfig := monstera.DefaultMonsteraNodeConfig
-	nodeConfig.UseInMemoryRaftStore = true
 
 	admin := grpc.NewAdminClient()
 	t.Cleanup(func() { _ = admin.Close() })
 
-	cl := &grpcCluster{}
-	t.Cleanup(cl.stop)
-
+	cl := testutils.NewGrpcCluster(t)
 	ids := []string{"node_1", "node_2", "node_3", "node_4"}
 	for i := range ids {
-		startGrpcNode(t, cl, nodeConfig, addrs[i], testcore.NopDescriptors())
+		cl.StartNode(t, testutils.InMemoryNodeConfig(), addrs[i], testcore.NopDescriptors())
 	}
-	for i, id := range ids {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		require.NoErrorf(t, admin.Bootstrap(ctx, addrs[i], id, base), "bootstrap %s", id)
-		cancel()
-	}
+	testutils.BootstrapNodes(t, admin, addrs, ids, base)
 
 	// Wait for the shard (on node_1/2/3) to elect a leader before moving it.
-	requireShardLeader(t, admin, addrs[:3])
+	testutils.RequireLeader(t, admin, addrs[:3], nil)
 
 	// Move the shard's replica from node_1 to node_4, with a short bake.
 	seq, err := control.PlanMoveShard(base, shardId, "node_1", "node_4", 500*time.Millisecond)
@@ -87,46 +74,5 @@ func TestMoveShardSequenceOverGrpc(t *testing.T) {
 	require.True(t, nodeSet["node_4"], "shard should now have a replica on node_4")
 
 	// The shard still has a leader among the new membership.
-	requireShardLeader(t, admin, []string{addrs[1], addrs[2], addrs[3]})
-}
-
-func moveShardBaseConfig(t *testing.T, addrs [4]string) *cluster.Config {
-	t.Helper()
-	c := cluster.CreateEmptyConfig()
-	ids := []string{"node_1", "node_2", "node_3", "node_4"}
-	for i, id := range ids {
-		_, err := c.CreateNode(id, addrs[i])
-		require.NoError(t, err)
-	}
-	a, err := c.CreateApplication("Core", "Core", 3)
-	require.NoError(t, err)
-	s, err := c.CreateShard(a.Name, []byte{0x00, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, "")
-	require.NoError(t, err)
-	// Replicas on node_1/2/3; node_4 hosts none of this shard yet.
-	for _, id := range []string{"node_1", "node_2", "node_3"} {
-		_, err := c.CreateReplica(a.Name, s.Id, id)
-		require.NoError(t, err)
-	}
-	require.NoError(t, c.Validate())
-	return c
-}
-
-func requireShardLeader(t *testing.T, admin *grpc.AdminClient, addrs []string) {
-	t.Helper()
-	require.Eventually(t, func() bool {
-		for _, addr := range addrs {
-			cctx, c := context.WithTimeout(context.Background(), time.Second)
-			states, err := admin.ListReplicaStates(cctx, addr)
-			c()
-			if err != nil {
-				continue
-			}
-			for _, s := range states {
-				if s.RaftState == transport.RaftStateLeader {
-					return true
-				}
-			}
-		}
-		return false
-	}, 20*time.Second, 200*time.Millisecond, "shard never elected a leader")
+	testutils.RequireLeader(t, admin, []string{addrs[1], addrs[2], addrs[3]}, nil)
 }

@@ -4,43 +4,93 @@ package com.evrblk.monstera.cluster;
 
 option go_package = "github.com/evrblk/monstera/cluster";
 
+// Metadata is an arbitrary key-value pair attached to a config entity (the
+// config itself, a node, an application, a shard, or a replica). Monstera does
+// not interpret it; it is for operators and tooling. Keys must be unique
+// within one entity.
 message Metadata {
   string key = 1;
   string value = 2;
 }
 
+// Node is a single Monstera server that hosts replicas.
 message Node {
+  // Unique across the whole cluster.
   string id = 1;
+  // Address (host:port) of the node's gRPC server. Unique across the whole cluster.
   string grpc_address = 2;
   repeated Metadata metadata = 3;
 }
 
+// Application is a user-defined state machine (an "application core")
+// replicated by Monstera. Its 4-byte keyspace [0x00000000; 0xffffffff] is
+// divided into shards.
 message Application {
+  // Unique across the whole cluster.
   string name = 1;
+  // Name of the application core implementation, used by nodes to look up the
+  // corresponding core factory.
   string implementation = 2;
   repeated Shard shards = 3;
+  // The minimum number of replicas for each shard of this application. At least 3.
   int32 replication_factor = 4;
   repeated Metadata metadata = 5;
 }
 
+// ShardState is the lifecycle state of a shard.
+enum ShardState {
+  SHARD_STATE_INVALID = 0;
+  // The shard serves its key range. It has no children.
+  SHARD_STATE_ACTIVE = 1;
+  // The shard is retired after a completed split. It no longer serves its
+  // key range: its children serve it instead.
+  SHARD_STATE_INACTIVE = 2;
+  // The shard still serves its key range while its 2 or more activating
+  // children are being prepared to take over.
+  SHARD_STATE_SPLITTING = 3;
+  // The shard is a child of a splitting shard that is being activated to
+  // take over its part of the parent's key range. It does not serve yet
+  // and has no children.
+  SHARD_STATE_ACTIVATING = 4;
+}
+
+// Shard owns a contiguous range of an application's keyspace and is
+// replicated as one Raft group. Active and splitting shards must cover the
+// application's full keyspace with no gaps and no overlaps; inactive and
+// activating shards may overlap them. A splitting shard must have 2 or more
+// activating children that exactly cover its range. Only inactive and
+// splitting shards have children.
 message Shard {
+  // Unique across the whole cluster.
   string id = 1;
+  // Inclusive 4-byte bounds of the owned key range: lower_bound <= upper_bound.
   bytes lower_bound = 2;
   bytes upper_bound = 3;
+  // Id of the shard this shard was split from. Empty for shards created directly.
   string parent_id = 4;
   repeated Replica replicas = 5;
   repeated Metadata metadata = 6;
+  ShardState state = 7;
 }
 
+// Replica is one member of a shard's Raft group, pinned to a node. Replicas
+// of the same shard must be on different nodes; a replica is never moved to
+// another node (it is removed and a new one is added instead).
 message Replica {
+  // Unique across the whole cluster.
   string id = 1;
+  // Id of the node this replica is assigned to.
   string node_id = 2;
   repeated Metadata metadata = 3;
 }
 
+// Config describes the entire cluster topology: all applications (with their
+// shards and replicas) and all nodes. It is distributed to every node and
+// client as a single file.
 message Config {
   repeated Application applications = 1;
   repeated Node nodes = 2;
+  // Monotonically increasing config version, incremented on every change.
   int64 version = 3;
   repeated Metadata metadata = 4;
 }

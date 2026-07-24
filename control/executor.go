@@ -120,7 +120,7 @@ func (e *Executor) executeStep(ctx context.Context, current, target *cluster.Con
 	case StepBake:
 		return e.executeBake(ctx, target, step)
 	case StepSendCommand:
-		return fmt.Errorf("send_command steps are not yet supported")
+		return e.executeSendCommand(ctx, target, step)
 	default:
 		return fmt.Errorf("unknown step kind %q", step.Kind)
 	}
@@ -200,6 +200,55 @@ func (e *Executor) pushConfig(ctx context.Context, node *cluster.Node, target *c
 	return err
 }
 
+// executeSendCommand delivers the step's ControlCommand through the target
+// shard's Raft log: it locates the shard's current leader and proposes the
+// command through it, retrying (leader changes, elections) until it commits.
+// The command is idempotent node-side, so retries and resumes are safe.
+func (e *Executor) executeSendCommand(ctx context.Context, cfg *cluster.Config, step *Step) error {
+	cmd := step.Command
+	if cmd == nil {
+		return fmt.Errorf("send_command step has no command")
+	}
+	switch cmd.Kind {
+	case CommandSplitCutoff:
+		if err := e.poll(ctx, fmt.Sprintf("split cutoff of shard %s to commit", cmd.ShardId), func(ctx context.Context) (bool, error) {
+			states, err := e.shardReplicaStates(ctx, cfg, cmd.ShardId)
+			if err != nil {
+				return false, err
+			}
+			for id, s := range states {
+				if s.RaftState != transport.RaftStateLeader {
+					continue
+				}
+				addr, err := e.replicaAddress(cfg, cmd.ShardId, id)
+				if err != nil {
+					return false, err
+				}
+				cctx, cancel := context.WithTimeout(ctx, e.opts.RPCTimeout)
+				err = e.admin.SplitCutoff(cctx, addr, cmd.ShardId)
+				cancel()
+				if err != nil {
+					e.opts.Logf("split cutoff of shard %s via %s failed: %v (will retry)", cmd.ShardId, addr, err)
+					return false, nil
+				}
+				return true, nil
+			}
+			return false, nil // no leader yet
+		}); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unknown control command kind %q", cmd.Kind)
+	}
+
+	for _, g := range step.Gates {
+		if err := e.awaitGate(ctx, g, cfg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // executeBake soaks for the step's WaitFor duration (no config change), then
 // re-confirms the step's gates still hold — e.g. the new replica is still caught up
 // and the shard still has a leader before the sequence advances to the removal.
@@ -249,6 +298,10 @@ func (e *Executor) awaitGate(ctx context.Context, g Gate, cfg *cluster.Config) e
 	case GateReplicaCaughtUp:
 		return e.poll(ctx, fmt.Sprintf("replica %s to catch up", g.ReplicaId), func(ctx context.Context) (bool, error) {
 			return e.caughtUp(ctx, cfg, g.ShardId, g.ReplicaId, g.MaxLagEntries)
+		})
+	case GateChildrenSeeded:
+		return e.poll(ctx, fmt.Sprintf("children of shard %s to be seeded", g.ShardId), func(ctx context.Context) (bool, error) {
+			return e.childrenSeeded(ctx, cfg, g.ShardId, g.MaxLagEntries)
 		})
 	default:
 		return fmt.Errorf("unknown gate kind %q", g.Kind)

@@ -9,9 +9,9 @@ import (
 func PlaygroundDescriptors() monstera.ApplicationCoreDescriptors {
 	return monstera.ApplicationCoreDescriptors{
 		"Core": {
-			RestoreSnapshotOnStart: false,
+			CoreType: monstera.CoreTypeInMemory,
 			CoreFactoryFunc: func(shard *cluster.Shard, replica *cluster.Replica) monstera.ApplicationCore {
-				return NewPlaygroundCore()
+				return NewBoundedPlaygroundCore(shard.LowerBound, shard.UpperBound)
 			},
 		},
 	}
@@ -21,6 +21,7 @@ func PlaygroundDescriptors() monstera.ApplicationCoreDescriptors {
 func NopDescriptors() monstera.ApplicationCoreDescriptors {
 	return monstera.ApplicationCoreDescriptors{
 		"Core": {
+			CoreType: monstera.CoreTypeInMemory,
 			CoreFactoryFunc: func(shard *cluster.Shard, replica *cluster.Replica) monstera.ApplicationCore {
 				return NopCore{}
 			},

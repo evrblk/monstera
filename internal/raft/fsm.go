@@ -8,9 +8,11 @@ import (
 	hraft "github.com/hashicorp/raft"
 )
 
-// AppCore is the subset of ApplicationCore used by the FSM adapter.
+// AppCore is the subset of ApplicationCore used by the FSM adapter. Apply
+// receives the Raft log index of the entry: the shard-split CUTOFF command
+// freezes the shard at exactly that index.
 type AppCore interface {
-	Apply(request []byte) any
+	Apply(index uint64, request []byte) any
 	Snapshot() AppCoreSnapshot
 	Restore(reader io.ReadCloser) error
 }
@@ -29,7 +31,7 @@ var _ hraft.FSM = &fsmAdapter{}
 
 // Apply is called once a log entry is committed by a majority of the cluster.
 func (f *fsmAdapter) Apply(l *hraft.Log) any {
-	return f.core.Apply(l.Data)
+	return f.core.Apply(l.Index, l.Data)
 }
 
 // Snapshot returns an FSMSnapshot used to support log compaction and follower

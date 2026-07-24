@@ -21,7 +21,7 @@ node becomes ready. The current cluster config lives in `config/cluster.json`. I
 `raft/` holds a single BadgerDB instance with all Raft log and stable stores for all replicas on the node. Each
 replica has a unique prefix which allows all of them to share a single KV store without collisions.
 
-`snapshots/<replicaId>/` stores a few latest (2 by default, configurable) Raft snapshots They are available via
+`snapshots/<replicaId>/` stores a few latest (3 by default, configurable) Raft snapshots They are available via
 `ListReplicaSnapshots` API.
 
 `cores/` stores all data for application cores. This is only a convention and not enforced by the framework.

@@ -1,6 +1,7 @@
 package monstera
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/evrblk/monstera/cluster"
@@ -85,6 +86,56 @@ type Event struct {
 // Value: application core descriptor.
 type ApplicationCoreDescriptors = map[string]ApplicationCoreDescriptor
 
+// CoreType declares the storage model of an application core. The framework
+// derives all storage-dependent behavior from it: whether the latest Raft
+// snapshot is restored into the core on start, and how children of a
+// splitting shard are seeded. The zero value is invalid: the type must be
+// declared explicitly.
+type CoreType int
+
+const (
+	// CoreTypeInMemory: core state lives only in RAM; the Raft log and
+	// snapshots are its durability. On start, the latest snapshot is restored
+	// (via ApplicationCore.Restore) and the log tail is replayed. Split
+	// seeding copies the parent snapshot as the child's base plus the routed
+	// log tail; activation replays it through the bounds-filtered Restore.
+	CoreTypeInMemory CoreType = iota + 1
+
+	// CoreTypePersistedShared: core state is durable, keyed by shard-key
+	// range only, in a store shared across cores — cores with overlapping
+	// bounds alias the same physical rows. No restore on start. Split
+	// seeding is nothing at all: the children's rows are the parent's live
+	// rows, and the split is just the cutoff.
+	CoreTypePersistedShared
+
+	// CoreTypePersistedExclusive: core state is durable and every row lives
+	// under a shard-unique prefix — no row is readable or writable by more
+	// than one core (the physical store may still be shared per node). No
+	// restore on start. Split seeding restores the parent snapshot into the
+	// child core plus a live routed Update tail until the cutoff.
+	CoreTypePersistedExclusive
+)
+
+// RestoreSnapshotOnStart reports whether cores of this type restore their
+// state from the latest Raft snapshot on start (true only for in-memory
+// cores, whose snapshots+log are the durable state).
+func (t CoreType) RestoreSnapshotOnStart() bool {
+	return t == CoreTypeInMemory
+}
+
+func (t CoreType) String() string {
+	switch t {
+	case CoreTypeInMemory:
+		return "InMemory"
+	case CoreTypePersistedShared:
+		return "PersistedShared"
+	case CoreTypePersistedExclusive:
+		return "PersistedExclusive"
+	default:
+		return fmt.Sprintf("CoreType(%d)", int(t))
+	}
+}
+
 // ApplicationCoreDescriptor is used to register an application core with Monstera.
 type ApplicationCoreDescriptor struct {
 	// CoreFactoryFunc is a function that creates a new application core. It is called when
@@ -92,9 +143,9 @@ type ApplicationCoreDescriptor struct {
 	// is added to the node while it is running.
 	CoreFactoryFunc func(shard *cluster.Shard, replica *cluster.Replica) ApplicationCore
 
-	// RestoreSnapshotOnStart is a flag that indicates if the application core should restore its
-	// state from a snapshot on start (via ApplicationCore.Restore). For fully in-memory applications,
-	// this flag should be true. For applications that are backed by an on-disk embedded storage this
-	// might or might not be necessary, depending on implementation.
-	RestoreSnapshotOnStart bool
+	// CoreType declares the storage model of this application's cores (see
+	// the CoreType constants). Everything storage-dependent — restore on
+	// start, shard-split seeding mechanism — is derived from it. Required;
+	// the zero value is rejected at node start.
+	CoreType CoreType
 }

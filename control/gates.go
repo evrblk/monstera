@@ -92,6 +92,50 @@ func (e *Executor) caughtUp(ctx context.Context, cfg *cluster.Config, shardId, r
 	return r.Stats.AppliedIndex+maxLag >= leaderCommit, nil
 }
 
+// childrenSeeded reports whether every activating child of the splitting
+// parent shard is seeded on every node to within maxLag entries of the parent
+// leader's commit index.
+func (e *Executor) childrenSeeded(ctx context.Context, cfg *cluster.Config, parentShardId string, maxLag uint64) (bool, error) {
+	parentStates, err := e.shardReplicaStates(ctx, cfg, parentShardId)
+	if err != nil {
+		return false, err
+	}
+	var leaderCommit uint64
+	haveLeader := false
+	for _, s := range parentStates {
+		if s.RaftState == transport.RaftStateLeader {
+			leaderCommit = s.Stats.CommitIndex
+			haveLeader = true
+		}
+	}
+	if !haveLeader {
+		return false, nil
+	}
+
+	for _, a := range cfg.GetApplications() {
+		for _, sh := range a.Shards {
+			if sh.ParentId != parentShardId || sh.State != cluster.ShardState_SHARD_STATE_ACTIVATING {
+				continue
+			}
+			states, err := e.shardReplicaStates(ctx, cfg, sh.Id)
+			if err != nil {
+				return false, err
+			}
+			for _, r := range sh.Replicas {
+				st, ok := states[r.Id]
+				if !ok || !st.Seeding {
+					return false, nil
+				}
+				// seeded + maxLag >= leaderCommit, avoiding unsigned underflow.
+				if st.SeededIndex+maxLag < leaderCommit {
+					return false, nil
+				}
+			}
+		}
+	}
+	return true, nil
+}
+
 // replicaAddress returns the grpc address of the node hosting a shard's replica.
 func (e *Executor) replicaAddress(cfg *cluster.Config, shardId, replicaId string) (string, error) {
 	shard, err := cfg.GetShard(shardId)

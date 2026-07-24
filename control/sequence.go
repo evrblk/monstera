@@ -27,7 +27,7 @@ const (
 const (
 	StepApplyConfig = "apply_config"
 	StepBake        = "bake"         // wait/soak between config steps; no config change
-	StepSendCommand = "send_command" // split cutoff; placeholder, unsupported
+	StepSendCommand = "send_command" // deliver a ControlCommand through a shard's Raft log (split cutoff)
 )
 
 // Mutation kinds.
@@ -35,6 +35,13 @@ const (
 	MutationAddNode       = "add_node"
 	MutationAddReplica    = "add_replica"
 	MutationRemoveReplica = "remove_replica"
+	MutationSplitShard    = "split_shard"    // parent -> splitting + create activating children
+	MutationCompleteSplit = "complete_split" // parent -> inactive, children -> active
+)
+
+// Control command kinds (send_command steps).
+const (
+	CommandSplitCutoff = "split_cutoff"
 )
 
 // Gate kinds.
@@ -42,6 +49,7 @@ const (
 	GateConfigConverged = "config_converged"
 	GateReplicaCaughtUp = "replica_caught_up"
 	GateLeaderElected   = "leader_elected"
+	GateChildrenSeeded  = "children_seeded" // every child of a splitting shard is seeded within MaxLagEntries
 )
 
 // Action kinds.
@@ -94,13 +102,32 @@ type Step struct {
 // generated ids (e.g. a new replica id) are frozen here at plan time so folding
 // reproduces byte-identical configs on every run.
 type Mutation struct {
-	Kind            string `json:"kind"`                       // add_node | add_replica | remove_replica
+	Kind            string `json:"kind"`                       // add_node | add_replica | remove_replica | split_shard | complete_split
 	NodeId          string `json:"node_id,omitempty"`          // add_node
 	GrpcAddress     string `json:"grpc_address,omitempty"`     // add_node
-	ApplicationName string `json:"application_name,omitempty"` // replica ops
-	ShardId         string `json:"shard_id,omitempty"`         // replica ops
+	ApplicationName string `json:"application_name,omitempty"` // replica ops, split_shard
+	ShardId         string `json:"shard_id,omitempty"`         // replica ops, split_shard/complete_split (the parent)
 	ReplicaId       string `json:"replica_id,omitempty"`       // replica ops (frozen at plan time)
 	ReplicaNodeId   string `json:"replica_node_id,omitempty"`  // add_replica target node
+
+	// SplitChildren fully specifies the activating children a split_shard
+	// mutation creates: ids, bounds and replica placements are all frozen at
+	// plan time (co-located with the parent's replicas).
+	SplitChildren []SplitChildSpec `json:"split_children,omitempty"`
+}
+
+// SplitChildSpec is one child shard created by a split_shard mutation.
+type SplitChildSpec struct {
+	ShardId    string              `json:"shard_id"`
+	LowerBound string              `json:"lower_bound"` // hex, 4 bytes
+	UpperBound string              `json:"upper_bound"` // hex, 4 bytes
+	Replicas   []SplitChildReplica `json:"replicas"`
+}
+
+// SplitChildReplica is one replica placement of a split child.
+type SplitChildReplica struct {
+	ReplicaId string `json:"replica_id"`
+	NodeId    string `json:"node_id"`
 }
 
 // Gate is a completion condition for a step, polled over the transport.
@@ -118,12 +145,12 @@ type Action struct {
 	ReplicaId string `json:"replica_id,omitempty"` // replica to move leadership away from
 }
 
-// ControlCommand is an opaque command delivered over Raft (the split cutoff).
-// Placeholder; send_command steps are not yet executable.
+// ControlCommand is a command delivered through a shard's Raft log (the split
+// cutoff): the one kind of change that must reach every replica at the same
+// log position and therefore cannot ride on a config push.
 type ControlCommand struct {
-	Kind    string `json:"kind"`
+	Kind    string `json:"kind"` // split_cutoff
 	ShardId string `json:"shard_id,omitempty"`
-	Payload []byte `json:"payload,omitempty"`
 }
 
 // LoadSequence reads a sequence from a JSON file.

@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -107,6 +108,101 @@ func (r *Raft) ListSnapshots() ([]SnapshotMetadata, error) {
 		}
 	}
 	return result, nil
+}
+
+// ErrNoSnapshot is returned by OpenLatestSnapshot when the replica has no
+// stored snapshots.
+var ErrNoSnapshot = errors.New("no snapshots stored")
+
+// TakeAndOpenSnapshot triggers a user snapshot and opens it for reading. If
+// there is nothing new to snapshot, the latest stored snapshot is opened
+// instead (its index is an equally valid base). The FSM's Snapshot() is
+// serialized with applies on the Raft FSM goroutine by hashicorp/raft itself,
+// so this is safe to call from any goroutine. The caller must Close the
+// returned reader.
+//
+// This is the base-snapshot source for shard-split seeding (see
+// notes/shard-split-design.md, Phase 2).
+func (r *Raft) TakeAndOpenSnapshot() (SnapshotMetadata, io.ReadCloser, error) {
+	f := r.hraft.Snapshot()
+	if err := f.Error(); err != nil {
+		if errors.Is(err, hraft.ErrNothingNewToSnapshot) {
+			return r.OpenLatestSnapshot()
+		}
+		return SnapshotMetadata{}, nil, err
+	}
+
+	meta, rc, err := f.Open()
+	if err != nil {
+		return SnapshotMetadata{}, nil, err
+	}
+	return SnapshotMetadata{
+		Id:    meta.ID,
+		Index: meta.Index,
+		Term:  meta.Term,
+		Size:  meta.Size,
+	}, rc, nil
+}
+
+// OpenLatestSnapshot opens the most recent stored snapshot for reading. The
+// caller must Close the returned reader.
+func (r *Raft) OpenLatestSnapshot() (SnapshotMetadata, io.ReadCloser, error) {
+	metas, err := r.hfss.List()
+	if err != nil {
+		return SnapshotMetadata{}, nil, err
+	}
+	if len(metas) == 0 {
+		return SnapshotMetadata{}, nil, ErrNoSnapshot
+	}
+
+	// List returns snapshots sorted newest first.
+	meta := metas[0]
+	_, rc, err := r.hfss.Open(meta.ID)
+	if err != nil {
+		return SnapshotMetadata{}, nil, err
+	}
+	return SnapshotMetadata{
+		Id:    meta.ID,
+		Index: meta.Index,
+		Term:  meta.Term,
+		Size:  meta.Size,
+	}, rc, nil
+}
+
+// LogEntry is a library-agnostic view of one Raft log entry, used by the
+// shard-split seeder to copy a parent's committed entries into its dormant
+// children.
+type LogEntry struct {
+	Index uint64
+	// IsCommand is true for application commands (the entry's Data is the
+	// replicated command bytes) and false for raft-internal entries
+	// (membership changes, barriers, noops), whose payload is meaningless to
+	// the application and which the seeder copies as framework NOOPs.
+	IsCommand bool
+	Data      []byte
+}
+
+// ErrLogEntryNotFound is returned by GetLogEntry for an index that is not in
+// the log store (typically truncated by log compaction).
+var ErrLogEntryNotFound = errors.New("log entry not found")
+
+// GetLogEntry reads one entry from this replica's log store. Only entries at
+// or below the applied index are meaningful to copy (they are committed);
+// entries truncated by log compaction return ErrLogEntryNotFound, in which
+// case the seeder restarts from a fresh snapshot.
+func (r *Raft) GetLogEntry(index uint64) (LogEntry, error) {
+	var l hraft.Log
+	if err := r.hstore.GetLog(index, &l); err != nil {
+		if errors.Is(err, hraft.ErrLogNotFound) {
+			return LogEntry{}, ErrLogEntryNotFound
+		}
+		return LogEntry{}, err
+	}
+	return LogEntry{
+		Index:     l.Index,
+		IsCommand: l.Type == hraft.LogCommand,
+		Data:      l.Data,
+	}, nil
 }
 
 func (r *Raft) LeadershipTransfer() error {
@@ -561,6 +657,25 @@ func (r *Raft) installSnapshot(request *hraft.InstallSnapshotRequest, data io.Re
 	return resp.Response.(*hraft.InstallSnapshotResponse), nil
 }
 
+// newFileSnapshotStore opens (creating if needed) the per-replica snapshot
+// store. It lives under a single top-level snapshots/ dir:
+// <baseDir>/snapshots/<replicaId>. (hraft.NewFileSnapshotStore manages its own
+// "snapshots" subdir beneath the path it is given.) The layout is shared by
+// live replicas (NewRaft) and dormant seeded ones (NewSeeder), so a seeded
+// replica is promoted in place by simply constructing a Raft over it.
+func newFileSnapshotStore(baseDir string, replicaId string) *hraft.FileSnapshotStore {
+	snapshotDir := filepath.Join(baseDir, "snapshots", replicaId)
+	if err := os.MkdirAll(snapshotDir, os.ModePerm); err != nil {
+		panic(err)
+	}
+
+	hfss, err := hraft.NewFileSnapshotStore(snapshotDir, 3, os.Stderr)
+	if err != nil {
+		panic(fmt.Errorf("raft.NewFileSnapshotStore(%q, ...): %v", snapshotDir, err))
+	}
+	return hfss
+}
+
 // NewRaft creates a Raft replica. nodeId is the id of the node hosting this
 // replica; it doubles as the Raft transport address (peers are addressed by
 // node id, see AddVoter) and labels this replica's metrics.
@@ -577,22 +692,8 @@ func NewRaft(baseDir string, nodeId string, applicationName string, shardId stri
 	cfg.ElectionTimeout = 2 * time.Second
 	cfg.HeartbeatTimeout = 2 * time.Second
 
-	// Per-replica snapshot store lives under a single top-level snapshots/ dir:
-	// <baseDir>/snapshots/<replicaId>. (hraft.NewFileSnapshotStore manages its own
-	// "snapshots" subdir beneath the path it is given.)
-	snapshotDir := filepath.Join(baseDir, "snapshots", replicaId)
-	if err := os.MkdirAll(snapshotDir, os.ModePerm); err != nil {
-		panic(err)
-	}
-
-	logCodec := &protoLogCodec{}
-
-	hstore := NewHraftBadgerStore(raftStore, []byte(replicaId), logCodec)
-
-	hfss, err := hraft.NewFileSnapshotStore(snapshotDir, 3, os.Stderr)
-	if err != nil {
-		panic(fmt.Errorf("raft.NewFileSnapshotStore(%q, ...): %v", snapshotDir, err))
-	}
+	hstore := NewHraftBadgerStore(raftStore, []byte(replicaId), &protoLogCodec{})
+	hfss := newFileSnapshotStore(baseDir, replicaId)
 
 	transport := NewRaftTransport(nodeId, trans)
 

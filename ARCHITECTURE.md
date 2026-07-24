@@ -1,7 +1,7 @@
 # Monstera Architecture (agent notes)
 
 Dense orientation for working on deep features. Pair with `docs/` (user-facing). Verify specifics against
-code before relying on them. Design docs in `notes/` capture intent but drift; code wins.
+code before relying on them.
 
 ## What Monstera is
 
@@ -50,9 +50,13 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
   (`AddVoter/RemoveServer/GetConfiguration/Bootstrap/LeadershipTransfer`). `coreMu` (RWMutex) guards
   core `Read` (RLock) vs `Restore` (Lock); `Apply`/`Snapshot` run on raft's single FSM thread.
 - `core.go` — `ApplicationCore` interface: `Read/Update([]byte)`, `Snapshot`, `Restore`, `Close`.
-  `ApplicationCoreDescriptor{CoreFactoryFunc, RestoreSnapshotOnStart}`.
-- `cluster/config.go` — `Config`: apps→shards→replicas + nodes. `FindShardByShardKey` (binary search;
-  `sortShards` invariant established on load), `GetShard/GetReplica/GetNode`, `Validate`,
+  `ApplicationCoreDescriptor{CoreFactoryFunc, CoreType}`; `CoreType` (InMemory | PersistedShared |
+  PersistedExclusive, zero value rejected) derives restore-on-start and the split seeding mechanism.
+- `cluster/config.go` — `Config`: apps→shards→replicas + nodes. Shards have a `State`
+  (active | inactive | splitting | activating; the zero value is invalid and rejected by `Validate`).
+  `FindShardByShardKey` (binary search; `sortShards` invariant established on load; skips non-routable
+  inactive/activating shards),
+  `GetShard/GetReplica/GetNode`, `Validate`,
   `ValidateTransition`, builders (`CreateShard/Replica/Node/Application`, `AddReplica` with
   caller-supplied id), `IncrementVersion`, `Hash()` (SHA-256 of proto), JSON round-trip with hex bounds
   (`ShortenBounds`, `MarshalJSON`). `WriteConfigToFile` is **atomic** (temp+fsync+rename).
@@ -123,8 +127,10 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
   (leadership is transferred away first by the control plane). Idempotent; also runs on a background
   ticker (`startReconciler`, `MembershipReconcileInterval`, default 1s), so membership converges even
   without a config push.
-- `ValidateTransition` invariants: version strictly increases; no shard removal/re-bounding; no
-  replica node reassignment; no add+remove of replicas in the same transition; no removing a node that
+- `ValidateTransition` invariants: version strictly increases; no shard removal/re-bounding/re-parenting;
+  shard state changes follow the split lifecycle (active→splitting needs ≥2 activating children in the new
+  config; splitting→inactive; activating→active; everything else forbidden; no new shard is born active);
+  no replica node reassignment; no add+remove of replicas in the same transition; no removing a node that
   still has replicas.
 
 ## Control plane: sequences (control/)
@@ -151,10 +157,13 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
 
 ## Core invariants
 
-- Keyspace per app = 4 bytes `[0x00000000, 0xffffffff]`, split into contiguous shards
-  (inclusive bounds, no gaps/overlap; `Validate` enforces full coverage). Shard keys should be 4 bytes.
+- Keyspace per app = 4 bytes `[0x00000000, 0xffffffff]`. The **active + splitting** shards form a
+  contiguous partition (inclusive bounds, no gaps/overlap; `Validate` enforces full coverage). Inactive
+  shards may overlap anything; each splitting shard must have ≥2 activating children (`ParentId`) exactly
+  covering its range; active/activating shards have no children; inactive shards (retired parents) have
+  children. Shard keys should be 4 bytes.
 - A node hosts **≤1 replica per shard** (`Validate`: a shard's replicas are on distinct nodes).
-  So `(node, shardId)` → unique replica; and future shard-split keeps `shardKey → active shard` unique.
+  So `(node, shardId)` → unique replica; and `shardKey → routable (active/splitting) shard` is unique.
 - `Node.replicas` + `Node.clusterConfig` are a **matched pair** under `Node.mu` (RWMutex); they change
   together only in Start/Bootstrap/UpdateClusterConfig (via `reconcileReplicasLocked`). Read/Update
   snapshot both under one RLock, then release before slow work.
@@ -220,8 +229,19 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
 
 - Events / Pub-Sub bus (`core.Event`, `UpdateResponse.Events`) is API-only, unimplemented.
 - Updates are at-least-once (forward/retry can double-apply) — rely on core idempotency.
-- Shard split is planned, not implemented (`PlanSplitShard` errors; `send_command` step kind is a
-  placeholder); key-based resolution already anticipates it.
+- Shard split (`notes/shard-split-design.md`) is implemented end to end: shard states +
+  validation/transitions + key routing; `internal/raft/seed.go` (`Seeder`, pre-baked start,
+  `CutoffMarker`); dormant replicas + per-parent `splitter` (mechanism from `CoreType`; drains,
+  finalizes and promotes children at the cutoff) + observability (`ReplicaState.Seeding/SeededIndex/
+  Frozen`); shard-key stamping; `CUTOFF` freeze + node-side re-route (delayed, never failed);
+  `SplitCutoff` admin RPC; `PlanSplitShard` (declare → cutoff → flip → bake, `children_seeded` gate,
+  executor `send_command`) + `cluster split-shard` CLI. Live-cutover test:
+  `internal/integration_test/split` (zero failed writes through the cutoff). Grackle re-key
+  (phase 6) is complete: all five cores are `CoreTypePersistedExclusive` with exclusive key
+  layouts (no shard key material in record keys) and portable fenestra snapshots
+  (primary-entity stream, table-API restore rebuilding indexes) — split-ready. Remaining:
+  staggered post-activation child snapshots + `children_snapshotted` gate (before moving split
+  children), inactive-parent cleanup (design phase 7).
 - gRPC conns are insecure, no dial options/TLS yet. Raft bidi stream is one per node pair
   (potential head-of-line blocking across replicas).
 - `notes/` design docs drift: `transport-planes-design.md` claims the proto is unchanged (it gained

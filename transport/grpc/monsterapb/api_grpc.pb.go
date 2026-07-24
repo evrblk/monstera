@@ -24,6 +24,7 @@ const (
 	MonsteraApi_ListReplicaStates_FullMethodName    = "/com.evrblk.monstera.monsterapb.MonsteraApi/ListReplicaStates"
 	MonsteraApi_ListReplicaSnapshots_FullMethodName = "/com.evrblk.monstera.monsterapb.MonsteraApi/ListReplicaSnapshots"
 	MonsteraApi_LeadershipTransfer_FullMethodName   = "/com.evrblk.monstera.monsterapb.MonsteraApi/LeadershipTransfer"
+	MonsteraApi_SplitCutoff_FullMethodName          = "/com.evrblk.monstera.monsterapb.MonsteraApi/SplitCutoff"
 	MonsteraApi_TriggerSnapshot_FullMethodName      = "/com.evrblk.monstera.monsterapb.MonsteraApi/TriggerSnapshot"
 	MonsteraApi_UpdateClusterConfig_FullMethodName  = "/com.evrblk.monstera.monsterapb.MonsteraApi/UpdateClusterConfig"
 	MonsteraApi_GetClusterConfig_FullMethodName     = "/com.evrblk.monstera.monsterapb.MonsteraApi/GetClusterConfig"
@@ -40,6 +41,9 @@ type MonsteraApiClient interface {
 	ListReplicaStates(ctx context.Context, in *ListReplicaStatesRequest, opts ...grpc.CallOption) (*ListReplicaStatesResponse, error)
 	ListReplicaSnapshots(ctx context.Context, in *ListReplicaSnapshotsRequest, opts ...grpc.CallOption) (*ListReplicaSnapshotsResponse, error)
 	LeadershipTransfer(ctx context.Context, in *LeadershipTransferRequest, opts ...grpc.CallOption) (*LeadershipTransferResponse, error)
+	// Proposes the shard-split CUTOFF through the shard's local replica (which
+	// must be the Raft leader).
+	SplitCutoff(ctx context.Context, in *SplitCutoffRequest, opts ...grpc.CallOption) (*SplitCutoffResponse, error)
 	TriggerSnapshot(ctx context.Context, in *TriggerSnapshotRequest, opts ...grpc.CallOption) (*TriggerSnapshotResponse, error)
 	UpdateClusterConfig(ctx context.Context, in *UpdateClusterConfigRequest, opts ...grpc.CallOption) (*UpdateClusterConfigResponse, error)
 	GetClusterConfig(ctx context.Context, in *GetClusterConfigRequest, opts ...grpc.CallOption) (*GetClusterConfigResponse, error)
@@ -99,6 +103,16 @@ func (c *monsteraApiClient) LeadershipTransfer(ctx context.Context, in *Leadersh
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(LeadershipTransferResponse)
 	err := c.cc.Invoke(ctx, MonsteraApi_LeadershipTransfer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *monsteraApiClient) SplitCutoff(ctx context.Context, in *SplitCutoffRequest, opts ...grpc.CallOption) (*SplitCutoffResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SplitCutoffResponse)
+	err := c.cc.Invoke(ctx, MonsteraApi_SplitCutoff_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -167,6 +181,9 @@ type MonsteraApiServer interface {
 	ListReplicaStates(context.Context, *ListReplicaStatesRequest) (*ListReplicaStatesResponse, error)
 	ListReplicaSnapshots(context.Context, *ListReplicaSnapshotsRequest) (*ListReplicaSnapshotsResponse, error)
 	LeadershipTransfer(context.Context, *LeadershipTransferRequest) (*LeadershipTransferResponse, error)
+	// Proposes the shard-split CUTOFF through the shard's local replica (which
+	// must be the Raft leader).
+	SplitCutoff(context.Context, *SplitCutoffRequest) (*SplitCutoffResponse, error)
 	TriggerSnapshot(context.Context, *TriggerSnapshotRequest) (*TriggerSnapshotResponse, error)
 	UpdateClusterConfig(context.Context, *UpdateClusterConfigRequest) (*UpdateClusterConfigResponse, error)
 	GetClusterConfig(context.Context, *GetClusterConfigRequest) (*GetClusterConfigResponse, error)
@@ -196,6 +213,9 @@ func (UnimplementedMonsteraApiServer) ListReplicaSnapshots(context.Context, *Lis
 }
 func (UnimplementedMonsteraApiServer) LeadershipTransfer(context.Context, *LeadershipTransferRequest) (*LeadershipTransferResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LeadershipTransfer not implemented")
+}
+func (UnimplementedMonsteraApiServer) SplitCutoff(context.Context, *SplitCutoffRequest) (*SplitCutoffResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SplitCutoff not implemented")
 }
 func (UnimplementedMonsteraApiServer) TriggerSnapshot(context.Context, *TriggerSnapshotRequest) (*TriggerSnapshotResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TriggerSnapshot not implemented")
@@ -323,6 +343,24 @@ func _MonsteraApi_LeadershipTransfer_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MonsteraApi_SplitCutoff_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SplitCutoffRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MonsteraApiServer).SplitCutoff(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MonsteraApi_SplitCutoff_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MonsteraApiServer).SplitCutoff(ctx, req.(*SplitCutoffRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _MonsteraApi_TriggerSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(TriggerSnapshotRequest)
 	if err := dec(in); err != nil {
@@ -428,6 +466,10 @@ var MonsteraApi_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "LeadershipTransfer",
 			Handler:    _MonsteraApi_LeadershipTransfer_Handler,
+		},
+		{
+			MethodName: "SplitCutoff",
+			Handler:    _MonsteraApi_SplitCutoff_Handler,
 		},
 		{
 			MethodName: "TriggerSnapshot",

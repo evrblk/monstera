@@ -80,6 +80,7 @@ func TestConfig_FindShard(t *testing.T) {
 					Id:         "shrd_01",
 					LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 					UpperBound: []byte{0x3f, 0xff, 0xff, 0xff},
+					State:      ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*Replica{
 						{Id: "rplc_01", NodeId: "node_1"},
 						{Id: "rplc_02", NodeId: "node_2"},
@@ -90,6 +91,7 @@ func TestConfig_FindShard(t *testing.T) {
 					Id:         "shrd_05",
 					LowerBound: []byte{0x40, 0x00, 0x00, 0x00},
 					UpperBound: []byte{0x4f, 0xff, 0xff, 0xff},
+					State:      ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*Replica{
 						{Id: "rplc_13", NodeId: "node_1"},
 						{Id: "rplc_14", NodeId: "node_2"},
@@ -100,6 +102,7 @@ func TestConfig_FindShard(t *testing.T) {
 					Id:         "shrd_06",
 					LowerBound: []byte{0x50, 0x00, 0x00, 0x00},
 					UpperBound: []byte{0x5f, 0xff, 0xff, 0xff},
+					State:      ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*Replica{
 						{Id: "rplc_16", NodeId: "node_1"},
 						{Id: "rplc_17", NodeId: "node_2"},
@@ -110,6 +113,7 @@ func TestConfig_FindShard(t *testing.T) {
 					Id:         "shrd_07",
 					LowerBound: []byte{0x60, 0x00, 0x00, 0x00},
 					UpperBound: []byte{0x6f, 0xff, 0xff, 0xff},
+					State:      ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*Replica{
 						{Id: "rplc_19", NodeId: "node_1"},
 						{Id: "rplc_20", NodeId: "node_2"},
@@ -120,6 +124,7 @@ func TestConfig_FindShard(t *testing.T) {
 					Id:         "shrd_08",
 					LowerBound: []byte{0x70, 0x00, 0x00, 0x00},
 					UpperBound: []byte{0x74, 0xff, 0xff, 0xff},
+					State:      ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*Replica{
 						{Id: "rplc_22", NodeId: "node_1"},
 						{Id: "rplc_23", NodeId: "node_2"},
@@ -130,6 +135,7 @@ func TestConfig_FindShard(t *testing.T) {
 					Id:         "shrd_09",
 					LowerBound: []byte{0x75, 0x00, 0x00, 0x00},
 					UpperBound: []byte{0x75, 0x7f, 0xff, 0xff},
+					State:      ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*Replica{
 						{Id: "rplc_25", NodeId: "node_1"},
 						{Id: "rplc_26", NodeId: "node_2"},
@@ -140,6 +146,7 @@ func TestConfig_FindShard(t *testing.T) {
 					Id:         "shrd_10",
 					LowerBound: []byte{0x75, 0x80, 0x00, 0x00},
 					UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
+					State:      ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*Replica{
 						{Id: "rplc_28", NodeId: "node_1"},
 						{Id: "rplc_29", NodeId: "node_2"},
@@ -150,6 +157,7 @@ func TestConfig_FindShard(t *testing.T) {
 					Id:         "shrd_03",
 					LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
 					UpperBound: []byte{0xbf, 0xff, 0xff, 0xff},
+					State:      ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*Replica{
 						{Id: "rplc_07", NodeId: "node_1"},
 						{Id: "rplc_08", NodeId: "node_2"},
@@ -160,6 +168,7 @@ func TestConfig_FindShard(t *testing.T) {
 					Id:         "shrd_04",
 					LowerBound: []byte{0xc0, 0x00, 0x00, 0x00},
 					UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+					State:      ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*Replica{
 						{Id: "rplc_10", NodeId: "node_1"},
 						{Id: "rplc_11", NodeId: "node_2"},
@@ -229,6 +238,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -239,6 +249,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_02",
 							LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_04", NodeId: "node_1"},
 								{Id: "rpl_05", NodeId: "node_2"},
@@ -366,6 +377,7 @@ func TestConfig_Validate(t *testing.T) {
 						Id:         "shrd_01",
 						LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 						UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+						State:      ShardState_SHARD_STATE_ACTIVE,
 						Replicas: []*Replica{
 							{Id: "rpl_01", NodeId: "node_1"},
 							{Id: "rpl_02", NodeId: "node_2"},
@@ -378,6 +390,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -429,6 +442,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -463,6 +477,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -473,6 +488,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_04", NodeId: "node_1"},
 								{Id: "rpl_05", NodeId: "node_2"},
@@ -507,6 +523,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -540,6 +557,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -550,6 +568,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_02",
 							LowerBound: []byte{0x80, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -584,6 +603,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0xff, 0xff, 0xff, 0xff},
 							UpperBound: []byte{0x00, 0x00, 0x00, 0x00},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -619,6 +639,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -653,6 +674,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_01", NodeId: "node_2"},
@@ -687,6 +709,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -721,6 +744,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_1"},
@@ -756,6 +780,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -773,6 +798,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_02",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_04", NodeId: "node_1"},
 								{Id: "rpl_05", NodeId: "node_2"},
@@ -807,6 +833,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -840,6 +867,7 @@ func TestConfig_Validate(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -1004,6 +1032,7 @@ func TestConfig_Validate_ShardCoverage(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -1014,6 +1043,7 @@ func TestConfig_Validate_ShardCoverage(t *testing.T) {
 							Id:         "shrd_02",
 							LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_04", NodeId: "node_1"},
 								{Id: "rpl_05", NodeId: "node_2"},
@@ -1042,6 +1072,7 @@ func TestConfig_Validate_ShardCoverage(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0x7f, 0xff, 0xff, 0xfe}, // gap after this
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -1052,6 +1083,7 @@ func TestConfig_Validate_ShardCoverage(t *testing.T) {
 							Id:         "shrd_02",
 							LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_04", NodeId: "node_1"},
 								{Id: "rpl_05", NodeId: "node_2"},
@@ -1081,6 +1113,7 @@ func TestConfig_Validate_ShardCoverage(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0x80, 0x00, 0x00, 0x00}, // overlaps next
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -1091,6 +1124,7 @@ func TestConfig_Validate_ShardCoverage(t *testing.T) {
 							Id:         "shrd_02",
 							LowerBound: []byte{0x7f, 0xff, 0xff, 0xff},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_04", NodeId: "node_1"},
 								{Id: "rpl_05", NodeId: "node_2"},
@@ -1120,6 +1154,7 @@ func TestConfig_Validate_ShardCoverage(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x01, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -1130,6 +1165,7 @@ func TestConfig_Validate_ShardCoverage(t *testing.T) {
 							Id:         "shrd_02",
 							LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_04", NodeId: "node_1"},
 								{Id: "rpl_05", NodeId: "node_2"},
@@ -1159,6 +1195,7 @@ func TestConfig_Validate_ShardCoverage(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -1169,6 +1206,7 @@ func TestConfig_Validate_ShardCoverage(t *testing.T) {
 							Id:         "shrd_02",
 							LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xfe, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_04", NodeId: "node_1"},
 								{Id: "rpl_05", NodeId: "node_2"},
@@ -1187,6 +1225,420 @@ func TestConfig_Validate_ShardCoverage(t *testing.T) {
 	})
 }
 
+// stateTestShard builds a shard with the given bounds, state and parent, fully
+// replicated across node_1..node_3. Replica ids are derived from the shard id.
+func stateTestShard(id string, lower, upper []byte, state ShardState, parentId string) *Shard {
+	return &Shard{
+		Id:         id,
+		LowerBound: lower,
+		UpperBound: upper,
+		State:      state,
+		ParentId:   parentId,
+		Replicas: []*Replica{
+			{Id: id + "_rpl_1", NodeId: "node_1"},
+			{Id: id + "_rpl_2", NodeId: "node_2"},
+			{Id: id + "_rpl_3", NodeId: "node_3"},
+		},
+	}
+}
+
+// stateTestConfig wraps shards into a valid 3-node single-application config.
+func stateTestConfig(shards ...*Shard) *Config {
+	return &Config{
+		Applications: []*Application{
+			{
+				Name:              "app",
+				Implementation:    "impl",
+				ReplicationFactor: 3,
+				Shards:            shards,
+			},
+		},
+		Nodes: []*Node{
+			{Id: "node_1", GrpcAddress: "localhost:9001"},
+			{Id: "node_2", GrpcAddress: "localhost:9002"},
+			{Id: "node_3", GrpcAddress: "localhost:9003"},
+		},
+		Version: 1,
+	}
+}
+
+func TestConfig_Validate_ShardStates(t *testing.T) {
+	t.Run("completed split: inactive parent overlapped by its active children", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_p", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_INACTIVE, ""),
+			stateTestShard("shrd_c1", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, "shrd_p"),
+			stateTestShard("shrd_c2", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, "shrd_p"),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+		)
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("splitting shard with two activating children covering its range", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+			stateTestShard("shrd_04", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		)
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("splitting shard with three activating children covering its range", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x1f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+			stateTestShard("shrd_04", []byte{0x20, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+			stateTestShard("shrd_05", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		)
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("active shard with children", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+			stateTestShard("shrd_04", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "active shard shrd_01 must not have children")
+	})
+
+	t.Run("inactive shard with no children", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0xbf, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_INACTIVE, ""),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "inactive shard shrd_03 must have children")
+	})
+
+	t.Run("activating shard with children", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+			stateTestShard("shrd_04", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+			stateTestShard("shrd_05", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x1f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_03"),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "activating shard shrd_03 must not have children")
+	})
+
+	t.Run("splitting shard with inactive children", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_INACTIVE, "shrd_01"),
+			stateTestShard("shrd_04", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "child shrd_03 of splitting shard shrd_01 must be activating")
+	})
+
+	t.Run("activating shard with a non-splitting parent", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_p", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_INACTIVE, ""),
+			stateTestShard("shrd_c1", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, "shrd_p"),
+			stateTestShard("shrd_c2", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, "shrd_p"),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_p"),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "activating shard shrd_03 must be a child of a splitting shard")
+	})
+
+	t.Run("activating shard without a parent", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, ""),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "activating shard shrd_03 must be a child of a splitting shard")
+	})
+
+	t.Run("parent does not exist", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "no_such_shard"),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "parent no_such_shard of shard shrd_03 not found in application app")
+	})
+
+	t.Run("children must be co-located with the splitting parent", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+			stateTestShard("shrd_04", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		)
+		// Move one child replica to a node the parent has no replica on.
+		cfg.Nodes = append(cfg.Nodes, &Node{Id: "node_4", GrpcAddress: "localhost:9004"})
+		cfg.Applications[0].Shards[2].Replicas[0].NodeId = "node_4"
+
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "activating child shrd_03 must have replicas on the same nodes as its splitting parent shrd_01")
+	})
+
+	t.Run("splitting shard with no children", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "splitting shard shrd_01 must have at least 2 activating children")
+	})
+
+	t.Run("splitting shard with a single child", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "splitting shard shrd_01 must have at least 2 activating children")
+	})
+
+	t.Run("children with a gap", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xfe}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"), // gap after this
+			stateTestShard("shrd_04", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "children of splitting shard shrd_01 do not cover its range")
+		require.Contains(t, err.Error(), "shards are not contiguous")
+	})
+
+	t.Run("children overlap each other", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x40, 0x00, 0x00, 0x00}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"), // overlaps next
+			stateTestShard("shrd_04", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "children of splitting shard shrd_01 do not cover its range")
+		require.Contains(t, err.Error(), "shards are not contiguous")
+	})
+
+	t.Run("children do not start at parent lower bound", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x01}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+			stateTestShard("shrd_04", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "children of splitting shard shrd_01 do not cover its range")
+		require.Contains(t, err.Error(), "shards do not start at 0x00000000")
+	})
+
+	t.Run("children do not end at parent upper bound", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+			stateTestShard("shrd_04", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xfe}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "children of splitting shard shrd_01 do not cover its range")
+		require.Contains(t, err.Error(), "shards do not end at 0x7fffffff")
+	})
+
+	t.Run("active child of a splitting shard breaks the routable partition", func(t *testing.T) {
+		// shrd_03 is active, so it overlaps the active/splitting partition
+		// (and would be rejected as a non-activating child anyway).
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, "shrd_01"),
+			stateTestShard("shrd_04", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+	})
+
+	t.Run("active and splitting shards must not overlap", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, ""),
+			stateTestShard("shrd_02", []byte{0x7f, 0xff, 0xff, 0xff}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""), // overlaps previous
+			stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+			stateTestShard("shrd_04", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "shards are not contiguous")
+	})
+
+	t.Run("active and splitting shards must leave no gaps", func(t *testing.T) {
+		// The gap between the active shards is covered only by a non-routable
+		// (activating) shard, which must not count.
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+			stateTestShard("shrd_03", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, ""),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "shards are not contiguous")
+	})
+
+	t.Run("all shards inactive", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_INACTIVE, ""),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no active shards for app")
+	})
+
+	t.Run("unknown shard state", func(t *testing.T) {
+		cfg := stateTestConfig(
+			stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState(42), ""),
+		)
+		err := cfg.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid state 42 for shard shrd_01")
+	})
+}
+
+func TestConfig_FindShardByShardKey_SkipsNonRoutableShards(t *testing.T) {
+	// shrd_01 is splitting into activating shrd_03 and shrd_04; keys in its
+	// range must still resolve to shrd_01, never to the children.
+	cfg := stateTestConfig(
+		stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, ""),
+		stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+		stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		stateTestShard("shrd_04", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+	)
+	require.NoError(t, cfg.Validate())
+	cfg.sortShards()
+
+	for _, key := range [][]byte{
+		{0x00, 0x00, 0x00, 0x00}, // lower bound shared by shrd_01 and shrd_03
+		{0x14, 0x90, 0x2f, 0x1e}, // inside shrd_03's range
+		{0x40, 0x00, 0x00, 0x00}, // lower bound of shrd_04
+		{0x7f, 0xff, 0xff, 0xff}, // upper bound shared by shrd_01 and shrd_04
+	} {
+		s, err := cfg.FindShardByShardKey("app", key)
+		require.NoError(t, err)
+		require.Equal(t, "shrd_01", s.Id, "key %x", key)
+	}
+
+	// Keys outside the splitting range resolve to the active shard.
+	s, err := cfg.FindShardByShardKey("app", []byte{0x80, 0x00, 0x00, 0x00})
+	require.NoError(t, err)
+	require.Equal(t, "shrd_02", s.Id)
+	s, err = cfg.FindShardByShardKey("app", []byte{0xff, 0xff, 0xff, 0xff})
+	require.NoError(t, err)
+	require.Equal(t, "shrd_02", s.Id)
+
+	// After a completed split the inactive parent is skipped and keys resolve
+	// to its active children.
+	cfg = stateTestConfig(
+		stateTestShard("shrd_p", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_INACTIVE, ""),
+		stateTestShard("shrd_c1", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, "shrd_p"),
+		stateTestShard("shrd_c2", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, "shrd_p"),
+		stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+	)
+	require.NoError(t, cfg.Validate())
+	cfg.sortShards()
+
+	s, err = cfg.FindShardByShardKey("app", []byte{0x00, 0x00, 0x00, 0x00})
+	require.NoError(t, err)
+	require.Equal(t, "shrd_c1", s.Id)
+	s, err = cfg.FindShardByShardKey("app", []byte{0x7f, 0xff, 0xff, 0xff})
+	require.NoError(t, err)
+	require.Equal(t, "shrd_c2", s.Id)
+}
+
+func TestConfig_ShardStateMarshaling(t *testing.T) {
+	// A config with all four states: shrd_i was split into shrd_s and shrd_a;
+	// shrd_s is now splitting again into activating shrd_v1 and shrd_v2.
+	config := stateTestConfig(
+		stateTestShard("shrd_i", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_INACTIVE, ""),
+		stateTestShard("shrd_s", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, "shrd_i"),
+		stateTestShard("shrd_a", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, "shrd_i"),
+		stateTestShard("shrd_v1", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x1f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_s"),
+		stateTestShard("shrd_v2", []byte{0x20, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_s"),
+		stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+	)
+	require.NoError(t, config.Validate())
+	// The loaders sort shards on load; sort the expected config the same way so
+	// the roundtrip comparison is order-insensitive.
+	config.sortShards()
+
+	t.Run("JSON", func(t *testing.T) {
+		data, err := WriteConfigToJson(config)
+		require.NoError(t, err)
+
+		// States are human-readable strings.
+		require.Contains(t, string(data), `"state": "splitting"`)
+		require.Contains(t, string(data), `"state": "inactive"`)
+		require.Contains(t, string(data), `"state": "active"`)
+		require.Contains(t, string(data), `"state": "activating"`)
+
+		actual, err := LoadConfigFromJson(data)
+		require.NoError(t, err)
+		require.True(t, cmp.Equal(config, actual, protocmp.Transform()))
+	})
+
+	t.Run("JSON state is required", func(t *testing.T) {
+		var s Shard
+		require.NoError(t, s.UnmarshalJSON([]byte(`{"id":"x","lower_bound":"00","upper_bound":"ff","state":"active"}`)))
+		require.Equal(t, ShardState_SHARD_STATE_ACTIVE, s.State)
+
+		err := s.UnmarshalJSON([]byte(`{"id":"x","lower_bound":"00","upper_bound":"ff"}`))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "missing state for shard x")
+
+		err = s.UnmarshalJSON([]byte(`{"id":"x","lower_bound":"00","upper_bound":"ff","state":"bogus"}`))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), `unknown state "bogus" for shard x`)
+	})
+
+	t.Run("JSON marshal rejects invalid state", func(t *testing.T) {
+		s := &Shard{
+			Id:         "x",
+			LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
+			UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+		}
+		_, err := s.MarshalJSON()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid state 0 for shard x")
+	})
+
+	t.Run("Protobuf", func(t *testing.T) {
+		data, err := WriteConfigToProto(config)
+		require.NoError(t, err)
+
+		actual, err := LoadConfigFromProto(data)
+		require.NoError(t, err)
+		require.True(t, cmp.Equal(config, actual, protocmp.Transform()))
+	})
+}
+
 func TestValidateTransition(t *testing.T) {
 	baseConfig := &Config{
 		Applications: []*Application{
@@ -1199,6 +1651,7 @@ func TestValidateTransition(t *testing.T) {
 						Id:         "shrd_01",
 						LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 						UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
+						State:      ShardState_SHARD_STATE_ACTIVE,
 						Replicas: []*Replica{
 							{Id: "rpl_01", NodeId: "node_1"},
 							{Id: "rpl_02", NodeId: "node_2"},
@@ -1209,6 +1662,7 @@ func TestValidateTransition(t *testing.T) {
 						Id:         "shrd_02",
 						LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
 						UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+						State:      ShardState_SHARD_STATE_ACTIVE,
 						Replicas: []*Replica{
 							{Id: "rpl_04", NodeId: "node_1"},
 							{Id: "rpl_05", NodeId: "node_2"},
@@ -1257,6 +1711,7 @@ func TestValidateTransition(t *testing.T) {
 							Id:         "shrd_01",
 							LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_01", NodeId: "node_1"},
 								{Id: "rpl_02", NodeId: "node_2"},
@@ -1267,6 +1722,7 @@ func TestValidateTransition(t *testing.T) {
 							Id:         "shrd_02",
 							LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
 							UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+							State:      ShardState_SHARD_STATE_ACTIVE,
 							Replicas: []*Replica{
 								{Id: "rpl_04", NodeId: "node_1"},
 								{Id: "rpl_05", NodeId: "node_2"},
@@ -1314,6 +1770,7 @@ func TestValidateTransition(t *testing.T) {
 					Id:         "shrd_03",
 					LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 					UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+					State:      ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*Replica{
 						{Id: "rpl_07", NodeId: "node_1"},
 						{Id: "rpl_08", NodeId: "node_2"},
@@ -1410,6 +1867,119 @@ func TestValidateTransition(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "changed node assignment")
 	})
+
+	t.Run("forbid changing shard parent", func(t *testing.T) {
+		newConfig := cloneConfig(baseConfig)
+		newConfig.Applications[0].Shards[1].ParentId = "shrd_01"
+
+		err := ValidateTransition(baseConfig, newConfig)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "cannot change parent for shard shrd_02")
+	})
+
+	// splittingConfig is baseConfig with shrd_01 mid-split: splitting, with two
+	// activating children.
+	splittingConfig := cloneConfig(baseConfig)
+	splittingConfig.Applications[0].Shards[0].State = ShardState_SHARD_STATE_SPLITTING
+	splittingConfig.Applications[0].Shards = append(splittingConfig.Applications[0].Shards,
+		stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		stateTestShard("shrd_04", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+	)
+
+	t.Run("allow starting a split", func(t *testing.T) {
+		require.NoError(t, splittingConfig.Validate())
+		require.NoError(t, ValidateTransition(baseConfig, splittingConfig))
+	})
+
+	t.Run("forbid starting a split without activating children", func(t *testing.T) {
+		newConfig := cloneConfig(baseConfig)
+		newConfig.Applications[0].Shards[0].State = ShardState_SHARD_STATE_SPLITTING
+
+		err := ValidateTransition(baseConfig, newConfig)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "shard shrd_01 cannot start splitting without at least 2 activating children")
+	})
+
+	t.Run("forbid active shard becoming inactive", func(t *testing.T) {
+		newConfig := cloneConfig(baseConfig)
+		newConfig.Applications[0].Shards[0].State = ShardState_SHARD_STATE_INACTIVE
+
+		err := ValidateTransition(baseConfig, newConfig)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid state transition for shard shrd_01: active -> inactive")
+	})
+
+	t.Run("forbid active shard becoming activating", func(t *testing.T) {
+		newConfig := cloneConfig(baseConfig)
+		newConfig.Applications[0].Shards[0].State = ShardState_SHARD_STATE_ACTIVATING
+
+		err := ValidateTransition(baseConfig, newConfig)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid state transition for shard shrd_01: active -> activating")
+	})
+
+	t.Run("forbid new active shard out of nowhere", func(t *testing.T) {
+		newConfig := cloneConfig(baseConfig)
+		newConfig.Applications[0].Shards = append(newConfig.Applications[0].Shards,
+			stateTestShard("shrd_05", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+		)
+
+		err := ValidateTransition(baseConfig, newConfig)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "new shard shrd_05 in application app1 cannot be created active")
+	})
+
+	t.Run("allow completing a split", func(t *testing.T) {
+		// The splitting parent retires to inactive and its activating children
+		// become active in the same transition.
+		newConfig := cloneConfig(splittingConfig)
+		newConfig.Applications[0].Shards[0].State = ShardState_SHARD_STATE_INACTIVE
+		newConfig.Applications[0].Shards[2].State = ShardState_SHARD_STATE_ACTIVE
+		newConfig.Applications[0].Shards[3].State = ShardState_SHARD_STATE_ACTIVE
+
+		require.NoError(t, newConfig.Validate())
+		require.NoError(t, ValidateTransition(splittingConfig, newConfig))
+	})
+
+	t.Run("forbid splitting shard becoming active", func(t *testing.T) {
+		newConfig := cloneConfig(splittingConfig)
+		newConfig.Applications[0].Shards[0].State = ShardState_SHARD_STATE_ACTIVE
+
+		err := ValidateTransition(splittingConfig, newConfig)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid state transition for shard shrd_01: splitting -> active")
+	})
+
+	t.Run("forbid activating shard becoming inactive", func(t *testing.T) {
+		newConfig := cloneConfig(splittingConfig)
+		newConfig.Applications[0].Shards[2].State = ShardState_SHARD_STATE_INACTIVE
+
+		err := ValidateTransition(splittingConfig, newConfig)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid state transition for shard shrd_03: activating -> inactive")
+	})
+
+	t.Run("forbid inactive shard changing state", func(t *testing.T) {
+		// Old config: the split of shrd_01 has completed.
+		oldConfig := cloneConfig(splittingConfig)
+		oldConfig.Applications[0].Shards[0].State = ShardState_SHARD_STATE_INACTIVE
+		oldConfig.Applications[0].Shards[2].State = ShardState_SHARD_STATE_ACTIVE
+		oldConfig.Applications[0].Shards[3].State = ShardState_SHARD_STATE_ACTIVE
+		require.NoError(t, oldConfig.Validate())
+
+		for _, state := range []ShardState{
+			ShardState_SHARD_STATE_ACTIVE,
+			ShardState_SHARD_STATE_SPLITTING,
+			ShardState_SHARD_STATE_ACTIVATING,
+		} {
+			newConfig := cloneConfig(oldConfig)
+			newConfig.Applications[0].Shards[0].State = state
+
+			err := ValidateTransition(oldConfig, newConfig)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "invalid state transition for shard shrd_01: inactive -> "+shardStateName(state))
+		}
+	})
 }
 
 func TestConfigMarshaling(t *testing.T) {
@@ -1424,6 +1994,7 @@ func TestConfigMarshaling(t *testing.T) {
 						Id:         "shrd_01",
 						LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 						UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
+						State:      ShardState_SHARD_STATE_ACTIVE,
 						Replicas: []*Replica{
 							{Id: "rpl_01", NodeId: "node_1"},
 							{Id: "rpl_02", NodeId: "node_2"},
@@ -1434,6 +2005,7 @@ func TestConfigMarshaling(t *testing.T) {
 						Id:         "shrd_02",
 						LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
 						UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+						State:      ShardState_SHARD_STATE_ACTIVE,
 						Replicas: []*Replica{
 							{Id: "rpl_04", NodeId: "node_1"},
 							{Id: "rpl_05", NodeId: "node_2"},
@@ -1731,6 +2303,7 @@ func BenchmarkClusterConfigFindShard(b *testing.B) {
 				Id:         fmt.Sprintf("shrd_%02d_%04d", appIdx, shardIdx),
 				LowerBound: lowerBound,
 				UpperBound: upperBound,
+				State:      ShardState_SHARD_STATE_ACTIVE,
 				Replicas:   replicas,
 			}
 		}

@@ -21,6 +21,74 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// ShardState is the lifecycle state of a shard.
+type ShardState int32
+
+const (
+	ShardState_SHARD_STATE_INVALID ShardState = 0
+	// The shard serves its key range. It has no children.
+	ShardState_SHARD_STATE_ACTIVE ShardState = 1
+	// The shard is retired after a completed split. It no longer serves its
+	// key range: its children serve it instead.
+	ShardState_SHARD_STATE_INACTIVE ShardState = 2
+	// The shard still serves its key range while its 2 or more activating
+	// children are being prepared to take over.
+	ShardState_SHARD_STATE_SPLITTING ShardState = 3
+	// The shard is a child of a splitting shard that is being activated to
+	// take over its part of the parent's key range. It does not serve yet
+	// and has no children.
+	ShardState_SHARD_STATE_ACTIVATING ShardState = 4
+)
+
+// Enum value maps for ShardState.
+var (
+	ShardState_name = map[int32]string{
+		0: "SHARD_STATE_INVALID",
+		1: "SHARD_STATE_ACTIVE",
+		2: "SHARD_STATE_INACTIVE",
+		3: "SHARD_STATE_SPLITTING",
+		4: "SHARD_STATE_ACTIVATING",
+	}
+	ShardState_value = map[string]int32{
+		"SHARD_STATE_INVALID":    0,
+		"SHARD_STATE_ACTIVE":     1,
+		"SHARD_STATE_INACTIVE":   2,
+		"SHARD_STATE_SPLITTING":  3,
+		"SHARD_STATE_ACTIVATING": 4,
+	}
+)
+
+func (x ShardState) Enum() *ShardState {
+	p := new(ShardState)
+	*p = x
+	return p
+}
+
+func (x ShardState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ShardState) Descriptor() protoreflect.EnumDescriptor {
+	return file_cluster_config_proto_enumTypes[0].Descriptor()
+}
+
+func (ShardState) Type() protoreflect.EnumType {
+	return &file_cluster_config_proto_enumTypes[0]
+}
+
+func (x ShardState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ShardState.Descriptor instead.
+func (ShardState) EnumDescriptor() ([]byte, []int) {
+	return file_cluster_config_proto_rawDescGZIP(), []int{0}
+}
+
+// Metadata is an arbitrary key-value pair attached to a config entity (the
+// config itself, a node, an application, a shard, or a replica). Monstera does
+// not interpret it; it is for operators and tooling. Keys must be unique
+// within one entity.
 type Metadata struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -73,11 +141,14 @@ func (x *Metadata) GetValue() string {
 	return ""
 }
 
+// Node is a single Monstera server that hosts replicas.
 type Node struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	GrpcAddress   string                 `protobuf:"bytes,2,opt,name=grpc_address,json=grpcAddress,proto3" json:"grpc_address,omitempty"`
-	Metadata      []*Metadata            `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Unique across the whole cluster.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Address (host:port) of the node's gRPC server. Unique across the whole cluster.
+	GrpcAddress   string      `protobuf:"bytes,2,opt,name=grpc_address,json=grpcAddress,proto3" json:"grpc_address,omitempty"`
+	Metadata      []*Metadata `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -133,13 +204,20 @@ func (x *Node) GetMetadata() []*Metadata {
 	return nil
 }
 
+// Application is a user-defined state machine (an "application core")
+// replicated by Monstera. Its 4-byte keyspace [0x00000000; 0xffffffff] is
+// divided into shards.
 type Application struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	Name              string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Implementation    string                 `protobuf:"bytes,2,opt,name=implementation,proto3" json:"implementation,omitempty"`
-	Shards            []*Shard               `protobuf:"bytes,3,rep,name=shards,proto3" json:"shards,omitempty"`
-	ReplicationFactor int32                  `protobuf:"varint,4,opt,name=replication_factor,json=replicationFactor,proto3" json:"replication_factor,omitempty"`
-	Metadata          []*Metadata            `protobuf:"bytes,5,rep,name=metadata,proto3" json:"metadata,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Unique across the whole cluster.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Name of the application core implementation, used by nodes to look up the
+	// corresponding core factory.
+	Implementation string   `protobuf:"bytes,2,opt,name=implementation,proto3" json:"implementation,omitempty"`
+	Shards         []*Shard `protobuf:"bytes,3,rep,name=shards,proto3" json:"shards,omitempty"`
+	// The minimum number of replicas for each shard of this application. At least 3.
+	ReplicationFactor int32       `protobuf:"varint,4,opt,name=replication_factor,json=replicationFactor,proto3" json:"replication_factor,omitempty"`
+	Metadata          []*Metadata `protobuf:"bytes,5,rep,name=metadata,proto3" json:"metadata,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -209,14 +287,24 @@ func (x *Application) GetMetadata() []*Metadata {
 	return nil
 }
 
+// Shard owns a contiguous range of an application's keyspace and is
+// replicated as one Raft group. Active and splitting shards must cover the
+// application's full keyspace with no gaps and no overlaps; inactive and
+// activating shards may overlap them. A splitting shard must have 2 or more
+// activating children that exactly cover its range. Only inactive and
+// splitting shards have children.
 type Shard struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	LowerBound    []byte                 `protobuf:"bytes,2,opt,name=lower_bound,json=lowerBound,proto3" json:"lower_bound,omitempty"`
-	UpperBound    []byte                 `protobuf:"bytes,3,opt,name=upper_bound,json=upperBound,proto3" json:"upper_bound,omitempty"`
-	ParentId      string                 `protobuf:"bytes,4,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
-	Replicas      []*Replica             `protobuf:"bytes,5,rep,name=replicas,proto3" json:"replicas,omitempty"`
-	Metadata      []*Metadata            `protobuf:"bytes,6,rep,name=metadata,proto3" json:"metadata,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Unique across the whole cluster.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Inclusive 4-byte bounds of the owned key range: lower_bound <= upper_bound.
+	LowerBound []byte `protobuf:"bytes,2,opt,name=lower_bound,json=lowerBound,proto3" json:"lower_bound,omitempty"`
+	UpperBound []byte `protobuf:"bytes,3,opt,name=upper_bound,json=upperBound,proto3" json:"upper_bound,omitempty"`
+	// Id of the shard this shard was split from. Empty for shards created directly.
+	ParentId      string      `protobuf:"bytes,4,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
+	Replicas      []*Replica  `protobuf:"bytes,5,rep,name=replicas,proto3" json:"replicas,omitempty"`
+	Metadata      []*Metadata `protobuf:"bytes,6,rep,name=metadata,proto3" json:"metadata,omitempty"`
+	State         ShardState  `protobuf:"varint,7,opt,name=state,proto3,enum=com.evrblk.monstera.cluster.ShardState" json:"state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -293,11 +381,23 @@ func (x *Shard) GetMetadata() []*Metadata {
 	return nil
 }
 
+func (x *Shard) GetState() ShardState {
+	if x != nil {
+		return x.State
+	}
+	return ShardState_SHARD_STATE_INVALID
+}
+
+// Replica is one member of a shard's Raft group, pinned to a node. Replicas
+// of the same shard must be on different nodes; a replica is never moved to
+// another node (it is removed and a new one is added instead).
 type Replica struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	NodeId        string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	Metadata      []*Metadata            `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Unique across the whole cluster.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Id of the node this replica is assigned to.
+	NodeId        string      `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Metadata      []*Metadata `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -353,12 +453,16 @@ func (x *Replica) GetMetadata() []*Metadata {
 	return nil
 }
 
+// Config describes the entire cluster topology: all applications (with their
+// shards and replicas) and all nodes. It is distributed to every node and
+// client as a single file.
 type Config struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Applications  []*Application         `protobuf:"bytes,1,rep,name=applications,proto3" json:"applications,omitempty"`
-	Nodes         []*Node                `protobuf:"bytes,2,rep,name=nodes,proto3" json:"nodes,omitempty"`
-	Version       int64                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
-	Metadata      []*Metadata            `protobuf:"bytes,4,rep,name=metadata,proto3" json:"metadata,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Applications []*Application         `protobuf:"bytes,1,rep,name=applications,proto3" json:"applications,omitempty"`
+	Nodes        []*Node                `protobuf:"bytes,2,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	// Monotonically increasing config version, incremented on every change.
+	Version       int64       `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
+	Metadata      []*Metadata `protobuf:"bytes,4,rep,name=metadata,proto3" json:"metadata,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -438,7 +542,7 @@ const file_cluster_config_proto_rawDesc = "" +
 	"\x0eimplementation\x18\x02 \x01(\tR\x0eimplementation\x12:\n" +
 	"\x06shards\x18\x03 \x03(\v2\".com.evrblk.monstera.cluster.ShardR\x06shards\x12-\n" +
 	"\x12replication_factor\x18\x04 \x01(\x05R\x11replicationFactor\x12A\n" +
-	"\bmetadata\x18\x05 \x03(\v2%.com.evrblk.monstera.cluster.MetadataR\bmetadata\"\xfb\x01\n" +
+	"\bmetadata\x18\x05 \x03(\v2%.com.evrblk.monstera.cluster.MetadataR\bmetadata\"\xba\x02\n" +
 	"\x05Shard\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vlower_bound\x18\x02 \x01(\fR\n" +
@@ -447,7 +551,8 @@ const file_cluster_config_proto_rawDesc = "" +
 	"upperBound\x12\x1b\n" +
 	"\tparent_id\x18\x04 \x01(\tR\bparentId\x12@\n" +
 	"\breplicas\x18\x05 \x03(\v2$.com.evrblk.monstera.cluster.ReplicaR\breplicas\x12A\n" +
-	"\bmetadata\x18\x06 \x03(\v2%.com.evrblk.monstera.cluster.MetadataR\bmetadata\"u\n" +
+	"\bmetadata\x18\x06 \x03(\v2%.com.evrblk.monstera.cluster.MetadataR\bmetadata\x12=\n" +
+	"\x05state\x18\a \x01(\x0e2'.com.evrblk.monstera.cluster.ShardStateR\x05state\"u\n" +
 	"\aReplica\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\anode_id\x18\x02 \x01(\tR\x06nodeId\x12A\n" +
@@ -456,7 +561,14 @@ const file_cluster_config_proto_rawDesc = "" +
 	"\fapplications\x18\x01 \x03(\v2(.com.evrblk.monstera.cluster.ApplicationR\fapplications\x127\n" +
 	"\x05nodes\x18\x02 \x03(\v2!.com.evrblk.monstera.cluster.NodeR\x05nodes\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\x03R\aversion\x12A\n" +
-	"\bmetadata\x18\x04 \x03(\v2%.com.evrblk.monstera.cluster.MetadataR\bmetadataB$Z\"github.com/evrblk/monstera/clusterb\x06proto3"
+	"\bmetadata\x18\x04 \x03(\v2%.com.evrblk.monstera.cluster.MetadataR\bmetadata*\x8e\x01\n" +
+	"\n" +
+	"ShardState\x12\x17\n" +
+	"\x13SHARD_STATE_INVALID\x10\x00\x12\x16\n" +
+	"\x12SHARD_STATE_ACTIVE\x10\x01\x12\x18\n" +
+	"\x14SHARD_STATE_INACTIVE\x10\x02\x12\x19\n" +
+	"\x15SHARD_STATE_SPLITTING\x10\x03\x12\x1a\n" +
+	"\x16SHARD_STATE_ACTIVATING\x10\x04B$Z\"github.com/evrblk/monstera/clusterb\x06proto3"
 
 var (
 	file_cluster_config_proto_rawDescOnce sync.Once
@@ -470,30 +582,33 @@ func file_cluster_config_proto_rawDescGZIP() []byte {
 	return file_cluster_config_proto_rawDescData
 }
 
+var file_cluster_config_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_cluster_config_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_cluster_config_proto_goTypes = []any{
-	(*Metadata)(nil),    // 0: com.evrblk.monstera.cluster.Metadata
-	(*Node)(nil),        // 1: com.evrblk.monstera.cluster.Node
-	(*Application)(nil), // 2: com.evrblk.monstera.cluster.Application
-	(*Shard)(nil),       // 3: com.evrblk.monstera.cluster.Shard
-	(*Replica)(nil),     // 4: com.evrblk.monstera.cluster.Replica
-	(*Config)(nil),      // 5: com.evrblk.monstera.cluster.Config
+	(ShardState)(0),     // 0: com.evrblk.monstera.cluster.ShardState
+	(*Metadata)(nil),    // 1: com.evrblk.monstera.cluster.Metadata
+	(*Node)(nil),        // 2: com.evrblk.monstera.cluster.Node
+	(*Application)(nil), // 3: com.evrblk.monstera.cluster.Application
+	(*Shard)(nil),       // 4: com.evrblk.monstera.cluster.Shard
+	(*Replica)(nil),     // 5: com.evrblk.monstera.cluster.Replica
+	(*Config)(nil),      // 6: com.evrblk.monstera.cluster.Config
 }
 var file_cluster_config_proto_depIdxs = []int32{
-	0, // 0: com.evrblk.monstera.cluster.Node.metadata:type_name -> com.evrblk.monstera.cluster.Metadata
-	3, // 1: com.evrblk.monstera.cluster.Application.shards:type_name -> com.evrblk.monstera.cluster.Shard
-	0, // 2: com.evrblk.monstera.cluster.Application.metadata:type_name -> com.evrblk.monstera.cluster.Metadata
-	4, // 3: com.evrblk.monstera.cluster.Shard.replicas:type_name -> com.evrblk.monstera.cluster.Replica
-	0, // 4: com.evrblk.monstera.cluster.Shard.metadata:type_name -> com.evrblk.monstera.cluster.Metadata
-	0, // 5: com.evrblk.monstera.cluster.Replica.metadata:type_name -> com.evrblk.monstera.cluster.Metadata
-	2, // 6: com.evrblk.monstera.cluster.Config.applications:type_name -> com.evrblk.monstera.cluster.Application
-	1, // 7: com.evrblk.monstera.cluster.Config.nodes:type_name -> com.evrblk.monstera.cluster.Node
-	0, // 8: com.evrblk.monstera.cluster.Config.metadata:type_name -> com.evrblk.monstera.cluster.Metadata
-	9, // [9:9] is the sub-list for method output_type
-	9, // [9:9] is the sub-list for method input_type
-	9, // [9:9] is the sub-list for extension type_name
-	9, // [9:9] is the sub-list for extension extendee
-	0, // [0:9] is the sub-list for field type_name
+	1,  // 0: com.evrblk.monstera.cluster.Node.metadata:type_name -> com.evrblk.monstera.cluster.Metadata
+	4,  // 1: com.evrblk.monstera.cluster.Application.shards:type_name -> com.evrblk.monstera.cluster.Shard
+	1,  // 2: com.evrblk.monstera.cluster.Application.metadata:type_name -> com.evrblk.monstera.cluster.Metadata
+	5,  // 3: com.evrblk.monstera.cluster.Shard.replicas:type_name -> com.evrblk.monstera.cluster.Replica
+	1,  // 4: com.evrblk.monstera.cluster.Shard.metadata:type_name -> com.evrblk.monstera.cluster.Metadata
+	0,  // 5: com.evrblk.monstera.cluster.Shard.state:type_name -> com.evrblk.monstera.cluster.ShardState
+	1,  // 6: com.evrblk.monstera.cluster.Replica.metadata:type_name -> com.evrblk.monstera.cluster.Metadata
+	3,  // 7: com.evrblk.monstera.cluster.Config.applications:type_name -> com.evrblk.monstera.cluster.Application
+	2,  // 8: com.evrblk.monstera.cluster.Config.nodes:type_name -> com.evrblk.monstera.cluster.Node
+	1,  // 9: com.evrblk.monstera.cluster.Config.metadata:type_name -> com.evrblk.monstera.cluster.Metadata
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_cluster_config_proto_init() }
@@ -506,13 +621,14 @@ func file_cluster_config_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cluster_config_proto_rawDesc), len(file_cluster_config_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_cluster_config_proto_goTypes,
 		DependencyIndexes: file_cluster_config_proto_depIdxs,
+		EnumInfos:         file_cluster_config_proto_enumTypes,
 		MessageInfos:      file_cluster_config_proto_msgTypes,
 	}.Build()
 	File_cluster_config_proto = out.File

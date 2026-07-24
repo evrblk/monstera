@@ -111,6 +111,17 @@ func (a *AdminClient) LeadershipTransfer(ctx context.Context, address string, re
 	return err
 }
 
+// SplitCutoff proposes the shard-split CUTOFF through the shard's replica on
+// the node at address (which must be the shard's Raft leader).
+func (a *AdminClient) SplitCutoff(ctx context.Context, address string, shardId string) error {
+	conn, err := a.pool.GetConnection(address)
+	if err != nil {
+		return err
+	}
+	_, err = conn.SplitCutoff(ctx, &monsterapb.SplitCutoffRequest{ShardId: shardId})
+	return err
+}
+
 func (a *AdminClient) Close() error {
 	a.pool.Close()
 	return nil

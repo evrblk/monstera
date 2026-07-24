@@ -3,6 +3,7 @@
 package codegen
 
 import (
+	"bytes"
 	"fmt"
 	monstera "github.com/evrblk/monstera"
 	types "github.com/evrblk/monstera/internal/integration_test/codegen/types"
@@ -19,11 +20,11 @@ var (
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: time.Hour,
-	}, []string{"core", "method", "shard", "replica"})
+	}, []string{"node", "core", "method", "shard", "replica"})
 	rpcMethodsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Help: "Number of Monstera RPC method calls",
 		Name: "monstera_rpc_methods_total",
-	}, []string{"core", "method", "shard", "replica"})
+	}, []string{"node", "core", "method", "shard", "replica"})
 )
 
 // RegisterMetrics registers the RPC metrics emitted by the generated core
@@ -36,19 +37,26 @@ func RegisterMetrics(registerer prometheus.Registerer) {
 }
 
 type MyCoreCoreAdapter struct {
+	nodeId    string
 	shardId   string
 	replicaId string
+
+	shardLowerBound []byte
+	shardUpperBound []byte
 
 	myCoreCore MyCoreCoreApi
 }
 
 var _ monstera.ApplicationCore = &MyCoreCoreAdapter{}
 
-func NewMyCoreCoreAdapter(shardId string, replicaId string, myCoreCore MyCoreCoreApi) *MyCoreCoreAdapter {
+func NewMyCoreCoreAdapter(nodeId string, shardId string, replicaId string, shardLowerBound []byte, shardUpperBound []byte, myCoreCore MyCoreCoreApi) *MyCoreCoreAdapter {
 	return &MyCoreCoreAdapter{
-		myCoreCore: myCoreCore,
-		replicaId:  replicaId,
-		shardId:    shardId,
+		myCoreCore:      myCoreCore,
+		nodeId:          nodeId,
+		replicaId:       replicaId,
+		shardId:         shardId,
+		shardLowerBound: shardLowerBound,
+		shardUpperBound: shardUpperBound,
 	}
 }
 
@@ -78,12 +86,15 @@ func (a *MyCoreCoreAdapter) Update(rpcReqBytes []byte) (*monstera.UpdateResponse
 
 	switch rpcReq.MethodNumber {
 	case 1:
-		rpcMethodsTotal.WithLabelValues("MyCore", "Update1", a.shardId, a.replicaId).Inc()
-		defer measureSince(rpcMethodDuration.WithLabelValues("MyCore", "Update1", a.shardId, a.replicaId), t1)
+		rpcMethodsTotal.WithLabelValues(a.nodeId, "MyCore", "Update1", a.shardId, a.replicaId).Inc()
+		defer measureSince(rpcMethodDuration.WithLabelValues(a.nodeId, "MyCore", "Update1", a.shardId, a.replicaId), t1)
 
 		methodReq := types.Update1Request{}
 		err := methodReq.UnmarshalBinary(rpcReq.Data)
 		if err != nil {
+			return nil, err
+		}
+		if err := checkShardBounds(methodReq.ShardKey(), a.shardLowerBound, a.shardUpperBound); err != nil {
 			return nil, err
 		}
 		methodResp, err := a.myCoreCore.Update1(&Update1Request{
@@ -100,8 +111,8 @@ func (a *MyCoreCoreAdapter) Update(rpcReqBytes []byte) (*monstera.UpdateResponse
 		}
 		rpcResp.Data = methodRespBytes
 	case 2:
-		rpcMethodsTotal.WithLabelValues("MyCore", "Update2", a.shardId, a.replicaId).Inc()
-		defer measureSince(rpcMethodDuration.WithLabelValues("MyCore", "Update2", a.shardId, a.replicaId), t1)
+		rpcMethodsTotal.WithLabelValues(a.nodeId, "MyCore", "Update2", a.shardId, a.replicaId).Inc()
+		defer measureSince(rpcMethodDuration.WithLabelValues(a.nodeId, "MyCore", "Update2", a.shardId, a.replicaId), t1)
 
 		methodReq := types.Update2Request{}
 		err := methodReq.UnmarshalBinary(rpcReq.Data)
@@ -148,12 +159,15 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 
 	switch rpcReq.MethodNumber {
 	case 1:
-		rpcMethodsTotal.WithLabelValues("MyCore", "Read1", a.shardId, a.replicaId).Inc()
-		defer measureSince(rpcMethodDuration.WithLabelValues("MyCore", "Read1", a.shardId, a.replicaId), t1)
+		rpcMethodsTotal.WithLabelValues(a.nodeId, "MyCore", "Read1", a.shardId, a.replicaId).Inc()
+		defer measureSince(rpcMethodDuration.WithLabelValues(a.nodeId, "MyCore", "Read1", a.shardId, a.replicaId), t1)
 
 		methodReq := types.Read1Request{}
 		err := methodReq.UnmarshalBinary(rpcReq.Data)
 		if err != nil {
+			return nil, err
+		}
+		if err := checkShardBounds(methodReq.ShardKey(), a.shardLowerBound, a.shardUpperBound); err != nil {
 			return nil, err
 		}
 		methodResp, err := a.myCoreCore.Read1(&Read1Request{
@@ -170,8 +184,8 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 		}
 		rpcResp.Data = methodRespBytes
 	case 2:
-		rpcMethodsTotal.WithLabelValues("MyCore", "Read2", a.shardId, a.replicaId).Inc()
-		defer measureSince(rpcMethodDuration.WithLabelValues("MyCore", "Read2", a.shardId, a.replicaId), t1)
+		rpcMethodsTotal.WithLabelValues(a.nodeId, "MyCore", "Read2", a.shardId, a.replicaId).Inc()
+		defer measureSince(rpcMethodDuration.WithLabelValues(a.nodeId, "MyCore", "Read2", a.shardId, a.replicaId), t1)
 
 		methodReq := types.Read2Request{}
 		err := methodReq.UnmarshalBinary(rpcReq.Data)
@@ -192,12 +206,15 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 		}
 		rpcResp.Data = methodRespBytes
 	case 3:
-		rpcMethodsTotal.WithLabelValues("MyCore", "Read3", a.shardId, a.replicaId).Inc()
-		defer measureSince(rpcMethodDuration.WithLabelValues("MyCore", "Read3", a.shardId, a.replicaId), t1)
+		rpcMethodsTotal.WithLabelValues(a.nodeId, "MyCore", "Read3", a.shardId, a.replicaId).Inc()
+		defer measureSince(rpcMethodDuration.WithLabelValues(a.nodeId, "MyCore", "Read3", a.shardId, a.replicaId), t1)
 
 		methodReq := types.Read3Request{}
 		err := methodReq.UnmarshalBinary(rpcReq.Data)
 		if err != nil {
+			return nil, err
+		}
+		if err := checkShardBounds(methodReq.ShardKey(), a.shardLowerBound, a.shardUpperBound); err != nil {
 			return nil, err
 		}
 		methodResp, err := a.myCoreCore.Read3(&Read3Request{
@@ -228,4 +245,11 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 
 func measureSince(o prometheus.Observer, t1 time.Time) {
 	o.Observe(time.Since(t1).Seconds())
+}
+
+func checkShardBounds(shardKey []byte, lowerBound []byte, upperBound []byte) error {
+	if bytes.Compare(shardKey, lowerBound) < 0 || bytes.Compare(shardKey, upperBound) > 0 {
+		return fmt.Errorf("routing violation: shard key %x is outside shard bounds [%x, %x]", shardKey, lowerBound, upperBound)
+	}
+	return nil
 }

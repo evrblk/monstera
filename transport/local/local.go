@@ -7,7 +7,6 @@ import (
 
 	"github.com/evrblk/monstera"
 	"github.com/evrblk/monstera/cluster"
-	"github.com/evrblk/monstera/internal/raft"
 	"github.com/evrblk/monstera/transport"
 )
 
@@ -68,43 +67,7 @@ func (t *LocalTransport) ListReplicaStates(ctx context.Context, nodeId string) (
 	if err != nil {
 		return nil, err
 	}
-
-	replicas := node.ListReplicas()
-	states := make([]*transport.ReplicaState, len(replicas))
-	for i, r := range replicas {
-		var raftState transport.RaftState
-		switch s := r.GetRaftState(); s {
-		case raft.Follower:
-			raftState = transport.RaftStateFollower
-		case raft.Candidate:
-			raftState = transport.RaftStateCandidate
-		case raft.Leader:
-			raftState = transport.RaftStateLeader
-		case raft.Shutdown:
-			raftState = transport.RaftStateDead
-		default:
-			return nil, fmt.Errorf("unknown raft state: %v", s)
-		}
-
-		rs := r.GetRaftStats()
-		states[i] = &transport.ReplicaState{
-			ReplicaId: r.GetReplicaId(),
-			RaftState: raftState,
-			Stats: transport.RaftStats{
-				Term:              rs.Term,
-				LastLogIndex:      rs.LastLogIndex,
-				LastLogTerm:       rs.LastLogTerm,
-				CommitIndex:       rs.CommitIndex,
-				AppliedIndex:      rs.AppliedIndex,
-				FSMPending:        rs.FSMPending,
-				LastSnapshotIndex: rs.LastSnapshotIndex,
-				LastSnapshotTerm:  rs.LastSnapshotTerm,
-				NumPeers:          rs.NumPeers,
-				LastContact:       rs.LastContact,
-			},
-		}
-	}
-	return states, nil
+	return node.ReplicaStates(), nil
 }
 
 func (t *LocalTransport) GetClusterConfig(ctx context.Context, address string) (*cluster.Config, error) {
@@ -145,6 +108,15 @@ func (t *LocalTransport) LeadershipTransfer(ctx context.Context, address string,
 		return err
 	}
 	return node.LeadershipTransfer(replicaId)
+}
+
+func (t *LocalTransport) SplitCutoff(ctx context.Context, address string, shardId string) error {
+	node, err := t.getNode(address)
+	if err != nil {
+		return err
+	}
+	_, err = node.SplitCutoff(ctx, shardId)
+	return err
 }
 
 func (t *LocalTransport) ListReplicaSnapshots(ctx context.Context, address string, replicaId string) ([]*transport.RaftSnapshot, error) {

@@ -1,6 +1,7 @@
 package control
 
 import (
+	"encoding/hex"
 	"fmt"
 
 	"google.golang.org/protobuf/proto"
@@ -20,9 +21,83 @@ func applyMutation(cfg *cluster.Config, m Mutation) error {
 		return err
 	case MutationRemoveReplica:
 		return removeReplica(cfg, m.ShardId, m.ReplicaId)
+	case MutationSplitShard:
+		return splitShard(cfg, m)
+	case MutationCompleteSplit:
+		return completeSplit(cfg, m.ShardId)
 	default:
 		return fmt.Errorf("unknown mutation kind %q", m.Kind)
 	}
+}
+
+// splitShard marks the parent SPLITTING and creates the ACTIVATING children
+// exactly as frozen in the mutation.
+func splitShard(cfg *cluster.Config, m Mutation) error {
+	for _, a := range cfg.Applications {
+		if a.Name != m.ApplicationName {
+			continue
+		}
+		var parent *cluster.Shard
+		for _, s := range a.Shards {
+			if s.Id == m.ShardId {
+				parent = s
+				break
+			}
+		}
+		if parent == nil {
+			return fmt.Errorf("shard %q not found in application %q", m.ShardId, m.ApplicationName)
+		}
+		parent.State = cluster.ShardState_SHARD_STATE_SPLITTING
+
+		for _, spec := range m.SplitChildren {
+			lower, err := hex.DecodeString(spec.LowerBound)
+			if err != nil {
+				return fmt.Errorf("child %s lower bound: %w", spec.ShardId, err)
+			}
+			upper, err := hex.DecodeString(spec.UpperBound)
+			if err != nil {
+				return fmt.Errorf("child %s upper bound: %w", spec.ShardId, err)
+			}
+			child := &cluster.Shard{
+				Id:         spec.ShardId,
+				LowerBound: lower,
+				UpperBound: upper,
+				State:      cluster.ShardState_SHARD_STATE_ACTIVATING,
+				ParentId:   parent.Id,
+			}
+			for _, r := range spec.Replicas {
+				child.Replicas = append(child.Replicas, &cluster.Replica{Id: r.ReplicaId, NodeId: r.NodeId})
+			}
+			a.Shards = append(a.Shards, child)
+		}
+		return nil
+	}
+	return fmt.Errorf("application %q not found", m.ApplicationName)
+}
+
+// completeSplit flips the split: the parent retires to INACTIVE and its
+// activating children become ACTIVE.
+func completeSplit(cfg *cluster.Config, parentShardId string) error {
+	for _, a := range cfg.Applications {
+		var parent *cluster.Shard
+		for _, s := range a.Shards {
+			if s.Id == parentShardId {
+				parent = s
+				break
+			}
+		}
+		if parent == nil {
+			continue
+		}
+		parent.State = cluster.ShardState_SHARD_STATE_INACTIVE
+		for _, s := range a.Shards {
+			if s.ParentId == parentShardId && s.State == cluster.ShardState_SHARD_STATE_ACTIVATING {
+				s.State = cluster.ShardState_SHARD_STATE_ACTIVE
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("shard %q not found", parentShardId)
 }
 
 // removeReplica filters a replica out of its shard.
@@ -114,6 +189,15 @@ func validateSequence(base *cluster.Config, seq *Sequence) error {
 			// forward unchanged (no transition to validate).
 			if len(step.Mutations) != 0 || target.Version != prev.Version {
 				return fmt.Errorf("step %d (bake) must not change the config or version", i)
+			}
+		case StepSendCommand:
+			// A command step delivers a shard-level command through Raft; the
+			// config is untouched.
+			if len(step.Mutations) != 0 || target.Version != prev.Version {
+				return fmt.Errorf("step %d (send_command) must not change the config or version", i)
+			}
+			if step.Command == nil || step.Command.Kind == "" {
+				return fmt.Errorf("step %d (send_command) has no command", i)
 			}
 		default:
 			return fmt.Errorf("step %d has unsupported kind %q", i, step.Kind)

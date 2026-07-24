@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -203,27 +204,37 @@ func CreateEmptyConfig() *Config {
 
 // Validate checks if the config is valid according to the following invariants:
 //
-// - Version is greater than 0
-// - There are at least 3 nodes
-// - Nodes have non-empty id
-// - Nodes have unique ids
-// - Nodes have non-empty grpc address
-// - Nodes have unique grpc addresses
-// - Applications have non-empty names
-// - Applications have globally unique names
-// - Applications have non-empty implementation
-// - Applications have replication factor of at least 3
-// - Shards have non-empty id
-// - Shards have globally unique ids
-// - Shards have no overlap in range
-// - Shards have 4 bytes ranges
-// - All shards together cover the full range of keys
-// - Number of replicas is greater or equal to replication factor
-// - Replicas have non-empty id
-// - Replicas have globally unique ids
-// - Replicas are assigned to existing nodes
-// - Replicas are assigned to different nodes
-// - Metadata (at every level, including the config itself) has unique keys
+//   - Version is greater than 0
+//   - There are at least 3 nodes
+//   - Nodes have non-empty id
+//   - Nodes have unique ids
+//   - Nodes have non-empty grpc address
+//   - Nodes have unique grpc addresses
+//   - Applications have non-empty names
+//   - Applications have globally unique names
+//   - Applications have non-empty implementation
+//   - Applications have replication factor of at least 3
+//   - Shards have non-empty id
+//   - Shards have globally unique ids
+//   - Shards have a known state (active, inactive, splitting or activating)
+//   - Shards have 4 bytes ranges
+//   - Non-empty shard ParentId references an existing shard within the same application
+//   - Active and splitting shards have no overlap in range
+//   - All active and splitting shards together cover the full range of keys with no gaps
+//   - Active shards have no children
+//   - Inactive shards (retired after a completed split) have at least one child
+//   - Splitting shards have 2 or more activating children (by ParentId) that exactly cover the parent's
+//     range with no overlaps and no gaps; all their children are activating
+//   - Activating children's replicas are on exactly the same nodes as their splitting parent's replicas
+//     (split seeding is node-local)
+//   - Activating shards are children of splitting shards and have no children
+//   - Inactive and activating shards may overlap any other shards
+//   - Number of replicas is greater or equal to replication factor
+//   - Replicas have non-empty id
+//   - Replicas have globally unique ids
+//   - Replicas are assigned to existing nodes
+//   - Replicas are assigned to different nodes
+//   - Metadata (at every level, including the config itself) has unique keys
 //
 // Returns an error if any invariant is violated.
 func (c *Config) Validate() error {
@@ -312,6 +323,10 @@ func (c *Config) Validate() error {
 			}
 			shardsByIds[s.Id] = s
 
+			if _, ok := ShardState_name[int32(s.State)]; !ok || s.State == ShardState_SHARD_STATE_INVALID {
+				return fmt.Errorf("invalid state %d for shard %s", s.State, s.Id)
+			}
+
 			if len(s.Replicas) < int(a.ReplicationFactor) {
 				return fmt.Errorf("not enough replicas for shard %s", s.Id)
 			}
@@ -360,30 +375,86 @@ func (c *Config) Validate() error {
 			}
 		}
 
-		// Sort shards by LowerBound
-		sortedShards := make([]*Shard, len(a.Shards))
-		copy(sortedShards, a.Shards)
-		sort.Slice(sortedShards, func(i, j int) bool {
-			return bytes.Compare(sortedShards[i].LowerBound, sortedShards[j].LowerBound) < 0
-		})
+		// Active and splitting shards together must partition the whole
+		// keyspace: no overlaps and no gaps. Inactive and activating shards
+		// may overlap them.
+		routableShards := make([]*Shard, 0, len(a.Shards))
+		for _, s := range a.Shards {
+			if s.IsRoutable() {
+				routableShards = append(routableShards, s)
+			}
+		}
+		if len(routableShards) == 0 {
+			return fmt.Errorf("no active shards for %s", a.Name)
+		}
+		lowest := []byte{0x00, 0x00, 0x00, 0x00}
+		highest := []byte{0xff, 0xff, 0xff, 0xff}
+		if err := validateContiguousCoverage(routableShards, lowest, highest); err != nil {
+			return fmt.Errorf("%w for application %s", err, a.Name)
+		}
 
-		// Check first LowerBound == 0x00000000
-		if !bytes.Equal(sortedShards[0].LowerBound, []byte{0x00, 0x00, 0x00, 0x00}) {
-			return fmt.Errorf("shards do not start at 0x00000000 for application %s", a.Name)
+		// A non-empty ParentId must reference an existing shard within the
+		// same application; the parent/children rules below rely on it.
+		appShardsById := make(map[string]*Shard, len(a.Shards))
+		for _, s := range a.Shards {
+			appShardsById[s.Id] = s
 		}
-		// Check last UpperBound == 0xffffffff
-		if !bytes.Equal(sortedShards[len(sortedShards)-1].UpperBound, []byte{0xff, 0xff, 0xff, 0xff}) {
-			return fmt.Errorf("shards do not end at 0xffffffff for application %s", a.Name)
+		childrenByParentId := make(map[string][]*Shard)
+		for _, s := range a.Shards {
+			if s.ParentId == "" {
+				continue
+			}
+			if _, ok := appShardsById[s.ParentId]; !ok {
+				return fmt.Errorf("parent %s of shard %s not found in application %s", s.ParentId, s.Id, a.Name)
+			}
+			childrenByParentId[s.ParentId] = append(childrenByParentId[s.ParentId], s)
 		}
-		// Check contiguous coverage
-		for i := 1; i < len(sortedShards); i++ {
-			prev := sortedShards[i-1]
-			curr := sortedShards[i]
-			// prev.UpperBound + 1 == curr.LowerBound
-			prevUpper := binary.BigEndian.Uint32(prev.UpperBound)
-			currLower := binary.BigEndian.Uint32(curr.LowerBound)
-			if prevUpper+1 != currLower {
-				return fmt.Errorf("shards are not contiguous between %x and %x for application %s", prev.UpperBound, curr.LowerBound, a.Name)
+
+		// Per-state parent/children rules:
+		//   - active: serving, no children
+		//   - inactive: retired after a completed split, has children
+		//   - splitting: serving, has 2+ activating children exactly covering its range
+		//   - activating: child of a splitting shard, no children
+		for _, s := range a.Shards {
+			children := childrenByParentId[s.Id]
+			switch s.State {
+			case ShardState_SHARD_STATE_ACTIVE:
+				if len(children) > 0 {
+					return fmt.Errorf("active shard %s must not have children", s.Id)
+				}
+			case ShardState_SHARD_STATE_INACTIVE:
+				if len(children) == 0 {
+					return fmt.Errorf("inactive shard %s must have children", s.Id)
+				}
+			case ShardState_SHARD_STATE_SPLITTING:
+				for _, ch := range children {
+					if ch.State != ShardState_SHARD_STATE_ACTIVATING {
+						return fmt.Errorf("child %s of splitting shard %s must be activating", ch.Id, s.Id)
+					}
+				}
+				if len(children) < 2 {
+					return fmt.Errorf("splitting shard %s must have at least 2 activating children", s.Id)
+				}
+				if err := validateContiguousCoverage(children, s.LowerBound, s.UpperBound); err != nil {
+					return fmt.Errorf("children of splitting shard %s do not cover its range: %w", s.Id, err)
+				}
+				// Split seeding is node-local: every node hosting a parent
+				// replica seeds its own children, so the children's replicas
+				// must live on exactly the same nodes as the parent's.
+				parentNodes := replicaNodeSet(s.Replicas)
+				for _, ch := range children {
+					if !maps.Equal(parentNodes, replicaNodeSet(ch.Replicas)) {
+						return fmt.Errorf("activating child %s must have replicas on the same nodes as its splitting parent %s", ch.Id, s.Id)
+					}
+				}
+			case ShardState_SHARD_STATE_ACTIVATING:
+				if len(children) > 0 {
+					return fmt.Errorf("activating shard %s must not have children", s.Id)
+				}
+				parent := appShardsById[s.ParentId]
+				if parent == nil || parent.State != ShardState_SHARD_STATE_SPLITTING {
+					return fmt.Errorf("activating shard %s must be a child of a splitting shard", s.Id)
+				}
 			}
 		}
 	}
@@ -391,14 +462,66 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// validateContiguousCoverage checks that shards exactly cover the range
+// [lowerBound, upperBound] with no overlaps and no gaps. shards must be
+// non-empty; the slice is not modified.
+func validateContiguousCoverage(shards []*Shard, lowerBound []byte, upperBound []byte) error {
+	// Sort shards by LowerBound
+	sortedShards := make([]*Shard, len(shards))
+	copy(sortedShards, shards)
+	sort.Slice(sortedShards, func(i, j int) bool {
+		return bytes.Compare(sortedShards[i].LowerBound, sortedShards[j].LowerBound) < 0
+	})
+
+	if !bytes.Equal(sortedShards[0].LowerBound, lowerBound) {
+		return fmt.Errorf("shards do not start at 0x%x", lowerBound)
+	}
+	if !bytes.Equal(sortedShards[len(sortedShards)-1].UpperBound, upperBound) {
+		return fmt.Errorf("shards do not end at 0x%x", upperBound)
+	}
+	// Check contiguous coverage
+	for i := 1; i < len(sortedShards); i++ {
+		prev := sortedShards[i-1]
+		curr := sortedShards[i]
+		// prev.UpperBound + 1 == curr.LowerBound
+		prevUpper := binary.BigEndian.Uint32(prev.UpperBound)
+		currLower := binary.BigEndian.Uint32(curr.LowerBound)
+		if prevUpper+1 != currLower {
+			return fmt.Errorf("shards are not contiguous between %x and %x", prev.UpperBound, curr.LowerBound)
+		}
+	}
+	return nil
+}
+
+// replicaNodeSet returns the set of node ids a shard's replicas are assigned to.
+func replicaNodeSet(replicas []*Replica) map[string]struct{} {
+	nodes := make(map[string]struct{}, len(replicas))
+	for _, r := range replicas {
+		nodes[r.NodeId] = struct{}{}
+	}
+	return nodes
+}
+
+// IsRoutable reports whether the shard currently serves its key range: it is
+// either active or splitting (a splitting shard keeps serving until its
+// activating children take over).
+func (s *Shard) IsRoutable() bool {
+	return s.State == ShardState_SHARD_STATE_ACTIVE || s.State == ShardState_SHARD_STATE_SPLITTING
+}
+
 // sortShards normalizes the config by sorting each application's shards by
-// their lower bound in place. This establishes the invariant that
-// FindShardByShardKey relies on for its binary search. It is called by the
-// Load* functions after a successful Validate.
+// their lower bound in place (ties broken by shard id, since inactive shards
+// may share a lower bound with the shard they overlap). This establishes the
+// invariant that FindShardByShardKey relies on for its binary search, and
+// keeps the order (and therefore Hash) stable across load/write cycles. It is
+// called by the Load* functions after a successful Validate.
 func (c *Config) sortShards() {
 	for _, a := range c.Applications {
 		sort.Slice(a.Shards, func(i, j int) bool {
-			return bytes.Compare(a.Shards[i].LowerBound, a.Shards[j].LowerBound) < 0
+			if cmp := bytes.Compare(a.Shards[i].LowerBound, a.Shards[j].LowerBound); cmp != 0 {
+				return cmp < 0
+			}
+			return a.Shards[i].Id < a.Shards[j].Id
 		})
 	}
 }
@@ -488,7 +611,10 @@ func (c *Config) ListShards(applicationName string) ([]*Shard, error) {
 	copy(sortedShards, application.Shards)
 
 	sort.Slice(sortedShards, func(i, j int) bool {
-		return bytes.Compare(sortedShards[i].LowerBound, sortedShards[j].LowerBound) < 0
+		if cmp := bytes.Compare(sortedShards[i].LowerBound, sortedShards[j].LowerBound); cmp != 0 {
+			return cmp < 0
+		}
+		return sortedShards[i].Id < sortedShards[j].Id
 	})
 
 	return sortedShards, nil
@@ -512,6 +638,7 @@ func (c *Config) CreateApplication(applicationName string, implementation string
 	return application, nil
 }
 
+// CreateShard appends a new active shard with the given bounds to the application.
 func (c *Config) CreateShard(applicationName string, lowerBound []byte, upperBound []byte, parentId string) (*Shard, error) {
 	application, err := c.getApplication(applicationName)
 	if err != nil {
@@ -530,6 +657,7 @@ func (c *Config) CreateShard(applicationName string, lowerBound []byte, upperBou
 		LowerBound: lowerBound,
 		UpperBound: upperBound,
 		ParentId:   parentId,
+		State:      ShardState_SHARD_STATE_ACTIVE,
 	}
 
 	application.Shards = append(application.Shards, shard)
@@ -616,11 +744,14 @@ func (c *Config) Hash() (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// FindShardByShardKey returns the shard whose [LowerBound, UpperBound] range
-// contains shardKey. It assumes the application's shards are a sorted,
-// contiguous, non-overlapping partition of the 4-byte keyspace (validated, and
-// sorted by the Load* functions), and finds the shard with a binary search over
-// the shard lower bounds.
+// FindShardByShardKey returns the active or splitting shard whose
+// [LowerBound, UpperBound] range contains shardKey. Inactive and activating
+// shards (e.g. children of a splitting shard) may overlap that range and are
+// never returned. It assumes the application's shards are sorted by lower bound and
+// that the active and splitting shards form a contiguous, non-overlapping
+// partition of the 4-byte keyspace (validated, and sorted by the Load*
+// functions), and finds the shard with a binary search over the shard lower
+// bounds.
 //
 // shardKey is compared byte-wise, so a key shorter than 4 bytes is treated as a
 // prefix (padded conceptually with 0x00). A key longer than the 4-byte keyspace
@@ -638,17 +769,24 @@ func (c *Config) FindShardByShardKey(applicationName string, shardKey []byte) (*
 	shards := application.Shards
 
 	// shards are sorted by LowerBound (an invariant established by Validate).
-	// Find the first shard whose LowerBound is strictly greater than shardKey;
-	// the candidate containing shardKey is the one immediately before it.
+	// Find the first shard whose LowerBound is strictly greater than shardKey,
+	// then walk backwards from the shard immediately before it, skipping
+	// non-routable shards: the first routable shard found is the one with the
+	// greatest routable LowerBound <= shardKey, i.e. the only routable
+	// candidate that can contain shardKey.
 	i := sort.Search(len(shards), func(i int) bool {
 		return bytes.Compare(shards[i].LowerBound, shardKey) > 0
 	})
-	if i == 0 {
-		return nil, errShardNotFound
-	}
-	candidate := shards[i-1]
-	if bytes.Compare(shardKey, candidate.UpperBound) <= 0 {
-		return candidate, nil
+	for j := i - 1; j >= 0; j-- {
+		candidate := shards[j]
+		if !candidate.IsRoutable() {
+			continue
+		}
+		if bytes.Compare(shardKey, candidate.UpperBound) <= 0 {
+			return candidate, nil
+		}
+		// Routable shards do not overlap, so no earlier one can contain shardKey.
+		break
 	}
 
 	return nil, errShardNotFound
@@ -687,7 +825,12 @@ func (c *Config) IncrementVersion() {
 //   - New nodes can be added, but existing nodes cannot be removed if they have at least one assigned replica in the
 //     old config.
 //   - New applications can be added, but existing applications cannot be removed.
-//   - Active shards cannot be removed or have their bounds changed.
+//   - Shards cannot be removed, have their bounds changed, or change their parent.
+//   - Shard states follow the split lifecycle: an active shard can start splitting (there must be at least
+//     2 activating children of it in the new config), a splitting shard can retire to inactive, and an
+//     activating shard can become active; any other state change is forbidden. In particular, an active
+//     shard cannot become inactive or activating directly, and an inactive shard never changes state again.
+//   - A shard added to an existing application cannot be created active.
 //   - New replicas can be added (even exceeding the replication factor), but replicas cannot be both added and removed
 //     in the same transition.
 //   - All existing replicas must remain assigned to the same nodes (no reassignment of existing replicas).
@@ -752,7 +895,8 @@ func ValidateTransition(old, new *Config) error {
 		}
 	}
 
-	// Shards cannot be removed or have their bounds changed
+	// Shards cannot be removed, have their bounds changed, or change their
+	// parent; state changes must follow the split lifecycle.
 	for appName, oldApp := range oldApps {
 		newApp := newApps[appName]
 		if newApp == nil {
@@ -774,6 +918,22 @@ func ValidateTransition(old, new *Config) error {
 			if !bytes.Equal(oldShard.LowerBound, newShard.LowerBound) ||
 				!bytes.Equal(oldShard.UpperBound, newShard.UpperBound) {
 				return fmt.Errorf("cannot change bounds for shard %s in application %s", shardId, appName)
+			}
+			if oldShard.ParentId != newShard.ParentId {
+				return fmt.Errorf("cannot change parent for shard %s in application %s", shardId, appName)
+			}
+			if err := validateShardStateTransition(oldShard, newShard, newApp); err != nil {
+				return fmt.Errorf("%w in application %s", err, appName)
+			}
+		}
+		// Shards cannot appear out of nowhere in a serving state: a shard
+		// enters an existing application as an activating child of a split
+		// and becomes active only through the activating state.
+		for shardId, newShard := range newShards {
+			if _, exists := oldShards[shardId]; !exists {
+				if newShard.State == ShardState_SHARD_STATE_ACTIVE {
+					return fmt.Errorf("new shard %s in application %s cannot be created active", shardId, appName)
+				}
 			}
 		}
 	}
@@ -836,17 +996,77 @@ func ValidateTransition(old, new *Config) error {
 	return nil
 }
 
+// validateShardStateTransition checks that an existing shard's state change
+// between two config versions follows the split lifecycle:
+// active -> splitting -> inactive for parents, activating -> active for
+// children (a shard may also keep its state). An active shard may start
+// splitting only if the new config already contains at least 2 activating
+// children of it.
+func validateShardStateTransition(oldShard, newShard *Shard, newApp *Application) error {
+	allowed := false
+	switch oldShard.State {
+	case ShardState_SHARD_STATE_ACTIVE:
+		switch newShard.State {
+		case ShardState_SHARD_STATE_ACTIVE:
+			allowed = true
+		case ShardState_SHARD_STATE_SPLITTING:
+			children := 0
+			for _, ch := range newApp.Shards {
+				if ch.ParentId == newShard.Id && ch.State == ShardState_SHARD_STATE_ACTIVATING {
+					children++
+				}
+			}
+			if children < 2 {
+				return fmt.Errorf("shard %s cannot start splitting without at least 2 activating children", newShard.Id)
+			}
+			allowed = true
+		}
+	case ShardState_SHARD_STATE_SPLITTING:
+		allowed = newShard.State == ShardState_SHARD_STATE_SPLITTING ||
+			newShard.State == ShardState_SHARD_STATE_INACTIVE
+	case ShardState_SHARD_STATE_ACTIVATING:
+		allowed = newShard.State == ShardState_SHARD_STATE_ACTIVATING ||
+			newShard.State == ShardState_SHARD_STATE_ACTIVE
+	case ShardState_SHARD_STATE_INACTIVE:
+		allowed = newShard.State == ShardState_SHARD_STATE_INACTIVE
+	}
+	if !allowed {
+		return fmt.Errorf("invalid state transition for shard %s: %s -> %s",
+			newShard.Id, shardStateName(oldShard.State), shardStateName(newShard.State))
+	}
+	return nil
+}
+
+// shardStateName returns the human-readable name of a shard state, as used in
+// the JSON representation and error messages.
+func shardStateName(state ShardState) string {
+	switch state {
+	case ShardState_SHARD_STATE_ACTIVE:
+		return "active"
+	case ShardState_SHARD_STATE_INACTIVE:
+		return "inactive"
+	case ShardState_SHARD_STATE_SPLITTING:
+		return "splitting"
+	case ShardState_SHARD_STATE_ACTIVATING:
+		return "activating"
+	default:
+		return fmt.Sprintf("invalid(%d)", state)
+	}
+}
+
 // generateId generates a random hex id
 func generateId(prefix string) string {
 	return fmt.Sprintf("%s_%x", prefix, rand.Uint32())
 }
 
 // shardJsonProxy is used for human-readable Shard JSON representation, with HEX instead of Base64 for []byte
+// and a lowercase string for the state ("active", "inactive", "splitting", "activating"). The state is required.
 type shardJsonProxy struct {
 	Id         string      `json:"id,omitempty"`
 	LowerBound string      `json:"lower_bound,omitempty"`
 	UpperBound string      `json:"upper_bound,omitempty"`
 	ParentId   string      `json:"parent_id,omitempty"`
+	State      string      `json:"state,omitempty"`
 	Replicas   []*Replica  `json:"replicas,omitempty"`
 	Metadata   []*Metadata `json:"metadata,omitempty"`
 }
@@ -854,11 +1074,26 @@ type shardJsonProxy struct {
 func (s *Shard) MarshalJSON() ([]byte, error) {
 	sl, su := ShortenBounds(s.LowerBound, s.UpperBound)
 
+	var state string
+	switch s.State {
+	case ShardState_SHARD_STATE_ACTIVE:
+		state = "active"
+	case ShardState_SHARD_STATE_INACTIVE:
+		state = "inactive"
+	case ShardState_SHARD_STATE_SPLITTING:
+		state = "splitting"
+	case ShardState_SHARD_STATE_ACTIVATING:
+		state = "activating"
+	default:
+		return nil, fmt.Errorf("invalid state %d for shard %s", s.State, s.Id)
+	}
+
 	return json.Marshal(&shardJsonProxy{
 		Id:         s.Id,
 		LowerBound: hex.EncodeToString(sl),
 		UpperBound: hex.EncodeToString(su),
 		ParentId:   s.ParentId,
+		State:      state,
 		Replicas:   s.Replicas,
 		Metadata:   s.Metadata,
 	})
@@ -896,6 +1131,21 @@ func (s *Shard) UnmarshalJSON(data []byte) error {
 	_, err = hex.Decode(s.UpperBound, []byte(p.UpperBound))
 	if err != nil {
 		return err
+	}
+
+	switch p.State {
+	case "active":
+		s.State = ShardState_SHARD_STATE_ACTIVE
+	case "inactive":
+		s.State = ShardState_SHARD_STATE_INACTIVE
+	case "splitting":
+		s.State = ShardState_SHARD_STATE_SPLITTING
+	case "activating":
+		s.State = ShardState_SHARD_STATE_ACTIVATING
+	case "":
+		return fmt.Errorf("missing state for shard %s", p.Id)
+	default:
+		return fmt.Errorf("unknown state %q for shard %s", p.State, p.Id)
 	}
 
 	s.Id = p.Id

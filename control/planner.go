@@ -1,7 +1,10 @@
 package control
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -204,8 +207,145 @@ func deterministicReplicaId(baseHash, shardId, toNodeId string) string {
 	return fmt.Sprintf("%s_%x", shardId, sum[:4])
 }
 
-// PlanSplitShard is unsupported until the split model (a serving flag on Shard) and
-// the Raft cutoff command land. See notes/sequences-design.md, Shard split.
-func PlanSplitShard(base *cluster.Config, shardId string) (*Sequence, error) {
-	return nil, fmt.Errorf("split-shard is unsupported until the split model and cutoff command are implemented")
+// splitShardMaxLag is the catch-up tolerance (in parent Raft log entries) the
+// children_seeded gate allows before the cutoff is sent. The cutoff drain is
+// proportional to this lag, so keep it small.
+const splitShardMaxLag = 16
+
+// PlanSplitShard builds a sequence that splits an active shard into two
+// children at splitAt (the first shard key of the second child; 4 bytes). See
+// notes/shard-split-design.md for the full model. The steps:
+//
+//   - Step 0 (apply_config): parent -> splitting; create the two ACTIVATING
+//     children, co-located with the parent's replicas. Nodes start seeding.
+//     Gates: config_converged + children_seeded.
+//   - Step 1 (send_command): deliver the CUTOFF through the parent's Raft log;
+//     every replica freezes the parent at the same index, finalizes and
+//     promotes its local children. Gates: leader_elected on both children.
+//   - Step 2 (apply_config): the flip — parent -> inactive, children -> active.
+//     Gates: config_converged + leader_elected on both children.
+//   - Step 3 (bake): soak, re-confirming the children still lead.
+//
+// Child shard ids follow cluster.CreateShard's "<app>_<lower>_<upper>" scheme
+// and child replica ids are derived deterministically from the base hash, so
+// the plan is reproducible. CreatedAt is left empty (stamped at persist time).
+func PlanSplitShard(base *cluster.Config, shardId string, splitAt []byte, bakeFor time.Duration) (*Sequence, error) {
+	shard, err := base.GetShard(shardId)
+	if err != nil {
+		return nil, err
+	}
+	if shard.State != cluster.ShardState_SHARD_STATE_ACTIVE {
+		return nil, fmt.Errorf("shard %q is %v; only active shards can split", shardId, shard.State)
+	}
+	appName, err := applicationForShard(base, shardId)
+	if err != nil {
+		return nil, err
+	}
+	if len(splitAt) != 4 {
+		return nil, fmt.Errorf("split point must be 4 bytes, got %d", len(splitAt))
+	}
+	if bytes.Compare(splitAt, shard.LowerBound) <= 0 || bytes.Compare(splitAt, shard.UpperBound) > 0 {
+		return nil, fmt.Errorf("split point %x must be within (%x, %x]", splitAt, shard.LowerBound, shard.UpperBound)
+	}
+
+	hash, err := base.Hash()
+	if err != nil {
+		return nil, err
+	}
+
+	// Children bounds: [lower, splitAt-1] and [splitAt, upper].
+	firstUpper := make([]byte, 4)
+	binary.BigEndian.PutUint32(firstUpper, binary.BigEndian.Uint32(splitAt)-1)
+	children := []SplitChildSpec{
+		childSpec(appName, hash, shard, shard.LowerBound, firstUpper),
+		childSpec(appName, hash, shard, splitAt, shard.UpperBound),
+	}
+
+	childLeaderGates := []Gate{
+		{Kind: GateLeaderElected, ShardId: children[0].ShardId},
+		{Kind: GateLeaderElected, ShardId: children[1].ShardId},
+	}
+
+	seq := &Sequence{
+		Name:        fmt.Sprintf("split-shard-%s-at-%x", shardId, splitAt),
+		Kind:        KindSplitShard,
+		BaseVersion: base.Version,
+		BaseHash:    hash,
+		Cursor:      0,
+		Status:      StatusPending,
+		Steps: []*Step{
+			{
+				Index:       0,
+				Description: fmt.Sprintf("split shard %s at %x into %s and %s", shardId, splitAt, children[0].ShardId, children[1].ShardId),
+				Kind:        StepApplyConfig,
+				Version:     base.Version + 1,
+				Mutations: []Mutation{{
+					Kind:            MutationSplitShard,
+					ApplicationName: appName,
+					ShardId:         shardId,
+					SplitChildren:   children,
+				}},
+				Gates: []Gate{
+					{Kind: GateConfigConverged},
+					{Kind: GateChildrenSeeded, ShardId: shardId, MaxLagEntries: splitShardMaxLag},
+				},
+				Status: StatusPending,
+			},
+			{
+				Index:       1,
+				Description: fmt.Sprintf("cutoff: freeze shard %s and activate its children", shardId),
+				Kind:        StepSendCommand,
+				Version:     base.Version + 1, // unchanged: the cutoff is not a config change
+				Command:     &ControlCommand{Kind: CommandSplitCutoff, ShardId: shardId},
+				Gates:       childLeaderGates,
+				Status:      StatusPending,
+			},
+			{
+				Index:       2,
+				Description: fmt.Sprintf("flip: retire shard %s, activate %s and %s", shardId, children[0].ShardId, children[1].ShardId),
+				Kind:        StepApplyConfig,
+				Version:     base.Version + 2,
+				Mutations: []Mutation{{
+					Kind:    MutationCompleteSplit,
+					ShardId: shardId,
+				}},
+				Gates:  append([]Gate{{Kind: GateConfigConverged}}, childLeaderGates...),
+				Status: StatusPending,
+			},
+			{
+				Index:       3,
+				Description: fmt.Sprintf("bake for %s while the children stabilize", bakeFor),
+				Kind:        StepBake,
+				Version:     base.Version + 2, // unchanged
+				WaitFor:     bakeFor.String(),
+				Gates:       childLeaderGates,
+				Status:      StatusPending,
+			},
+		},
+	}
+
+	if err := validateSequence(base, seq); err != nil {
+		return nil, err
+	}
+	return seq, nil
+}
+
+// childSpec freezes one split child: id from the bounds (cluster.CreateShard's
+// scheme), replicas co-located with the parent's, ids derived from the base
+// hash.
+func childSpec(appName, baseHash string, parent *cluster.Shard, lower, upper []byte) SplitChildSpec {
+	sl, su := cluster.ShortenBounds(lower, upper)
+	childId := fmt.Sprintf("%s_%x_%x", appName, sl, su)
+	spec := SplitChildSpec{
+		ShardId:    childId,
+		LowerBound: hex.EncodeToString(lower),
+		UpperBound: hex.EncodeToString(upper),
+	}
+	for _, r := range parent.Replicas {
+		spec.Replicas = append(spec.Replicas, SplitChildReplica{
+			ReplicaId: deterministicReplicaId(baseHash, childId, r.NodeId),
+			NodeId:    r.NodeId,
+		})
+	}
+	return spec
 }

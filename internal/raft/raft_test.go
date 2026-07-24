@@ -63,9 +63,9 @@ func containsServer(servers []RaftServer, want RaftServer) bool {
 // nopAppCore is a trivial AppCore for a raft group under test.
 type nopAppCore struct{}
 
-func (nopAppCore) Apply(request []byte) any           { return nil }
-func (nopAppCore) Snapshot() AppCoreSnapshot          { return nopAppSnapshot{} }
-func (nopAppCore) Restore(reader io.ReadCloser) error { return nil }
+func (nopAppCore) Apply(index uint64, request []byte) any { return nil }
+func (nopAppCore) Snapshot() AppCoreSnapshot              { return nopAppSnapshot{} }
+func (nopAppCore) Restore(reader io.ReadCloser) error     { return nil }
 
 type nopAppSnapshot struct{}
 

@@ -13,39 +13,22 @@ import (
 	"github.com/evrblk/monstera"
 	"github.com/evrblk/monstera/cluster"
 	"github.com/evrblk/monstera/internal/integration_test/testcore"
-	"github.com/evrblk/monstera/transport/grpc"
+	"github.com/evrblk/monstera/internal/integration_test/testutils"
 )
 
 func TestPlaygroundApiMonsteraStub_ReadAndUpdate(t *testing.T) {
-	clusterConfig := NewTestClusterConfig()
-	stub := NewMonsteraStub(clusterConfig)
-	nodes := NewCluster(clusterConfig)
-	defer func() {
-		for _, n := range nodes {
-			n.monsteraNode.Stop()
-			n.monsteraServer.Stop()
-		}
-	}()
+	clusterConfig := NewTestClusterConfig(t)
+	stub := testutils.NewPlaygroundStub(clusterConfig)
+	cl := NewCluster(t, clusterConfig)
 
-	t1 := time.Now()
-	allReady := true
-	for time.Now().Before(t1.Add(5 * time.Second)) {
-		allReady = true
-		for _, n := range nodes {
-			if n.monsteraNode.NodeState() != monstera.READY {
-				allReady = false
-				break
+	require.Eventually(t, func() bool {
+		for _, n := range cl.Nodes {
+			if n.NodeState() != monstera.READY {
+				return false
 			}
 		}
-		if allReady {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	if !allReady {
-		t.Fatalf("Nodes not ready after 5 seconds")
-	}
+		return true
+	}, 5*time.Second, 100*time.Millisecond, "nodes not ready")
 	log.Println("Nodes are ready")
 
 	log.Println("Sending requests")
@@ -71,8 +54,8 @@ func TestPlaygroundApiMonsteraStub_ReadAndUpdate(t *testing.T) {
 
 	log.Println("Killing a node")
 
-	nodes[0].monsteraNode.Stop()
-	nodes[0].monsteraServer.Stop()
+	cl.Nodes[0].Stop()
+	cl.Servers[0].Stop()
 
 	log.Println("Sending requests")
 	for range 5000 {
@@ -93,59 +76,26 @@ func TestPlaygroundApiMonsteraStub_ReadAndUpdate(t *testing.T) {
 	log.Println("Test completed")
 }
 
-type localNode struct {
-	monsteraNode   *monstera.Node
-	monsteraServer *grpc.GrpcServer
-}
-
-func NewCluster(clusterConfig *cluster.Config) []localNode {
-	nodes := make([]localNode, 0)
-
+// NewCluster starts one gRPC node per config entry (fresh t.TempDir data
+// dirs) and bootstraps each in-process with the cluster config.
+func NewCluster(t *testing.T, clusterConfig *cluster.Config) *testutils.GrpcCluster {
+	t.Helper()
+	cl := testutils.NewGrpcCluster(t)
 	for _, n := range clusterConfig.Nodes {
-		baseDir := fmt.Sprintf("/tmp/monstera/%d/%s", rand.Uint64(), n.Id)
-
-		trans := grpc.NewDataPlaneClient()
-
-		nodeConfig := monstera.DefaultMonsteraNodeConfig
-		nodeConfig.UseInMemoryRaftStore = true
-
-		monsteraNode, err := monstera.NewNode(baseDir, testcore.PlaygroundDescriptors(), nodeConfig, trans)
-		if err != nil {
-			panic(err)
-		}
-
-		monsteraServer := grpc.NewGrpcServer(monsteraNode)
-
-		nodes = append(nodes, localNode{
-			monsteraNode:   monsteraNode,
-			monsteraServer: monsteraServer,
-		})
-
-		// Fresh data dir: the node comes up UNPROVISIONED; bootstrap it in-process
-		// with the cluster config (mirrors an admin Bootstrap over the wire).
-		monsteraNode.Start()
-		if err := monsteraNode.Bootstrap(context.Background(), n.Id, clusterConfig); err != nil {
-			panic(err)
-		}
-
-		go func() {
-			err := monsteraServer.Serve(n.GrpcAddress)
-			if err != nil {
-				panic(err)
-			}
-		}()
+		node := cl.StartNode(t, testutils.InMemoryNodeConfig(), n.GrpcAddress, testcore.PlaygroundDescriptors())
+		// Fresh data dir: the node comes up UNPROVISIONED; bootstrap it
+		// in-process (mirrors an admin Bootstrap over the wire).
+		require.NoError(t, node.Bootstrap(context.Background(), n.Id, clusterConfig))
 	}
-
-	return nodes
+	return cl
 }
 
-func NewMonsteraStub(clusterConfig *cluster.Config) *testcore.PlaygroundApiMonsteraStub {
-	trans := grpc.NewDataPlaneClient()
-	monsteraClient := monstera.NewMonsteraClient(monstera.NewStaticClusterConfigProvider(clusterConfig), trans, monstera.DefaultClientConfig())
-	return testcore.NewPlaygroundApiMonsteraStub(monsteraClient)
-}
+// NewTestClusterConfig builds a 3-node, 4-shard playground topology on
+// dynamically allocated addresses.
+func NewTestClusterConfig(t *testing.T) *cluster.Config {
+	t.Helper()
+	addrs := testutils.FreeAddrs(t, 3)
 
-func NewTestClusterConfig() *cluster.Config {
 	applications := []*cluster.Application{
 		{
 			Name:              "Core",
@@ -156,6 +106,7 @@ func NewTestClusterConfig() *cluster.Config {
 					Id:         "shrd_01",
 					LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
 					UpperBound: []byte{0x3f, 0xff, 0xff, 0xff},
+					State:      cluster.ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*cluster.Replica{
 						{Id: "rplc_01", NodeId: "node_01"},
 						{Id: "rplc_02", NodeId: "node_02"},
@@ -166,6 +117,7 @@ func NewTestClusterConfig() *cluster.Config {
 					Id:         "shrd_02",
 					LowerBound: []byte{0x40, 0x00, 0x00, 0x00},
 					UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
+					State:      cluster.ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*cluster.Replica{
 						{Id: "rplc_04", NodeId: "node_01"},
 						{Id: "rplc_05", NodeId: "node_02"},
@@ -176,6 +128,7 @@ func NewTestClusterConfig() *cluster.Config {
 					Id:         "shrd_03",
 					LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
 					UpperBound: []byte{0xbf, 0xff, 0xff, 0xff},
+					State:      cluster.ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*cluster.Replica{
 						{Id: "rplc_07", NodeId: "node_01"},
 						{Id: "rplc_08", NodeId: "node_02"},
@@ -186,6 +139,7 @@ func NewTestClusterConfig() *cluster.Config {
 					Id:         "shrd_04",
 					LowerBound: []byte{0xc0, 0x00, 0x00, 0x00},
 					UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+					State:      cluster.ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*cluster.Replica{
 						{Id: "rplc_10", NodeId: "node_01"},
 						{Id: "rplc_11", NodeId: "node_02"},
@@ -197,15 +151,12 @@ func NewTestClusterConfig() *cluster.Config {
 	}
 
 	nodes := []*cluster.Node{
-		{Id: "node_01", GrpcAddress: "localhost:9001"},
-		{Id: "node_02", GrpcAddress: "localhost:9002"},
-		{Id: "node_03", GrpcAddress: "localhost:9003"},
+		{Id: "node_01", GrpcAddress: addrs[0]},
+		{Id: "node_02", GrpcAddress: addrs[1]},
+		{Id: "node_03", GrpcAddress: addrs[2]},
 	}
 
 	clusterConfig, err := cluster.LoadConfig(applications, nodes, nil, 1)
-	if err != nil {
-		panic(err)
-	}
-
+	require.NoError(t, err)
 	return clusterConfig
 }

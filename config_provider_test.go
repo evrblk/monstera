@@ -57,6 +57,10 @@ func (f *fakeAdmin) TriggerSnapshot(ctx context.Context, address, replicaId stri
 func (f *fakeAdmin) LeadershipTransfer(ctx context.Context, address, replicaId string) error {
 	return nil
 }
+
+func (f *fakeAdmin) SplitCutoff(ctx context.Context, address string, shardId string) error {
+	return fmt.Errorf("not implemented")
+}
 func (f *fakeAdmin) Close() error { return nil }
 
 func TestStaticClusterConfigProvider(t *testing.T) {

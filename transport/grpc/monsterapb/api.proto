@@ -13,6 +13,9 @@ service MonsteraApi {
   rpc ListReplicaStates(ListReplicaStatesRequest) returns (ListReplicaStatesResponse) {}
   rpc ListReplicaSnapshots(ListReplicaSnapshotsRequest) returns (ListReplicaSnapshotsResponse) {}
   rpc LeadershipTransfer(LeadershipTransferRequest) returns (LeadershipTransferResponse) {}
+  // Proposes the shard-split CUTOFF through the shard's local replica (which
+  // must be the Raft leader).
+  rpc SplitCutoff(SplitCutoffRequest) returns (SplitCutoffResponse) {}
   rpc TriggerSnapshot(TriggerSnapshotRequest) returns (TriggerSnapshotResponse) {}
   rpc UpdateClusterConfig(UpdateClusterConfigRequest) returns (UpdateClusterConfigResponse) {}
   rpc GetClusterConfig(GetClusterConfigRequest) returns (GetClusterConfigResponse) {}
@@ -72,9 +75,26 @@ message LeadershipTransferRequest {
 
 message LeadershipTransferResponse {}
 
+message SplitCutoffRequest {
+  string shard_id = 1;
+}
+
+message SplitCutoffResponse {
+  // The parent log index the shard froze at.
+  uint64 cutoff_index = 1;
+}
+
 message ReplicaState {
   string replica_id = 1;
   RaftStats raft_stats = 2;
+  // Set for dormant replicas of an ACTIVATING shard (split in progress):
+  // seeding is true and seeded_index is the parent log index the replica's
+  // durable seed has reached. raft_stats.state is RAFT_STATE_SEEDING and the
+  // remaining stats are zero.
+  bool seeding = 3;
+  uint64 seeded_index = 4;
+  // True once this (parent) replica applied the split CUTOFF.
+  bool frozen = 5;
 }
 
 message RaftStats {
@@ -104,6 +124,8 @@ enum RaftState {
   RAFT_STATE_CANDIDATE = 2;
   RAFT_STATE_LEADER = 3;
   RAFT_STATE_SHUTDOWN = 4;
+  // A dormant replica being seeded by the shard-split pipeline; no Raft yet.
+  RAFT_STATE_SEEDING = 5;
 }
 
 message UpdateClusterConfigRequest {

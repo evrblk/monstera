@@ -31,6 +31,7 @@ Here is a snippet of a `cluster_config.json` file:
           "id": "GrackleLocks_00_07",
           "lower_bound": "00",
           "upper_bound": "07",
+          "state": "active",
           "replicas": [
             {
               "id": "GrackleLocks_00_07_7a4d737e",
@@ -50,6 +51,7 @@ Here is a snippet of a `cluster_config.json` file:
           "id": "GrackleLocks_08_0f",
           "lower_bound": "08",
           "upper_bound": "0f",
+          "state": "active",
           "replicas": [
             {
               "id": "GrackleLocks_08_0f_5d3a107c",
@@ -121,7 +123,12 @@ A diff between two versions is validated by `cluster.ValidateTransition()`:
 
 * New nodes can be added, but existing nodes cannot be removed if they have at least one assigned replica in the old config.
 * New applications can be added, but existing applications cannot be removed.
-* Active shards cannot be removed or have their bounds changed.
+* Shards cannot be removed, have their bounds changed, or change their parent.
+* Shard states follow the split lifecycle: an `active` shard can start `splitting` (there must be at least 2
+  `activating` children of it in the new config), a `splitting` shard can retire to `inactive`, and an `activating`
+  shard can become `active`. Any other state change is forbidden: an `active` shard cannot become `inactive` or
+  `activating` directly, and an `inactive` shard never changes state again.
+* A shard added to an existing application cannot be created `active`.
 * New replicas can be added (even exceeding the replication factor), but replicas cannot be both added and removed 
   in the same transition.
 * All existing replicas must remain assigned to the same nodes (no reassignment of existing replicas).
@@ -132,7 +139,10 @@ will not cause any data loss or routing problems between clients and nodes.
 
 ## Creating a new config
 
-Use `monstera` CLI tool to initialize a new config:
+At minimum a working cluster config should have 3 nodes and 1 application.
+
+Use `monstera` CLI tool to initialize a new config. The first command will create `./cluster_config.json` file, other
+commands will modify it:
 
 ```shell
 $ monstera config init \
@@ -153,3 +163,21 @@ $ monstera config add-application \
   --implementation=MySecondApplication \
   --shards-count=32
 ```
+
+## Shard Splitting
+
+Shards can be split into 2 or more pieces under load with no downtime. Intermediate state during the split and the history
+of previous splits are all stored in the cluster config.
+
+Each shard has a **state**:
+
+* `active` — serves its key range and has no children.
+* `splitting` — still serves its key range while its 2 or more `activating` children (referring to it by
+  `parent_id`) are being prepared to take over; the children must exactly cover its range.
+* `activating` — a child of a splitting shard that is being activated to take over its part of the parent's
+  range; not serving yet, no children.
+* `inactive` — retired after a completed split; not serving, its children serve its range instead.
+
+Active and splitting shards must cover the full keyspace with no gaps and no overlaps. Inactive and activating
+shards may overlap them. An `activating` child's replicas must live on exactly the same nodes as its splitting
+parent's replicas — split seeding is node-local.

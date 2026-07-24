@@ -7,9 +7,33 @@ option go_package = "github.com/evrblk/monstera/internal/replication/replication
 message MonsteraCommand {
   bytes payload = 1;
   CommandType type = 2;
+  // Shard key of the update, stamped by the leader at propose time only while
+  // this shard is SPLITTING; used to route seeded entries to the child that
+  // owns the key. Empty at all other times (it costs nothing outside a
+  // split), and empty during a split for unsharded updates, which are seeded
+  // to every child.
+  bytes shard_key = 3;
+  // True iff the proposing leader was in splitting mode. Distinguishes a
+  // key-less unsharded update proposed by a splitting-aware leader (seeded to
+  // every child) from an update proposed by a leader that had not applied the
+  // splitting config yet (unroutable: the seeder restarts from a fresh base).
+  bool stamped = 4;
 }
 
 enum CommandType {
   COMMAND_TYPE_INVALID = 0;
+  // An application update; payload is the application request.
   COMMAND_TYPE_UPDATE = 1;
+  // No-op: applied without touching the core. Used as the index-contiguity
+  // filler in seeded child logs (the sibling's routed entries).
+  COMMAND_TYPE_NOOP = 2;
+  // Shard-split cutoff: freezes the (parent) shard at this entry's index and
+  // activates its children. Payload is a Cutoff message.
+  COMMAND_TYPE_CUTOFF = 3;
+}
+
+// Cutoff is the payload of COMMAND_TYPE_CUTOFF.
+message Cutoff {
+  string parent_shard_id = 1;
+  repeated string child_shard_ids = 2;
 }

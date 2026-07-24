@@ -122,23 +122,24 @@ func (h *handler) LeadershipTransfer(ctx context.Context, req *monsterapb.Leader
 	return &monsterapb.LeadershipTransferResponse{}, nil
 }
 
+// SplitCutoff proposes the shard-split CUTOFF through this node's replica of
+// the shard (which must be the Raft leader).
+func (h *handler) SplitCutoff(ctx context.Context, req *monsterapb.SplitCutoffRequest) (*monsterapb.SplitCutoffResponse, error) {
+	index, err := h.monsteraNode.SplitCutoff(ctx, req.ShardId)
+	if err != nil {
+		h.logger.Printf("Error calling MonsteraNode.SplitCutoff: %v", err)
+		return nil, err
+	}
+	return &monsterapb.SplitCutoffResponse{CutoffIndex: index}, nil
+}
+
 // ListReplicaStates returns the in-memory Raft state of every replica on this
 // node. It is the lightweight, frequently-polled call the Monstera client uses
 // to locate leaders; it does no disk I/O. Snapshot listing is a separate,
 // on-demand call (ListReplicaSnapshots).
 func (h *handler) ListReplicaStates(ctx context.Context, req *monsterapb.ListReplicaStatesRequest) (*monsterapb.ListReplicaStatesResponse, error) {
-	cores := h.monsteraNode.ListReplicas()
-
-	replicaStates := make([]*monsterapb.ReplicaState, len(cores))
-	for i, c := range cores {
-		replicaStates[i] = &monsterapb.ReplicaState{
-			ReplicaId: c.GetReplicaId(),
-			RaftStats: encodeRaftStats(c.GetRaftStats()),
-		}
-	}
-
 	return &monsterapb.ListReplicaStatesResponse{
-		ReplicaStates: replicaStates,
+		ReplicaStates: encodeReplicaStates(h.monsteraNode.ReplicaStates()),
 	}, nil
 }
 

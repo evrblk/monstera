@@ -10,7 +10,7 @@ import (
 
 	"github.com/evrblk/monstera"
 	"github.com/evrblk/monstera/cluster"
-	"github.com/evrblk/monstera/transport"
+	"github.com/evrblk/monstera/internal/integration_test/testutils"
 	"github.com/evrblk/monstera/transport/local"
 )
 
@@ -21,7 +21,7 @@ import (
 // transport.
 func TestReconcileAddAndRemoveReplica(t *testing.T) {
 	// 4 nodes; one shard with 3 replicas on node_1/2/3. node_4 hosts nothing yet.
-	config := fourNodeConfig(t)
+	config := testutils.SingleShardLocalConfig(t, 4, 3)
 	shardId := config.Applications[0].Shards[0].Id
 
 	trans := local.NewLocalTransport()
@@ -29,14 +29,14 @@ func TestReconcileAddAndRemoveReplica(t *testing.T) {
 
 	nodes := map[string]*monstera.Node{}
 	for _, n := range config.Nodes {
-		node := startNode(t, t.TempDir(), n.Id, config, trans, true)
+		node := testutils.StartLocalNode(t, t.TempDir(), n.Id, config, trans, true)
 		nodes[n.Id] = node
 		t.Cleanup(node.Stop)
 	}
 	nodeIds := []string{"node_1", "node_2", "node_3", "node_4"}
 
 	// Wait for a leader, then commit a few entries so catch-up is meaningful.
-	requireLeader(t, trans, nodeIds)
+	testutils.RequireLeader(t, trans, nodeIds, nil)
 	client := monstera.NewMonsteraClient(monstera.NewStaticClusterConfigProvider(config), trans, monstera.DefaultClientConfig())
 	require.NoError(t, client.Start(context.Background()))
 	t.Cleanup(client.Stop)
@@ -58,12 +58,12 @@ func TestReconcileAddAndRemoveReplica(t *testing.T) {
 	// node_4 hosts replica_4, the leader now has 3 peers (4 members), and
 	// replica_4 catches up to the leader's commit index.
 	require.Eventually(t, func() bool {
-		states := allReplicaStates(t, trans, nodeIds)
-		leader, ok := leaderState(states)
+		states := testutils.AllReplicaStates(trans, nodeIds)
+		leader, ok := testutils.FindLeader(states)
 		if !ok || leader.Stats.NumPeers != 3 {
 			return false
 		}
-		r4, ok := replicaState(states, "replica_4")
+		r4, ok := testutils.FindReplicaState(states, "replica_4")
 		return ok && r4.Stats.AppliedIndex >= leader.Stats.CommitIndex && r4.Stats.CommitIndex > 0
 	}, 20*time.Second, 200*time.Millisecond, "replica_4 did not join and catch up")
 
@@ -77,32 +77,13 @@ func TestReconcileAddAndRemoveReplica(t *testing.T) {
 
 	// node_4 hosts nothing, and the group is back to 3 members (leader has 2 peers).
 	require.Eventually(t, func() bool {
-		states := allReplicaStates(t, trans, nodeIds)
-		if _, ok := replicaState(states, "replica_4"); ok {
+		states := testutils.AllReplicaStates(trans, nodeIds)
+		if _, ok := testutils.FindReplicaState(states, "replica_4"); ok {
 			return false
 		}
-		leader, ok := leaderState(states)
+		leader, ok := testutils.FindLeader(states)
 		return ok && leader.Stats.NumPeers == 2
 	}, 20*time.Second, 200*time.Millisecond, "replica_4 was not removed / group did not shrink")
-}
-
-func fourNodeConfig(t *testing.T) *cluster.Config {
-	t.Helper()
-	c := cluster.CreateEmptyConfig()
-	for i := 1; i <= 4; i++ {
-		_, err := c.CreateNode("node_"+string(rune('0'+i)), "node_"+string(rune('0'+i)))
-		require.NoError(t, err)
-	}
-	a, err := c.CreateApplication("Core", "Core", 3)
-	require.NoError(t, err)
-	s, err := c.CreateShard(a.Name, []byte{0x00, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, "")
-	require.NoError(t, err)
-	for i := 1; i <= 3; i++ {
-		_, err := c.CreateReplica(a.Name, s.Id, "node_"+string(rune('0'+i)))
-		require.NoError(t, err)
-	}
-	require.NoError(t, c.Validate())
-	return c
 }
 
 func removeReplica(t *testing.T, c *cluster.Config, shardId, replicaId string) {
@@ -123,43 +104,4 @@ func removeReplica(t *testing.T, c *cluster.Config, shardId, replicaId string) {
 		}
 	}
 	t.Fatalf("shard %s not found", shardId)
-}
-
-func allReplicaStates(t *testing.T, trans *local.LocalTransport, nodeIds []string) []*transport.ReplicaState {
-	t.Helper()
-	var all []*transport.ReplicaState
-	for _, id := range nodeIds {
-		states, err := trans.ListReplicaStates(context.Background(), id)
-		if err != nil {
-			continue
-		}
-		all = append(all, states...)
-	}
-	return all
-}
-
-func leaderState(states []*transport.ReplicaState) (*transport.ReplicaState, bool) {
-	for _, s := range states {
-		if s.RaftState == transport.RaftStateLeader {
-			return s, true
-		}
-	}
-	return nil, false
-}
-
-func replicaState(states []*transport.ReplicaState, replicaId string) (*transport.ReplicaState, bool) {
-	for _, s := range states {
-		if s.ReplicaId == replicaId {
-			return s, true
-		}
-	}
-	return nil, false
-}
-
-func requireLeader(t *testing.T, trans *local.LocalTransport, nodeIds []string) {
-	t.Helper()
-	require.Eventually(t, func() bool {
-		_, ok := leaderState(allReplicaStates(t, trans, nodeIds))
-		return ok
-	}, 15*time.Second, 200*time.Millisecond, "no leader elected")
 }

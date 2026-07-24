@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +28,11 @@ var (
 	// Monstera client treats it as retryable by matching on this message string,
 	// so keep the two in sync.
 	errLeaderUnknown = errors.New("leader is unknown")
+	// errShardFrozen is returned when a request reaches a shard frozen by a
+	// split cutoff. Node-side re-routing matches on this message string when
+	// the error comes back over the transport from a forwarded request, so
+	// keep the two in sync.
+	errShardFrozen = errors.New("shard is frozen by a split cutoff")
 )
 
 // Node is a single Monstera server process. It hosts the shard replicas assigned
@@ -47,6 +53,7 @@ type Node struct {
 	// of a read/update, so concurrent reads and updates are not serialized.
 	mu            sync.RWMutex
 	replicas      map[string]*replica
+	dormant       map[string]*dormantReplica
 	clusterConfig *cluster.Config
 
 	smu       sync.Mutex
@@ -63,6 +70,13 @@ type Node struct {
 	// reconcilerDone is closed when that loop has exited.
 	reconcilerCancel context.CancelFunc
 	reconcilerDone   chan struct{}
+
+	// splittersMu guards splitters: the running shard-split seeding pipelines,
+	// keyed by parent replica id. Splitters are stopped before every replica
+	// reconcile and (re)started from the applied config after it; they resume
+	// from durable progress, so the churn is cheap.
+	splittersMu sync.Mutex
+	splitters   map[string]*splitter
 
 	logger *log.Logger
 }
@@ -141,6 +155,9 @@ func (n *Node) Stop() {
 		<-n.reconcilerDone
 	}
 
+	// Stop split seeding pipelines before closing the parent replicas they read.
+	n.stopSplitters()
+
 	n.trans.Close()
 
 	n.mu.Lock()
@@ -206,6 +223,10 @@ func (n *Node) Start() {
 	// Continuously converge Raft membership to the config for shards this node
 	// leads (also picks up config changes and leadership handoffs over time).
 	n.startReconciler()
+
+	// Start split seeding pipelines for any splitting shards in the applied
+	// config (a node restart mid-split resumes from durable progress).
+	n.startSplitters()
 }
 
 // setReadyMetric publishes the monstera_node_ready gauge for this node (1 when
@@ -325,6 +346,14 @@ func (n *Node) Read(ctx context.Context, req *transport.ReadRequest) (*transport
 		return nil, err
 	}
 
+	// A shard frozen by a split cutoff serves nothing anymore: its children own
+	// the range. Re-route by shard key to the local child (co-location
+	// guarantees it is here). Key-less (forwarded) requests propagate the
+	// typed error back to the origin node, which has the key.
+	if r.frozenAt() > 0 {
+		return n.rerouteRead(ctx, req, r.shardId)
+	}
+
 	// Follower reads accept stale data, so any replica (including this one) can serve.
 	if req.AllowReadFromFollowers {
 		resp, err := r.Read(req.Payload)
@@ -375,6 +404,11 @@ func (n *Node) Read(ctx context.Context, req *transport.ReadRequest) (*transport
 	}
 
 	resp, err := n.trans.Read(ctx, leaderReplica.NodeId, forward)
+	// The leader may have frozen the shard (split cutoff) before our forward
+	// arrived; we still hold the shard key, so re-route to the child here.
+	if err != nil && isShardFrozenError(err) {
+		return n.rerouteRead(ctx, req, r.shardId)
+	}
 	// If the leader we forwarded to was unreachable it likely just failed; wait
 	// for a new election (excluding the old leader) and retry once against it.
 	if err != nil && isUnavailableError(err) {
@@ -408,10 +442,21 @@ func (n *Node) Update(ctx context.Context, req *transport.UpdateRequest) (*trans
 		return nil, err
 	}
 
+	// A shard frozen by a split cutoff accepts no writes anymore: its children
+	// own the range (see Read for the routing rules).
+	if r.frozenAt() > 0 {
+		return n.rerouteUpdate(ctx, req, r.shardId)
+	}
+
 	// Writes are applied only on the leader.
 	if r.IsLeader() {
-		resp, err := r.Update(req.Payload)
+		resp, err := r.Update(req.Payload, req.ShardKey)
 		if err != nil {
+			// The cutoff may have committed between the frozen check above and
+			// the propose: the write mutated nothing; re-route it.
+			if errors.Is(err, errShardFrozen) {
+				return n.rerouteUpdate(ctx, req, r.shardId)
+			}
 			return nil, err
 		}
 		return &transport.UpdateResponse{
@@ -435,17 +480,25 @@ func (n *Node) Update(ctx context.Context, req *transport.UpdateRequest) (*trans
 		return nil, errLeaderUnknown
 	}
 
-	// Forward to the leader's node. Pin the target by shard id (the leader hosts
-	// this exact shard's replica) and drop the shard key so the receiving node
-	// does not re-resolve it against a possibly different config version.
+	// Forward to the leader's node, pinned by shard id (the leader hosts this
+	// exact shard's replica). The shard key is kept: the receiving node still
+	// re-resolves by key against its own config, which is always correct
+	// because a key's owning routable shard only changes at a split cutoff —
+	// and a splitting leader needs the key to stamp the replicated command.
 	forward := &transport.UpdateRequest{
 		ApplicationName: req.ApplicationName,
 		ShardId:         r.shardId,
+		ShardKey:        req.ShardKey,
 		Payload:         req.Payload,
 		Hops:            req.Hops + 1,
 	}
 
 	resp, err := n.trans.Update(ctx, leaderReplica.NodeId, forward)
+	// The leader may have frozen the shard (split cutoff) before our forward
+	// arrived; we still hold the shard key, so re-route to the child here.
+	if err != nil && isShardFrozenError(err) {
+		return n.rerouteUpdate(ctx, req, r.shardId)
+	}
 	// If the leader we forwarded to was unreachable it likely just failed; wait
 	// for a new election (excluding the old leader) and retry once against it.
 	if err != nil && isUnavailableError(err) {
@@ -460,6 +513,147 @@ func (n *Node) Update(ctx context.Context, req *transport.UpdateRequest) (*trans
 		return n.trans.Update(ctx, newLeaderReplica.NodeId, forward)
 	}
 	return resp, err
+}
+
+// rerouteRead re-dispatches a read that hit a frozen (split) parent shard to
+// the child that owns its shard key. Key-less requests (forwards dropped the
+// key) return errShardFrozen so the origin node — which has the key — can
+// re-route instead.
+func (n *Node) rerouteRead(ctx context.Context, req *transport.ReadRequest, parentShardId string) (*transport.ReadResponse, error) {
+	childShardId, err := n.childShardOwningKey(parentShardId, req.ShardKey)
+	if err != nil {
+		return nil, err
+	}
+	if err := n.awaitLocalReplica(ctx, req.ApplicationName, childShardId); err != nil {
+		return nil, err
+	}
+	return n.Read(ctx, &transport.ReadRequest{
+		ApplicationName:        req.ApplicationName,
+		ShardId:                childShardId,
+		Payload:                req.Payload,
+		AllowReadFromFollowers: req.AllowReadFromFollowers,
+		Hops:                   req.Hops + 1,
+	})
+}
+
+// rerouteUpdate is the write-side counterpart of rerouteRead. The rejected
+// write mutated nothing on the parent, so re-dispatching it to the child is
+// the same at-least-once delivery the system already has.
+func (n *Node) rerouteUpdate(ctx context.Context, req *transport.UpdateRequest, parentShardId string) (*transport.UpdateResponse, error) {
+	childShardId, err := n.childShardOwningKey(parentShardId, req.ShardKey)
+	if err != nil {
+		return nil, err
+	}
+	if err := n.awaitLocalReplica(ctx, req.ApplicationName, childShardId); err != nil {
+		return nil, err
+	}
+	return n.Update(ctx, &transport.UpdateRequest{
+		ApplicationName: req.ApplicationName,
+		ShardId:         childShardId,
+		Payload:         req.Payload,
+		Hops:            req.Hops + 1,
+	})
+}
+
+// childShardOwningKey resolves the child of a (frozen) parent shard that owns
+// shardKey, from this node's own applied config. Children are identified by
+// ParentId, independent of the config version's routing states, so this works
+// on both sides of the split's config flip.
+func (n *Node) childShardOwningKey(parentShardId string, shardKey []byte) (string, error) {
+	if len(shardKey) == 0 {
+		return "", errShardFrozen
+	}
+
+	n.mu.RLock()
+	clusterConfig := n.clusterConfig
+	n.mu.RUnlock()
+
+	var children []*cluster.Shard
+	for _, a := range clusterConfig.Applications {
+		for _, sh := range a.Shards {
+			if sh.ParentId == parentShardId {
+				children = append(children, sh)
+			}
+		}
+	}
+	child := shardOwningKey(children, shardKey)
+	if child == nil {
+		// The children partition the frozen parent's range; a routed key
+		// always has an owner on a valid config.
+		return "", fmt.Errorf("no child of frozen shard %s owns shard key %x", parentShardId, shardKey)
+	}
+	return child.Id, nil
+}
+
+// awaitLocalReplica waits (bounded by ctx) for a serving local replica of the
+// given shard to exist. It bridges the short window between the cutoff freeze
+// and the promotion of the seeded children, so requests in that window are
+// delayed rather than failed.
+func (n *Node) awaitLocalReplica(ctx context.Context, applicationName string, shardId string) error {
+	for {
+		if _, _, err := n.replicaForShard(applicationName, shardId, nil); err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for promoted replica of shard %s: %w", shardId, ctx.Err())
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+}
+
+// SplitCutoff proposes the shard-split CUTOFF command through this node's
+// replica of the given shard, which must be the Raft leader (callers locate
+// the leader via ListReplicaStates). It freezes the shard at the returned log
+// index. Idempotent: an already-frozen shard returns its original cutoff
+// index.
+func (n *Node) SplitCutoff(ctx context.Context, shardId string) (uint64, error) {
+	if n.NodeState() != READY {
+		return 0, errNodeNotReady
+	}
+
+	n.mu.RLock()
+	var r *replica
+	for _, rep := range n.replicas {
+		if rep.shardId == shardId {
+			r = rep
+			break
+		}
+	}
+	var shardState cluster.ShardState
+	var childShardIds []string
+	if r != nil {
+		if shard, err := n.clusterConfig.GetShard(shardId); err == nil {
+			shardState = shard.State
+		}
+		for _, a := range n.clusterConfig.Applications {
+			for _, sh := range a.Shards {
+				if sh.ParentId == shardId && sh.State == cluster.ShardState_SHARD_STATE_ACTIVATING {
+					childShardIds = append(childShardIds, sh.Id)
+				}
+			}
+		}
+	}
+	n.mu.RUnlock()
+
+	if r == nil {
+		return 0, fmt.Errorf("no replica for shard %s on this node", shardId)
+	}
+	if m := r.frozenAt(); m > 0 {
+		return m, nil
+	}
+	// Defense in depth: a cutoff for a shard the local config does not show as
+	// splitting (with children) indicates an operational bug.
+	if shardState != cluster.ShardState_SHARD_STATE_SPLITTING {
+		return 0, fmt.Errorf("shard %s is not splitting in the applied config", shardId)
+	}
+	if len(childShardIds) < 2 {
+		return 0, fmt.Errorf("shard %s has %d activating children in the applied config, need at least 2", shardId, len(childShardIds))
+	}
+	if !r.IsLeader() {
+		return 0, errLeaderUnknown
+	}
+	return r.SplitCutoff(childShardIds)
 }
 
 // TriggerSnapshot asks the replica with the given id to take a Raft snapshot.
@@ -526,16 +720,104 @@ func (n *Node) RaftMessage(ctx context.Context, req *transport.RaftMessageReques
 }
 
 // ListReplicas returns a snapshot of the replicas currently hosted on this node.
-func (n *Node) ListReplicas() []*replica {
+// ReplicaStates returns the observed state of every replica hosted on this
+// node: serving replicas with their live Raft state and stats, and dormant
+// (seeding) replicas of activating shards with their seeding progress. It is
+// the single producer behind ListReplicaStates on both transports.
+func (n *Node) ReplicaStates() []*transport.ReplicaState {
 	n.mu.RLock()
-	defer n.mu.RUnlock()
-
-	result := make([]*replica, 0, len(n.replicas))
+	serving := make([]*replica, 0, len(n.replicas))
 	for _, r := range n.replicas {
-		result = append(result, r)
+		serving = append(serving, r)
 	}
+	dormant := make([]*dormantReplica, 0, len(n.dormant))
+	for _, d := range n.dormant {
+		dormant = append(dormant, d)
+	}
+	// Local parent replicas' applied indexes, for PersistedShared seeding
+	// progress (their children's data IS the parent's rows).
+	parentApplied := make(map[string]uint64)
+	for _, d := range dormant {
+		if d.coreType != CoreTypePersistedShared {
+			continue
+		}
+		for _, r := range n.replicas {
+			if r.shardId == d.parentShardId {
+				parentApplied[d.parentShardId] = r.GetRaftStats().AppliedIndex
+			}
+		}
+	}
+	n.mu.RUnlock()
 
-	return result
+	states := make([]*transport.ReplicaState, 0, len(serving)+len(dormant))
+	for _, r := range serving {
+		var raftState transport.RaftState
+		switch s := r.GetRaftState(); s {
+		case raft.Follower:
+			raftState = transport.RaftStateFollower
+		case raft.Candidate:
+			raftState = transport.RaftStateCandidate
+		case raft.Leader:
+			raftState = transport.RaftStateLeader
+		case raft.Shutdown:
+			raftState = transport.RaftStateDead
+		default:
+			panic(fmt.Sprintf("unknown raft state: %v", s))
+		}
+
+		rs := r.GetRaftStats()
+		states = append(states, &transport.ReplicaState{
+			ReplicaId: r.replicaId,
+			RaftState: raftState,
+			Frozen:    r.frozenAt() > 0,
+			Stats: transport.RaftStats{
+				Term:              rs.Term,
+				LastLogIndex:      rs.LastLogIndex,
+				LastLogTerm:       rs.LastLogTerm,
+				CommitIndex:       rs.CommitIndex,
+				AppliedIndex:      rs.AppliedIndex,
+				FSMPending:        rs.FSMPending,
+				LastSnapshotIndex: rs.LastSnapshotIndex,
+				LastSnapshotTerm:  rs.LastSnapshotTerm,
+				NumPeers:          rs.NumPeers,
+				LastContact:       rs.LastContact,
+			},
+		})
+	}
+	for _, d := range dormant {
+		states = append(states, &transport.ReplicaState{
+			ReplicaId:   d.replicaId,
+			RaftState:   transport.RaftStateSeeding,
+			Seeding:     true,
+			SeededIndex: d.seededIndex(parentApplied),
+		})
+	}
+	return states
+}
+
+// seededIndex reports how far this dormant replica's durable seed has
+// progressed, in parent log indexes. parentApplied carries local parent
+// replicas' applied indexes (used for PersistedShared, whose children alias
+// the parent's rows and are therefore always exactly as fresh as the parent).
+func (d *dormantReplica) seededIndex(parentApplied map[string]uint64) uint64 {
+	switch d.coreType {
+	case CoreTypeInMemory:
+		last, err := d.seeder.LastSeededIndex()
+		if err != nil {
+			return 0
+		}
+		return last
+	case CoreTypePersistedExclusive:
+		idx, err := d.seeder.CatchUpIndex()
+		if err != nil {
+			return 0
+		}
+		return idx
+	case CoreTypePersistedShared:
+		return parentApplied[d.parentShardId]
+	default:
+		return 0
+	}
 }
 
 // NodeState returns the node's current lifecycle state.
@@ -579,6 +861,10 @@ func (n *Node) UpdateClusterConfig(ctx context.Context, newConfig *cluster.Confi
 		return fmt.Errorf("invalid cluster config: %w", err)
 	}
 
+	// Stop all split seeding pipelines before touching the replica maps; they
+	// are restarted from the new config (and resume from durable progress).
+	n.stopSplitters()
+
 	n.mu.Lock()
 
 	// The transition from the currently applied config to the new one must be
@@ -587,6 +873,7 @@ func (n *Node) UpdateClusterConfig(ctx context.Context, newConfig *cluster.Confi
 	// can't race past each other.
 	if err := cluster.ValidateTransition(n.clusterConfig, newConfig); err != nil {
 		n.mu.Unlock()
+		n.startSplitters()
 		return fmt.Errorf("invalid cluster config transition: %w", err)
 	}
 
@@ -611,6 +898,8 @@ func (n *Node) UpdateClusterConfig(ctx context.Context, newConfig *cluster.Confi
 		return err
 	}
 	n.mu.Unlock()
+
+	n.startSplitters()
 
 	// Refresh the transport's view of the cluster so it can dial newly added nodes
 	// (and drop connections to removed ones) before membership changes trigger
@@ -701,11 +990,6 @@ func (n *Node) reconcileReplicasLocked() error {
 	}
 
 	// Desired replicas assigned to this node.
-	type placement struct {
-		app     *cluster.Application
-		shard   *cluster.Shard
-		replica *cluster.Replica
-	}
 	desired := make(map[string]placement)
 	for _, a := range clusterConfig.Applications {
 		for _, s := range a.Shards {
@@ -717,17 +1001,49 @@ func (n *Node) reconcileReplicasLocked() error {
 		}
 	}
 
-	// Create replicas newly assigned to this node.
+	// Create replicas newly assigned to this node. Replicas of ACTIVATING
+	// shards are created DORMANT: no core, no Raft — just their durable stores,
+	// which the split seeding pipeline fills locally. They are promoted to
+	// serving replicas when their shard leaves the activating state.
 	for id, p := range desired {
-		if _, ok := n.replicas[id]; ok {
-			continue
-		}
 		coreDescriptor, ok := n.coreDescriptors[p.app.Implementation]
 		if !ok {
 			return fmt.Errorf("no core registered for %s", p.app.Implementation)
 		}
+
+		if p.shard.State == cluster.ShardState_SHARD_STATE_ACTIVATING {
+			if _, ok := n.dormant[id]; ok {
+				continue
+			}
+			if _, ok := n.replicas[id]; ok {
+				// Already promoted by cutoff finalization; the config flip
+				// (activating -> active) will catch up with reality.
+				continue
+			}
+			n.dormant[id] = &dormantReplica{
+				applicationName: p.app.Name,
+				shardId:         p.shard.Id,
+				parentShardId:   p.shard.ParentId,
+				replicaId:       id,
+				coreType:        coreDescriptor.CoreType,
+				seeder:          raft.NewSeeder(n.baseDir, id, n.raftStore),
+			}
+			n.logger.Printf("Created dormant replica %s (activating shard %s, parent %s)", id, p.shard.Id, p.shard.ParentId)
+			continue
+		}
+
+		if _, ok := n.replicas[id]; ok {
+			continue
+		}
+		// Promotion: a previously dormant replica whose shard is no longer
+		// activating starts as a regular replica over its seeded stores. The
+		// Seeder must be discarded before the live Raft is constructed.
+		if _, ok := n.dormant[id]; ok {
+			delete(n.dormant, id)
+			n.logger.Printf("Promoting seeded replica %s (shard %s)", id, p.shard.Id)
+		}
 		applicationCore := coreDescriptor.CoreFactoryFunc(p.shard, p.replica)
-		rep := newReplica(n.baseDir, p.app.Name, p.shard.Id, id, n.nodeId, applicationCore, n.trans, n.raftStore, coreDescriptor.RestoreSnapshotOnStart, n.nodeConfig.MaxUpdateTimeout)
+		rep := newReplica(n.baseDir, p.app.Name, p.shard.Id, id, n.nodeId, applicationCore, n.trans, n.raftStore, coreDescriptor.CoreType.RestoreSnapshotOnStart(), n.nodeConfig.MaxUpdateTimeout)
 		n.replicas[id] = rep
 		n.logger.Printf("Created replica %s (shard %s)", id, p.shard.Id)
 	}
@@ -743,15 +1059,214 @@ func (n *Node) reconcileReplicasLocked() error {
 		n.logger.Printf("Removing replica %s (shard %s)", id, rep.shardId)
 		rep.Close()
 		delete(n.replicas, id)
-		if err := n.raftStore.DropPrefix([]byte(id)); err != nil {
-			n.logger.Printf("error dropping raft data for replica %s: %v", id, err)
+		n.dropReplicaData(id)
+	}
+
+	// Same for dormant replicas (e.g. an aborted split removing the children):
+	// nothing to close, just the durable seed to drop.
+	for id, d := range n.dormant {
+		if _, ok := desired[id]; ok {
+			continue
 		}
-		if err := os.RemoveAll(filepath.Join(n.baseDir, "snapshots", id)); err != nil {
-			n.logger.Printf("error removing snapshots for replica %s: %v", id, err)
+		n.logger.Printf("Removing dormant replica %s (shard %s)", id, d.shardId)
+		delete(n.dormant, id)
+		n.dropReplicaData(id)
+	}
+
+	// Mark serving replicas of SPLITTING shards: a splitting leader stamps
+	// every proposed update with its shard key so the seeding pipeline can
+	// route entries to children.
+	for id, rep := range n.replicas {
+		p, ok := desired[id]
+		if !ok {
+			continue
 		}
+		rep.setSplitting(p.shard.State == cluster.ShardState_SHARD_STATE_SPLITTING)
 	}
 
 	return nil
+}
+
+// placement is one desired replica assignment on this node, with the config
+// entities it derives from.
+type placement struct {
+	app     *cluster.Application
+	shard   *cluster.Shard
+	replica *cluster.Replica
+}
+
+// dormantReplica is a replica of an ACTIVATING shard: it exists in the config
+// and owns durable Raft stores that the split seeding pipeline fills locally,
+// but it runs no Raft and serves nothing until the split cutoff promotes it.
+type dormantReplica struct {
+	applicationName string
+	shardId         string
+	parentShardId   string
+	replicaId       string
+	coreType        CoreType
+
+	// seeder is the write/read handle over this replica's durable stores,
+	// shared between the splitter (writes) and observability (reads).
+	seeder *raft.Seeder
+}
+
+// startSplitters launches a split seeding pipeline for every SPLITTING shard
+// this node hosts a serving parent replica for, pairing it with the
+// co-located dormant children from the applied config. Idempotent per config
+// apply: it is only called after stopSplitters, so the map is empty.
+func (n *Node) startSplitters() {
+	n.splittersMu.Lock()
+	defer n.splittersMu.Unlock()
+
+	n.mu.RLock()
+	clusterConfig := n.clusterConfig
+	if clusterConfig == nil {
+		n.mu.RUnlock()
+		return
+	}
+
+	type pending struct {
+		parent   *replica
+		coreType CoreType
+		factory  func(*cluster.Shard, *cluster.Replica) ApplicationCore
+		children []*splitChild
+	}
+	var toStart []pending
+
+	for _, a := range clusterConfig.Applications {
+		descriptor, ok := n.coreDescriptors[a.Implementation]
+		if !ok {
+			continue
+		}
+		for _, shard := range a.Shards {
+			if shard.State != cluster.ShardState_SHARD_STATE_SPLITTING {
+				continue
+			}
+			var parent *replica
+			for _, r := range n.replicas {
+				if r.shardId == shard.Id {
+					parent = r
+					break
+				}
+			}
+			if parent == nil {
+				continue // this node hosts no parent replica
+			}
+
+			var children []*splitChild
+			for _, ch := range a.Shards {
+				if ch.ParentId != shard.Id || ch.State != cluster.ShardState_SHARD_STATE_ACTIVATING {
+					continue
+				}
+				replicaSet := make([]raft.RaftServer, len(ch.Replicas))
+				for i, r := range ch.Replicas {
+					replicaSet[i] = raft.RaftServer{ReplicaId: r.Id, NodeId: r.NodeId}
+				}
+				for _, r := range ch.Replicas {
+					if d, ok := n.dormant[r.Id]; ok {
+						children = append(children, &splitChild{
+							shard:      ch,
+							replicaSet: replicaSet,
+							dormant:    d,
+						})
+					}
+				}
+			}
+			if len(children) == 0 {
+				continue
+			}
+			toStart = append(toStart, pending{
+				parent:   parent,
+				coreType: descriptor.CoreType,
+				factory:  descriptor.CoreFactoryFunc,
+				children: children,
+			})
+		}
+	}
+	n.mu.RUnlock()
+
+	for _, p := range toStart {
+		childIds := make([]string, len(p.children))
+		for i, ch := range p.children {
+			childIds[i] = ch.dormant.replicaId
+		}
+		promote := func() error { return n.promoteSeededChildren(childIds) }
+		sp := newSplitter(p.parent, p.coreType, p.children, p.factory, promote, n.logger)
+		n.splitters[p.parent.replicaId] = sp
+		sp.start()
+		n.logger.Printf("Started split seeding of shard %s into %d children", p.parent.shardId, len(p.children))
+	}
+}
+
+// promoteSeededChildren turns seeded dormant replicas into serving replicas
+// in place: a regular Raft is constructed over the pre-baked stores (no
+// Bootstrap; membership comes from the base snapshot metadata). Called by the
+// splitter after cutoff finalization; idempotent (already-promoted or removed
+// children are skipped). The cluster config still says ACTIVATING at this
+// point — the split sequence's flip catches it up.
+func (n *Node) promoteSeededChildren(childReplicaIds []string) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	for _, id := range childReplicaIds {
+		d, ok := n.dormant[id]
+		if !ok {
+			continue
+		}
+
+		shard, err := n.clusterConfig.GetShard(d.shardId)
+		if err != nil {
+			return fmt.Errorf("promoting replica %s: %w", id, err)
+		}
+		replicaEntry := replicaOf(shard, id)
+		if replicaEntry == nil {
+			return fmt.Errorf("promoting replica %s: not in shard %s config", id, d.shardId)
+		}
+		var descriptor ApplicationCoreDescriptor
+		found := false
+		for _, a := range n.clusterConfig.Applications {
+			if a.Name == d.applicationName {
+				descriptor, found = n.coreDescriptors[a.Implementation], true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("promoting replica %s: application %s not found", id, d.applicationName)
+		}
+
+		// The Seeder must be discarded before the live Raft is constructed.
+		delete(n.dormant, id)
+
+		core := descriptor.CoreFactoryFunc(shard, replicaEntry)
+		rep := newReplica(n.baseDir, d.applicationName, d.shardId, id, n.nodeId, core, n.trans, n.raftStore, descriptor.CoreType.RestoreSnapshotOnStart(), n.nodeConfig.MaxUpdateTimeout)
+		n.replicas[id] = rep
+		n.logger.Printf("Promoted seeded replica %s (shard %s)", id, d.shardId)
+	}
+	return nil
+}
+
+// stopSplitters stops every running split seeding pipeline and waits for them
+// to exit. Progress is durable; a subsequent startSplitters resumes it.
+func (n *Node) stopSplitters() {
+	n.splittersMu.Lock()
+	defer n.splittersMu.Unlock()
+
+	for id, sp := range n.splitters {
+		sp.stop()
+		delete(n.splitters, id)
+	}
+}
+
+// dropReplicaData deletes a replica's durable state: its prefix in the shared
+// raft store and its snapshot directory. Failures are logged, not returned —
+// leftover data of a removed replica is unreachable (ids are never reused).
+func (n *Node) dropReplicaData(id string) {
+	if err := n.raftStore.DropPrefix([]byte(id)); err != nil {
+		n.logger.Printf("error dropping raft data for replica %s: %v", id, err)
+	}
+	if err := os.RemoveAll(filepath.Join(n.baseDir, "snapshots", id)); err != nil {
+		n.logger.Printf("error removing snapshots for replica %s: %v", id, err)
+	}
 }
 
 // startReconciler launches the background loop that periodically converges Raft
@@ -881,6 +1396,23 @@ func (n *Node) bootstrapShards() error {
 	return nil
 }
 
+// isShardFrozenError reports whether err indicates the target shard was frozen
+// by a split cutoff — locally (errShardFrozen) or returned by a forwarded-to
+// node over the transport (matched on the message, like errLeaderUnknown).
+func isShardFrozenError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, errShardFrozen) {
+		return true
+	}
+	msg := err.Error()
+	if st, ok := status.FromError(err); ok {
+		msg = st.Message()
+	}
+	return strings.Contains(msg, errShardFrozen.Error())
+}
+
 // isUnavailableError reports whether err is a gRPC "unavailable" status, i.e. the
 // forwarded-to node could not be reached and forwarding should wait for a new
 // leader before retrying.
@@ -899,6 +1431,14 @@ func isUnavailableError(err error) bool {
 // store (durable on disk, or in-memory when NodeConfig.UseInMemoryRaftStore is set).
 // Call Start to load replicas and begin serving.
 func NewNode(baseDir string, coreDescriptors ApplicationCoreDescriptors, nodeConfig NodeConfig, trans transport.DataPlane) (*Node, error) {
+	for name, d := range coreDescriptors {
+		switch d.CoreType {
+		case CoreTypeInMemory, CoreTypePersistedShared, CoreTypePersistedExclusive:
+		default:
+			return nil, fmt.Errorf("core descriptor %s: invalid CoreType %v (must be declared explicitly)", name, d.CoreType)
+		}
+	}
+
 	var raftStore *store.BadgerStore
 	var err error
 	if nodeConfig.UseInMemoryRaftStore {
@@ -942,6 +1482,8 @@ func NewNode(baseDir string, coreDescriptors ApplicationCoreDescriptors, nodeCon
 		clusterConfig:   effectiveConfig,
 		nodeState:       INITIAL,
 		replicas:        make(map[string]*replica),
+		dormant:         make(map[string]*dormantReplica),
+		splitters:       make(map[string]*splitter),
 		trans:           trans,
 		raftStore:       raftStore,
 		nodeConfig:      nodeConfig,

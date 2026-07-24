@@ -66,7 +66,7 @@ func generateCoreApi(f *File, core *MonsteraCore) {
 	apiName := core.Name + "CoreApi"
 	f.Type().Id(apiName).InterfaceFunc(func(g *Group) {
 		g.Id("Snapshot").Params().Qual(monsteraPkg, "ApplicationCoreSnapshot")
-		g.Id("Restore").Params(Id("reader").Qual("io", "ReadCloser")).Error()
+		g.Id("Restore").Params(Id("readers").Op("...").Qual("io", "ReadCloser")).Error()
 		g.Id("Close").Params()
 
 		methods := make([]string, 0, len(core.ReadMethods)+len(core.UpdateMethods))

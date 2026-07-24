@@ -71,18 +71,20 @@ func (c *PlaygroundCore) ownsKey(key uint64) bool {
 	return bytes.Compare(sk, c.lowerBound) >= 0 && bytes.Compare(sk, c.upperBound) <= 0
 }
 
-func (c *PlaygroundCore) Restore(snapshot io.ReadCloser) error {
-	decoded := make(map[uint64]string)
-	dec := gob.NewDecoder(snapshot)
-	if err := dec.Decode(&decoded); err != nil {
-		return err
-	}
-
-	// Replace semantics + bounds filter: keep only the rows this core owns.
-	filtered := make(map[uint64]string, len(decoded))
-	for k, v := range decoded {
-		if c.ownsKey(k) {
-			filtered[k] = v
+func (c *PlaygroundCore) Restore(snapshots ...io.ReadCloser) error {
+	// Replace semantics + bounds filter: the new state is the union of the
+	// given streams (disjoint by contract), keeping only the rows this core
+	// owns.
+	filtered := make(map[uint64]string)
+	for _, snapshot := range snapshots {
+		decoded := make(map[uint64]string)
+		if err := gob.NewDecoder(snapshot).Decode(&decoded); err != nil {
+			return err
+		}
+		for k, v := range decoded {
+			if c.ownsKey(k) {
+				filtered[k] = v
+			}
 		}
 	}
 

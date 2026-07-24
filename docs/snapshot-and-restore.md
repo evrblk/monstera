@@ -69,9 +69,13 @@ type ApplicationCoreSnapshot interface {
     Release()
 }
 
-// Replaces the core state with the rows from the stream that belong to this
-// core's shard bounds. Never called concurrently with any other method.
-Restore(reader io.ReadCloser) error
+// Replaces the core state with the union of the rows from the given streams
+// that belong to this core's shard bounds. Callers pass one stream (Raft
+// restore on start, follower snapshot install, split seeding) or two (merge
+// seeding — one per merging parent). Streams are disjoint after bounds
+// filtering — the producing shards' ranges never overlap — so stream order
+// is irrelevant. Never called concurrently with any other method.
+Restore(readers ...io.ReadCloser) error
 ```
 
 Typical `Snapshot()` implementations of the "fast consistent view" contract:

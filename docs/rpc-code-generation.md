@@ -187,7 +187,7 @@ to the caller. So the generated `GrackleLocksCoreApi` looks like:
 ```go
 type GrackleLocksCoreApi interface {
     Snapshot() monstera.ApplicationCoreSnapshot
-    Restore(reader io.ReadCloser) error
+    Restore(readers ...io.ReadCloser) error
     Close()
 
     GetLock(req *GetLockRequest) (*GetLockResponse, error)

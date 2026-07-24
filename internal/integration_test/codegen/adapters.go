@@ -64,8 +64,8 @@ func (a *MyCoreCoreAdapter) Snapshot() monstera.ApplicationCoreSnapshot {
 	return a.myCoreCore.Snapshot()
 }
 
-func (a *MyCoreCoreAdapter) Restore(r io.ReadCloser) error {
-	return a.myCoreCore.Restore(r)
+func (a *MyCoreCoreAdapter) Restore(readers ...io.ReadCloser) error {
+	return a.myCoreCore.Restore(readers...)
 }
 
 func (a *MyCoreCoreAdapter) Close() {

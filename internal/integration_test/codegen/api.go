@@ -32,7 +32,7 @@ type MyStubClientApi interface {
 }
 type MyCoreCoreApi interface {
 	Snapshot() monstera.ApplicationCoreSnapshot
-	Restore(reader io.ReadCloser) error
+	Restore(readers ...io.ReadCloser) error
 	Close()
 	Read1(req *Read1Request) (*Read1Response, error)
 	Read2(req *Read2Request) (*Read2Response, error)

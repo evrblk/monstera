@@ -22,7 +22,7 @@ func (NopCore) Update(req []byte) (*monstera.UpdateResponse, error) {
 
 func (NopCore) Snapshot() monstera.ApplicationCoreSnapshot { return NopSnapshot{} }
 
-func (NopCore) Restore(r io.ReadCloser) error { return nil }
+func (NopCore) Restore(readers ...io.ReadCloser) error { return nil }
 
 func (NopCore) Close() {}
 

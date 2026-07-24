@@ -151,11 +151,11 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 	f.Func().Params(
 		Id("a").Op("*").Id(adapterName),
 	).Id("Restore").Params(
-		Id("r").Qual("io", "ReadCloser"),
+		Id("readers").Op("...").Qual("io", "ReadCloser"),
 	).Params(
 		Error(),
 	).Block(
-		Return(Id("a").Dot(coreVarName).Dot("Restore").Call(Id("r"))),
+		Return(Id("a").Dot(coreVarName).Dot("Restore").Call(Id("readers").Op("..."))),
 	)
 	f.Line()
 

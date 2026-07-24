@@ -32,9 +32,16 @@ type ApplicationCore interface {
 	// ApplicationCoreSnapshot.Write.
 	Snapshot() ApplicationCoreSnapshot
 
-	// Restore replaces the application core state with the snapshot read from
-	// reader. It is not called concurrently with any other command.
-	Restore(reader io.ReadCloser) error
+	// Restore replaces the application core state with the data from the
+	// given snapshot streams that belongs to this core's shard bounds —
+	// "replace with the union of these streams". Callers pass one stream
+	// (Raft restore on start, follower snapshot install, split seeding) or
+	// two (merge seeding — one per merging parent). Streams are disjoint
+	// after bounds filtering: the caller guarantees the producing shards'
+	// ranges do not overlap, so no logical row appears in more than one
+	// stream and stream order is irrelevant. It is not called concurrently
+	// with any other command.
+	Restore(readers ...io.ReadCloser) error
 
 	// Close cleans up resources used by the application core. Do not clean up
 	// resources shared by multiple cores. Close is called after a shard split

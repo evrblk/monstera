@@ -46,6 +46,19 @@ func (s *GrpcServer) Stop() {
 	}
 }
 
+// Kill stops the server immediately, closing the listener and every live
+// connection and stream. Unlike Stop it does not wait for in-flight RPCs —
+// peers holding persistent Raft streams open would block a graceful stop
+// indefinitely — so this is the crash-like teardown for failure testing and
+// for taking one node down while the rest of the cluster keeps running.
+func (s *GrpcServer) Kill() {
+	s.logger.Printf("Killing gRPC server")
+
+	if s.srv != nil {
+		s.srv.Stop()
+	}
+}
+
 func NewGrpcServer(node *monstera.Node) *GrpcServer {
 	logger := log.New(os.Stdout, fmt.Sprintf("[%s] ", node.NodeId()), log.LstdFlags)
 

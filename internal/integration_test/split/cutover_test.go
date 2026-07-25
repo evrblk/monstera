@@ -2,7 +2,6 @@ package split
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/evrblk/monstera/cluster"
 	"github.com/evrblk/monstera/control"
-	"github.com/evrblk/monstera/internal/integration_test/testcore"
 	"github.com/evrblk/monstera/internal/integration_test/testutils"
 	"github.com/evrblk/monstera/transport/grpc"
 )
@@ -20,7 +18,8 @@ import (
 // TestSplitShardSequenceLiveCutover is the acceptance test for the full
 // PlanSplitShard sequence (declare -> seed -> CUTOFF -> flip -> bake) running
 // over a real 3-node gRPC cluster while a writer keeps writing THROUGH the
-// cutoff. It proves the split's two headline guarantees:
+// cutoff, once per core storage model. It proves the split's two headline
+// guarantees for every CoreType:
 //
 //   - Zero write downtime: not a single write fails during the whole split —
 //     writes that hit the frozen parent are re-routed to the children
@@ -28,20 +27,36 @@ import (
 //   - Guaranteed consistency: every acknowledged write — before, during and
 //     after the cutoff — is served correctly by the children afterwards.
 func TestSplitShardSequenceLiveCutover(t *testing.T) {
+	for _, cc := range coreCases() {
+		t.Run(cc.name, func(t *testing.T) {
+			runLiveCutover(t, cc)
+		})
+	}
+}
+
+func runLiveCutover(t *testing.T, cc coreCase) {
 	var addrs [3]string
 	copy(addrs[:], testutils.FreeAddrs(t, 3))
 
 	admin := grpc.NewAdminClient()
 	t.Cleanup(func() { _ = admin.Close() })
 
+	// Cleanup runs LIFO: data dirs and core stores are created before the
+	// cluster so teardown stops the nodes first, then closes the stores, then
+	// removes the dirs (see restart_test.go for the failure mode).
+	ids := []string{"node_1", "node_2", "node_3"}
+	dirs := make([]string, len(ids))
+	for i := range ids {
+		dirs[i] = t.TempDir()
+	}
+	stores := newCoreStores(t, cc, 3)
 	cl := testutils.NewGrpcCluster(t)
 
 	base := splitTestConfig(addrs, 1) // single full-range active shard
 	require.NoError(t, base.Validate())
 
-	ids := []string{"node_1", "node_2", "node_3"}
 	for i := range ids {
-		cl.StartNode(t, testutils.InMemoryNodeConfig(), addrs[i], testcore.PlaygroundDescriptors())
+		cl.StartNodeAt(t, dirs[i], testutils.InMemoryNodeConfig(), addrs[i], cc.newDescriptors(stores.get(i)))
 	}
 	testutils.BootstrapNodes(t, admin, addrs[:], ids, base)
 	testutils.RequireLeader(t, admin, addrs[:], parentReplicaIds())
@@ -52,29 +67,7 @@ func TestSplitShardSequenceLiveCutover(t *testing.T) {
 	written := newWrittenSet()
 	var writeFailures atomic.Int64
 	var lastFailure atomic.Value
-	writerStop := make(chan struct{})
-	writerDone := make(chan struct{})
-	go func() {
-		defer close(writerDone)
-		for i := uint64(1); ; i++ {
-			select {
-			case <-writerStop:
-				return
-			default:
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			v := fmt.Sprintf("value-%d", i)
-			_, err := stub.Update(ctx, i, v)
-			cancel()
-			if err != nil {
-				writeFailures.Add(1)
-				lastFailure.Store(fmt.Sprintf("key %d: %v", i, err))
-				continue
-			}
-			written.add(i, v)
-			time.Sleep(2 * time.Millisecond)
-		}
-	}()
+	stopWriter := startWriter(stub, written, 1, &writeFailures, &lastFailure)
 
 	// Let some writes land pre-split.
 	require.Eventually(t, func() bool { k, _ := written.snapshot(); return len(k) > 50 },
@@ -95,8 +88,7 @@ func TestSplitShardSequenceLiveCutover(t *testing.T) {
 
 	// Keep writing a little longer against the split topology, then stop.
 	time.Sleep(500 * time.Millisecond)
-	close(writerStop)
-	<-writerDone
+	stopWriter()
 
 	// Zero write downtime: nothing failed, before, during or after the cutoff.
 	require.EqualValues(t, 0, writeFailures.Load(), "writes failed during the split: last: %v", lastFailure.Load())
@@ -135,17 +127,9 @@ func TestSplitShardSequenceLiveCutover(t *testing.T) {
 
 	// Guaranteed consistency: every acknowledged write is served by the
 	// children, routed by key range.
-	verify := testutils.NewPlaygroundStub(finalCfg)
-	keys, values := written.snapshot()
+	keys, _ := written.snapshot()
 	require.Greater(t, len(keys), 100)
-	for i, k := range keys {
-		rctx, rcancel := context.WithTimeout(context.Background(), 5*time.Second)
-		v, err := verify.Read(rctx, k)
-		rcancel()
-		require.NoErrorf(t, err, "reading key %d after the split", k)
-		require.Equalf(t, values[i], v, "key %d has wrong value after the split", k)
-	}
-	t.Logf("verified %d keys written through a live cutover", len(keys))
+	verifyAllKeys(t, finalCfg, written)
 
 	// And the split cluster keeps serving new writes.
 	post := testutils.NewPlaygroundStub(finalCfg)
@@ -158,5 +142,4 @@ func TestSplitShardSequenceLiveCutover(t *testing.T) {
 	pcancel()
 	require.NoError(t, err)
 	require.Equal(t, "post-split", v)
-
 }

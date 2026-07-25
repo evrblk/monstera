@@ -82,7 +82,7 @@ func NewCluster(t *testing.T, clusterConfig *cluster.Config) *testutils.GrpcClus
 	t.Helper()
 	cl := testutils.NewGrpcCluster(t)
 	for _, n := range clusterConfig.Nodes {
-		node := cl.StartNode(t, testutils.InMemoryNodeConfig(), n.GrpcAddress, testcore.PlaygroundDescriptors())
+		node := cl.StartNode(t, testutils.InMemoryNodeConfig(), n.GrpcAddress, testcore.InMemoryPlaygroundDescriptors())
 		// Fresh data dir: the node comes up UNPROVISIONED; bootstrap it
 		// in-process (mirrors an admin Bootstrap over the wire).
 		require.NoError(t, node.Bootstrap(context.Background(), n.Id, clusterConfig))

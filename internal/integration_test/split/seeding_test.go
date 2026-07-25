@@ -7,24 +7,14 @@ package split
 
 import (
 	"context"
-	"fmt"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/evrblk/monstera/cluster"
 	"github.com/evrblk/monstera/internal/integration_test/testcore"
 	"github.com/evrblk/monstera/internal/integration_test/testutils"
-	"github.com/evrblk/monstera/transport"
 	"github.com/evrblk/monstera/transport/grpc"
-)
-
-const (
-	parentShard = "Core_p"
-	child1Shard = "Core_c1" // [0x00000000, 0x7fffffff]
-	child2Shard = "Core_c2" // [0x80000000, 0xffffffff]
 )
 
 // TestSplitSeedingOverGrpc drives a full split seeding pass on a real
@@ -60,7 +50,7 @@ func TestSplitSeedingOverGrpc(t *testing.T) {
 
 	ids := []string{"node_1", "node_2", "node_3"}
 	for i := range ids {
-		cl.StartNode(t, testutils.InMemoryNodeConfig(), addrs[i], testcore.PlaygroundDescriptors())
+		cl.StartNode(t, testutils.InMemoryNodeConfig(), addrs[i], testcore.InMemoryPlaygroundDescriptors())
 	}
 	testutils.BootstrapNodes(t, admin, addrs[:], ids, v1)
 	testutils.RequireLeader(t, admin, addrs[:], parentReplicaIds())
@@ -73,26 +63,9 @@ func TestSplitSeedingOverGrpc(t *testing.T) {
 	}
 
 	// Background writer: keeps the parent under write load through the split
-	// config push and the whole seeding phase.
-	writerStop := make(chan struct{})
-	writerDone := make(chan struct{})
-	go func() {
-		defer close(writerDone)
-		for i := uint64(10_000); ; i++ {
-			select {
-			case <-writerStop:
-				return
-			default:
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			v := fmt.Sprintf("value-%d", i)
-			if _, err := stub.Update(ctx, i, v); err == nil {
-				written.add(i, v)
-			}
-			cancel()
-			time.Sleep(2 * time.Millisecond)
-		}
-	}()
+	// config push and the whole seeding phase. Best-effort: only acknowledged
+	// writes are recorded and verified.
+	stopWriter := startWriter(stub, written, 10_000, nil, nil)
 
 	// Declare the split: parent -> SPLITTING, children ACTIVATING, co-located.
 	v2 := splitTestConfig(addrs, 2)
@@ -108,8 +81,7 @@ func TestSplitSeedingOverGrpc(t *testing.T) {
 
 	// Let the writer run a while against the splitting parent, then stop it.
 	time.Sleep(1 * time.Second)
-	close(writerStop)
-	<-writerDone
+	stopWriter()
 
 	// All children on all nodes catch up to the parent's post-writes commit index.
 	target := parentCommitIndex(t, admin, addrs[:])
@@ -140,197 +112,4 @@ func TestSplitSeedingOverGrpc(t *testing.T) {
 		require.Equalf(t, values[i], v, "key %d has wrong value after the split", k)
 	}
 	t.Logf("verified %d keys after the split", len(keys))
-}
-
-// splitTestConfig builds the test topology at a given phase, encoded by
-// version: 1 = single active parent; 2, 3 = parent splitting with two
-// co-located activating children; 4 = parent inactive, children active.
-func splitTestConfig(addrs [3]string, version int64) *cluster.Config {
-	parentState := cluster.ShardState_SHARD_STATE_ACTIVE
-	childState := cluster.ShardState_SHARD_STATE_ACTIVATING
-	withChildren := version >= 2
-	if withChildren {
-		parentState = cluster.ShardState_SHARD_STATE_SPLITTING
-	}
-	if version >= 4 {
-		parentState = cluster.ShardState_SHARD_STATE_INACTIVE
-		childState = cluster.ShardState_SHARD_STATE_ACTIVE
-	}
-
-	shards := []*cluster.Shard{
-		{
-			Id:         parentShard,
-			LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
-			UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
-			State:      parentState,
-			Replicas:   replicasFor(parentShard),
-		},
-	}
-	if withChildren {
-		shards = append(shards,
-			&cluster.Shard{
-				Id:         child1Shard,
-				LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
-				UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
-				State:      childState,
-				ParentId:   parentShard,
-				Replicas:   replicasFor(child1Shard),
-			},
-			&cluster.Shard{
-				Id:         child2Shard,
-				LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
-				UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
-				State:      childState,
-				ParentId:   parentShard,
-				Replicas:   replicasFor(child2Shard),
-			},
-		)
-	}
-
-	return &cluster.Config{
-		Version: version,
-		Applications: []*cluster.Application{
-			{
-				Name:              "Core",
-				Implementation:    "Core",
-				ReplicationFactor: 3,
-				Shards:            shards,
-			},
-		},
-		Nodes: []*cluster.Node{
-			{Id: "node_1", GrpcAddress: addrs[0]},
-			{Id: "node_2", GrpcAddress: addrs[1]},
-			{Id: "node_3", GrpcAddress: addrs[2]},
-		},
-	}
-}
-
-func replicasFor(shardId string) []*cluster.Replica {
-	replicas := make([]*cluster.Replica, 3)
-	for i := 0; i < 3; i++ {
-		replicas[i] = &cluster.Replica{
-			Id:     fmt.Sprintf("%s_r%d", shardId, i+1),
-			NodeId: fmt.Sprintf("node_%d", i+1),
-		}
-	}
-	return replicas
-}
-
-func parentReplicaIds() map[string]bool {
-	ids := make(map[string]bool)
-	for _, r := range replicasFor(parentShard) {
-		ids[r.Id] = true
-	}
-	return ids
-}
-
-func childReplicaIdsByNode() map[string][]string {
-	byNode := make(map[string][]string)
-	for _, shardId := range []string{child1Shard, child2Shard} {
-		for _, r := range replicasFor(shardId) {
-			byNode[r.NodeId] = append(byNode[r.NodeId], r.Id)
-		}
-	}
-	return byNode
-}
-
-// requireSeedingVisible waits until every node reports its two dormant
-// children with Seeding set.
-func requireSeedingVisible(t *testing.T, admin *grpc.AdminClient, addrs []string) {
-	t.Helper()
-	byNode := childReplicaIdsByNode()
-	require.Eventually(t, func() bool {
-		for i, addr := range addrs {
-			nodeId := fmt.Sprintf("node_%d", i+1)
-			states, err := testutils.ListReplicaStates(admin, addr)
-			if err != nil {
-				return false
-			}
-			for _, id := range byNode[nodeId] {
-				s, ok := states[id]
-				if !ok || !s.Seeding || s.RaftState != transport.RaftStateSeeding {
-					return false
-				}
-			}
-		}
-		return true
-	}, 30*time.Second, 100*time.Millisecond, "children never reported as seeding")
-}
-
-// parentCommitIndex returns the parent leader's commit index.
-func parentCommitIndex(t *testing.T, admin *grpc.AdminClient, addrs []string) uint64 {
-	t.Helper()
-	parents := parentReplicaIds()
-	var commit uint64
-	require.Eventually(t, func() bool {
-		for _, addr := range addrs {
-			states, err := testutils.ListReplicaStates(admin, addr)
-			if err != nil {
-				continue
-			}
-			for id, s := range states {
-				if parents[id] && s.RaftState == transport.RaftStateLeader {
-					commit = s.Stats.CommitIndex
-					return true
-				}
-			}
-		}
-		return false
-	}, 15*time.Second, 100*time.Millisecond, "no parent leader found")
-	return commit
-}
-
-// requireSeededTo waits until every child replica on every node has seeded at
-// least up to target.
-func requireSeededTo(t *testing.T, admin *grpc.AdminClient, addrs []string, target uint64) {
-	t.Helper()
-	byNode := childReplicaIdsByNode()
-	require.Eventually(t, func() bool {
-		for i, addr := range addrs {
-			nodeId := fmt.Sprintf("node_%d", i+1)
-			states, err := testutils.ListReplicaStates(admin, addr)
-			if err != nil {
-				return false
-			}
-			for _, id := range byNode[nodeId] {
-				s, ok := states[id]
-				if !ok || !s.Seeding || s.SeededIndex < target {
-					return false
-				}
-			}
-		}
-		return true
-	}, 30*time.Second, 100*time.Millisecond, "children never caught up to parent commit index %d", target)
-}
-
-// writtenSet tracks every acknowledged write for post-split verification.
-type writtenSet struct {
-	mu     sync.Mutex
-	keys   []uint64
-	values []string
-}
-
-func newWrittenSet() *writtenSet { return &writtenSet{} }
-
-func (w *writtenSet) add(key uint64, value string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.keys = append(w.keys, key)
-	w.values = append(w.values, value)
-}
-
-func (w *writtenSet) snapshot() ([]uint64, []string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return append([]uint64(nil), w.keys...), append([]string(nil), w.values...)
-}
-
-func writeKey(t *testing.T, stub *testcore.PlaygroundApiMonsteraStub, written *writtenSet, key uint64) {
-	t.Helper()
-	v := fmt.Sprintf("value-%d", key)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_, err := stub.Update(ctx, key, v)
-	require.NoErrorf(t, err, "writing key %d", key)
-	written.add(key, v)
 }

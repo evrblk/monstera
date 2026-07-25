@@ -2,7 +2,7 @@
 // helpers, gRPC and local-transport cluster startup, cluster config builders,
 // and replica-state assertions. Domain-specific helpers (split topologies,
 // data-dir layout checks, ...) stay in their test packages; the application
-// core they all run is testcore's PlaygroundCore (or NopCore).
+// core they all run is one of testcore's playground cores (or NopCore).
 package testutils
 
 import (
@@ -98,7 +98,16 @@ func (c *GrpcCluster) Stop() {
 // it (UNPROVISIONED — bootstrap separately), and serves it over gRPC on addr.
 func (c *GrpcCluster) StartNode(t *testing.T, nodeConfig monstera.NodeConfig, addr string, descriptors monstera.ApplicationCoreDescriptors) *monstera.Node {
 	t.Helper()
-	node, err := monstera.NewNode(t.TempDir(), descriptors, nodeConfig, grpc.NewDataPlaneClient())
+	return c.StartNodeAt(t, t.TempDir(), nodeConfig, addr, descriptors)
+}
+
+// StartNodeAt is StartNode with a caller-owned data dir, so a test can stop a
+// node and start a fresh one over the same durable state (kill/restart
+// scenarios). A dir holding a provisioned node's state comes back READY; a
+// fresh dir comes up UNPROVISIONED.
+func (c *GrpcCluster) StartNodeAt(t *testing.T, baseDir string, nodeConfig monstera.NodeConfig, addr string, descriptors monstera.ApplicationCoreDescriptors) *monstera.Node {
+	t.Helper()
+	node, err := monstera.NewNode(baseDir, descriptors, nodeConfig, grpc.NewDataPlaneClient())
 	require.NoError(t, err)
 	node.Start()
 
@@ -108,6 +117,15 @@ func (c *GrpcCluster) StartNode(t *testing.T, nodeConfig monstera.NodeConfig, ad
 	c.Servers = append(c.Servers, server)
 	WaitForListen(t, addr)
 	return node
+}
+
+// KillNode abruptly stops node i: the gRPC server is hard-stopped first
+// (closing live connections and Raft streams, so peers see a crash rather
+// than a drain), then the node is stopped to release its on-disk stores for
+// a later restart. The slot stays in Nodes/Servers; Stop tolerates it.
+func (c *GrpcCluster) KillNode(i int) {
+	c.Servers[i].Kill()
+	c.Nodes[i].Stop()
 }
 
 // BootstrapNodes provisions node ids[i] at addrs[i] with cfg over the admin

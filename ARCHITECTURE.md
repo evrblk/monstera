@@ -235,8 +235,10 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
   finalizes and promotes children at the cutoff) + observability (`ReplicaState.Seeding/SeededIndex/
   Frozen`); shard-key stamping; `CUTOFF` freeze + node-side re-route (delayed, never failed);
   `SplitCutoff` admin RPC; `PlanSplitShard` (declare → cutoff → flip → bake, `children_seeded` gate,
-  executor `send_command`) + `cluster split-shard` CLI. Live-cutover test:
-  `internal/integration_test/split` (zero failed writes through the cutoff). Grackle re-key
+  executor `send_command`) + `cluster split-shard` CLI. Integration tests
+  (`internal/integration_test/split`) run per core type (all three playground flavors): live
+  cutover (zero failed writes through the cutoff) and node kill/restart mid-seeding (resume from
+  durable progress, converge, cut over). Grackle re-key
   (phase 6) is complete: all five cores are `CoreTypePersistedExclusive` with exclusive key
   layouts (no shard key material in record keys) and portable fenestra snapshots
   (primary-entity stream, table-API restore rebuilding indexes) — split-ready. Remaining:
@@ -249,8 +251,14 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
 
 `make build` · `go test -race ./...` · `make lint`.
 Fast inner loop: `go test -race ./rpc/... ./cluster/... ./store/... ./internal/raft/... ./control/... ./utils/...`
-Integration tests (`internal/integration_test/`): shared fixtures in `testcore/` (PlaygroundCore in-mem KV,
-NopCore, stub, descriptors — importable non-`_test` package); `node_stop/` (3-node gRPC cluster, kill a
-node mid-traffic → failover, ~15s); `admin/` (bootstrap over the gRPC admin plane); `control/`
-(add-node & move-shard sequences end-to-end over gRPC); `nodelifecycle/` (bootstrap idempotency, data-dir
-layout, restart persistence, replica add/remove reconcile, replica-state stats).
+Integration tests (`internal/integration_test/`): shared fixtures in `testcore/` (the playground KV core
+in three flavors — `InMemoryPlaygroundCore`, `SharedPlaygroundCore`, `ExclusivePlaygroundCore`, one per
+`CoreType` over one wire/snapshot format — plus NopCore, stub, descriptors; importable non-`_test`
+package); `node_stop/` (3-node gRPC cluster, kill a node mid-traffic → failover, ~15s); `admin/`
+(bootstrap over the gRPC admin plane); `control/` (add-node & move-shard sequences end-to-end over gRPC);
+`nodelifecycle/` (bootstrap idempotency, data-dir layout, restart persistence, replica add/remove
+reconcile, replica-state stats); `split/` (per core type: seeding, live cutover, node kill/restart
+mid-seeding). Test-only kill support: `GrpcServer.Kill()` (hard stop) + `GrpcCluster.KillNode`/
+`StartNodeAt`. Caveat: create `t.TempDir()` data dirs and core stores BEFORE `NewGrpcCluster` —
+cleanup is LIFO, and removing a live node's on-disk Badger dir wedges badger's flush loop so
+`Close` never returns.

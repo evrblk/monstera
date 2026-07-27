@@ -15,8 +15,8 @@ A shard key is picked once in the begining and cannot be changed later. All rela
 on the same shard and can be wraped into a transaction or queried with secondary (sort) key.
 
 The ideal situation for extracting units of work is when your domain is organized hierarchically. For example, [Everblack 
-Grackle]([/docs/grackle](https://github.com/evrblk/grackle)), a service that provides distributed synchronization 
-primitives (locks, semaphores, wait groups, barriers):
+Grackle]([https://github.com/evrblk/grackle](https://github.com/evrblk/grackle)), a service that provides distributed 
+synchronization primitives (locks, semaphores, wait groups, barriers):
 
 ![Locks core](/docs/images/units-of-work-1.png)
 

@@ -2,12 +2,11 @@ package codegen
 
 import (
 	"fmt"
-	"log"
 
 	. "github.com/dave/jennifer/jen" //lint:ignore ST1001 jen helpers are so much nicer to use with dot-importing
 )
 
-func GenerateCoreApis(cfg *MonsteraYaml) string {
+func GenerateCoreApis(cfg *MonsteraYaml) (string, error) {
 	f := NewFilePath(cfg.GoCode.OutputPackage)
 	f.HeaderComment(generatedCodeComment)
 	f.ImportAlias(mrpcPkg, "mrpc")
@@ -35,20 +34,9 @@ func GenerateCoreApis(cfg *MonsteraYaml) string {
 
 	// Generate stub APIs
 	for _, stub := range cfg.Stubs {
-		cores := make([]*MonsteraCore, len(stub.Cores))
-		for i, coreName := range stub.Cores {
-			found := false
-			for _, core := range cfg.Cores {
-				if core.Name == coreName {
-					cores[i] = core
-					found = true
-					break
-				}
-			}
-
-			if !found {
-				log.Fatalf("core %s not found", coreName)
-			}
+		cores, err := resolveStubCores(cfg, stub)
+		if err != nil {
+			return "", err
 		}
 
 		generateStubApi(f, stub, cores, cfg)
@@ -59,7 +47,7 @@ func GenerateCoreApis(cfg *MonsteraYaml) string {
 		generateCoreApi(f, core)
 	}
 
-	return fmt.Sprintf("%#v", f)
+	return fmt.Sprintf("%#v", f), nil
 }
 
 func generateCoreApi(f *File, core *MonsteraCore) {

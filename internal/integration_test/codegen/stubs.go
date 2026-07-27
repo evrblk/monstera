@@ -15,6 +15,14 @@ import (
 	"time"
 )
 
+func nilifyIfEmpty(err *mrpc.Error) error {
+	if err == nil || err.Code == mrpc.ErrorCode_INVALID || err.Code == mrpc.ErrorCode_OK {
+		return nil
+	} else {
+		return err
+	}
+}
+
 type MyStubMonsteraStub struct {
 	monsteraClient *monstera.Client
 }
@@ -212,14 +220,6 @@ func NewMyStubMonsteraStub(monsteraClient *monstera.Client) *MyStubMonsteraStub 
 	return &MyStubMonsteraStub{monsteraClient: monsteraClient}
 }
 
-func nilifyIfEmpty(err *mrpc.Error) error {
-	if err == nil || err.Code == mrpc.ErrorCode_INVALID || err.Code == mrpc.ErrorCode_OK {
-		return nil
-	} else {
-		return err
-	}
-}
-
 type myCoreCoreNonclusteredAdapter struct {
 	core       MyCoreCoreApi
 	mu         sync.RWMutex
@@ -239,6 +239,9 @@ var _ MyStubClientApi = &MyStubNonclusteredStub{}
 
 func (s *MyStubNonclusteredStub) Read1(ctx context.Context, req *types.Read1Request) (*types.Read1Response, error) {
 	shardKey := req.ShardKey()
+	if len(shardKey) == 0 || len(shardKey) > 4 {
+		return nil, fmt.Errorf("invalid shard key length %d: must be between 1 and 4 bytes", len(shardKey))
+	}
 	for _, adapter := range s.myCoreCores {
 		if bytes.Compare(shardKey, adapter.upperBound) <= 0 && bytes.Compare(shardKey, adapter.lowerBound) >= 0 {
 			adapter.mu.RLock()
@@ -259,7 +262,7 @@ func (s *MyStubNonclusteredStub) Read1(ctx context.Context, req *types.Read1Requ
 		}
 	}
 
-	return nil, fmt.Errorf("no shard found for shardKey: %s", shardKey)
+	return nil, fmt.Errorf("no shard found for shardKey: %x", shardKey)
 }
 
 func (s *MyStubNonclusteredStub) Read2(ctx context.Context, req *types.Read2Request, shardId string) (*types.Read2Response, error) {
@@ -288,6 +291,9 @@ func (s *MyStubNonclusteredStub) Read2(ctx context.Context, req *types.Read2Requ
 
 func (s *MyStubNonclusteredStub) Read3(ctx context.Context, req *types.Read3Request) (*types.Read3Response, error) {
 	shardKey := req.ShardKey()
+	if len(shardKey) == 0 || len(shardKey) > 4 {
+		return nil, fmt.Errorf("invalid shard key length %d: must be between 1 and 4 bytes", len(shardKey))
+	}
 	for _, adapter := range s.myCoreCores {
 		if bytes.Compare(shardKey, adapter.upperBound) <= 0 && bytes.Compare(shardKey, adapter.lowerBound) >= 0 {
 			adapter.mu.RLock()
@@ -308,11 +314,14 @@ func (s *MyStubNonclusteredStub) Read3(ctx context.Context, req *types.Read3Requ
 		}
 	}
 
-	return nil, fmt.Errorf("no shard found for shardKey: %s", shardKey)
+	return nil, fmt.Errorf("no shard found for shardKey: %x", shardKey)
 }
 
 func (s *MyStubNonclusteredStub) Update1(ctx context.Context, req *types.Update1Request) (*types.Update1Response, error) {
 	shardKey := req.ShardKey()
+	if len(shardKey) == 0 || len(shardKey) > 4 {
+		return nil, fmt.Errorf("invalid shard key length %d: must be between 1 and 4 bytes", len(shardKey))
+	}
 	for _, adapter := range s.myCoreCores {
 		if bytes.Compare(shardKey, adapter.upperBound) <= 0 && bytes.Compare(shardKey, adapter.lowerBound) >= 0 {
 			adapter.mu.Lock()
@@ -333,7 +342,7 @@ func (s *MyStubNonclusteredStub) Update1(ctx context.Context, req *types.Update1
 		}
 	}
 
-	return nil, fmt.Errorf("no shard found for shardKey: %s", shardKey)
+	return nil, fmt.Errorf("no shard found for shardKey: %x", shardKey)
 }
 
 func (s *MyStubNonclusteredStub) Update2(ctx context.Context, req *types.Update2Request, shardId string) (*types.Update2Response, error) {
@@ -374,12 +383,16 @@ func (s *MyStubNonclusteredStub) ListShards(applicationName string) ([]string, e
 }
 
 func NewMyStubNonclusteredStub(shardsPerApp int, coresFactory *MyStubNonclusteredApplicationCoresFactory) *MyStubNonclusteredStub {
+	if shardsPerApp < 1 || int64(shardsPerApp) > int64(cluster.KeyspacePerApplication) || shardsPerApp&(shardsPerApp-1) != 0 {
+		panic(fmt.Sprintf("shardsPerApp must be a power of 2 between 1 and 2^32, got %d", shardsPerApp))
+	}
+
 	myCoreCores := make([]*myCoreCoreNonclusteredAdapter, shardsPerApp)
 
-	shardSize := cluster.KeyspacePerApplication / shardsPerApp
+	shardSize := int64(cluster.KeyspacePerApplication) / int64(shardsPerApp)
 	for i := 0; i < shardsPerApp; i++ {
-		lower := uint32(i * shardSize)
-		upper := uint32((i+1)*shardSize - 1)
+		lower := uint32(int64(i) * shardSize)
+		upper := uint32(int64(i+1)*shardSize - 1)
 		lowerBound := make([]byte, 4)
 		upperBound := make([]byte, 4)
 		binary.BigEndian.PutUint32(lowerBound, lower)

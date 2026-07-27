@@ -59,6 +59,9 @@ func DefaultClientConfig() ClientConfig {
 type Client struct {
 	mu            sync.RWMutex
 	clusterConfig *cluster.Config
+	// router is the routing index built from clusterConfig; the two are swapped
+	// together by onConfig.
+	router        *Router
 	replicaStates map[string]*transport.ReplicaState
 
 	provider ClusterConfigProvider
@@ -117,11 +120,21 @@ func (c *Client) Start(ctx context.Context) error {
 func (c *Client) onConfig(cfg *cluster.Config) {
 	c.mu.Lock()
 	c.clusterConfig = cfg
+	c.router = NewRouter(cfg)
 	c.mu.Unlock()
 
 	if cc, ok := c.trans.(transport.ClusterConfigConsumer); ok {
 		cc.SetClusterConfig(cfg)
 	}
+}
+
+// currentRouter returns the client's current routing index, snapshotting the
+// pointer under the read lock (it is swapped wholesale by onConfig). It is nil
+// until the first config is adopted.
+func (c *Client) currentRouter() *Router {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.router
 }
 
 // currentConfig returns the client's current cluster config, snapshotting the
@@ -149,6 +162,13 @@ func (c *Client) refreshLoop(ctx context.Context) {
 				}
 				c.mu.Unlock()
 			}
+
+			// Prune leadership state for replicas that no longer exist in the
+			// current config: splits and shard moves retire replica ids
+			// continuously, and without this replicaStates would grow without
+			// bound. Prune against the latest router so a replica added by a
+			// very recent config (not yet polled) is never dropped.
+			c.pruneReplicaStates()
 		}
 
 		duration := c.config.RefreshIntervalBase + time.Duration(rand.Int64N(int64(c.config.RefreshIntervalJitter)))
@@ -162,13 +182,31 @@ func (c *Client) refreshLoop(ctx context.Context) {
 	}
 }
 
+// pruneReplicaStates drops cached leadership state for any replica id that is no
+// longer present in the current cluster config (retired by a split or a shard
+// move). Called on every refresh sweep so the map tracks the live replica set.
+func (c *Client) pruneReplicaStates() {
+	router := c.currentRouter()
+	if router == nil {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for id := range c.replicaStates {
+		if _, err := router.GetReplica(id); err != nil {
+			delete(c.replicaStates, id)
+		}
+	}
+}
+
 // Read routes a read request to the shard responsible for shardKey.
 func (c *Client) Read(ctx context.Context, applicationName string, shardKey []byte, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
-	cfg := c.currentConfig()
-	if cfg == nil {
+	router := c.currentRouter()
+	if router == nil {
 		return nil, ErrNoClusterConfig
 	}
-	shard, err := cfg.FindShardByShardKey(applicationName, shardKey)
+	shard, err := router.FindShardByShardKey(applicationName, shardKey)
 	if err != nil {
 		return nil, err
 	}
@@ -179,11 +217,11 @@ func (c *Client) Read(ctx context.Context, applicationName string, shardKey []by
 // ReadShard sends a read request directly to the specified shard by ID,
 // bypassing shard-key routing.
 func (c *Client) ReadShard(ctx context.Context, applicationName string, shardId string, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
-	cfg := c.currentConfig()
-	if cfg == nil {
+	router := c.currentRouter()
+	if router == nil {
 		return nil, ErrNoClusterConfig
 	}
-	shard, err := cfg.GetShard(shardId)
+	shard, err := router.GetShard(shardId)
 	if err != nil {
 		return nil, err
 	}
@@ -239,11 +277,11 @@ func (c *Client) readShard(ctx context.Context, applicationName string, shard *c
 
 // Update routes a write request to the shard responsible for shardKey.
 func (c *Client) Update(ctx context.Context, applicationName string, shardKey []byte, payload []byte) ([]byte, error) {
-	cfg := c.currentConfig()
-	if cfg == nil {
+	router := c.currentRouter()
+	if router == nil {
 		return nil, ErrNoClusterConfig
 	}
-	shard, err := cfg.FindShardByShardKey(applicationName, shardKey)
+	shard, err := router.FindShardByShardKey(applicationName, shardKey)
 	if err != nil {
 		return nil, err
 	}
@@ -254,11 +292,11 @@ func (c *Client) Update(ctx context.Context, applicationName string, shardKey []
 // UpdateShard sends a write request directly to the specified shard by ID,
 // bypassing shard-key routing.
 func (c *Client) UpdateShard(ctx context.Context, applicationName string, shardId string, payload []byte) ([]byte, error) {
-	cfg := c.currentConfig()
-	if cfg == nil {
+	router := c.currentRouter()
+	if router == nil {
 		return nil, ErrNoClusterConfig
 	}
-	shard, err := cfg.GetShard(shardId)
+	shard, err := router.GetShard(shardId)
 	if err != nil {
 		return nil, err
 	}
@@ -306,12 +344,17 @@ func (c *Client) updateShard(ctx context.Context, applicationName string, shard 
 	return nil, ErrAllReplicasFailed
 }
 
+// ListShards returns the application's currently routable shards (active or
+// splitting), sorted by lower bound. These are exactly the shards that serve the
+// keyspace, so it is the set to fan a request out over (e.g. running GC on every
+// shard); retired (inactive) and not-yet-serving (activating) shards are
+// excluded. See Router.ListRoutableShards.
 func (c *Client) ListShards(applicationName string) ([]*cluster.Shard, error) {
-	cfg := c.currentConfig()
-	if cfg == nil {
+	router := c.currentRouter()
+	if router == nil {
 		return nil, ErrNoClusterConfig
 	}
-	return cfg.ListShards(applicationName)
+	return router.ListRoutableShards(applicationName)
 }
 
 // shuffleReplicas returns a randomly ordered copy of replicas.

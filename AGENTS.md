@@ -27,7 +27,7 @@ Keep `ARCHITECTURE.md` updated when any significant change or feature is done.
 make generate                 # generate all protobufs
 make build                    # fully build Monstera (including generation)
 go test -v --race ./...       # run all tests with Go directly
-make lint                     # run linter, statick check, go vet
+make lint                     # run linter, static check, go vet
 ```
 
 ## Code Style Guidelines

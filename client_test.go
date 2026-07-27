@@ -1,0 +1,66 @@
+package monstera
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/evrblk/monstera/cluster"
+	"github.com/evrblk/monstera/transport"
+)
+
+// TestClient_pruneReplicaStates verifies that leadership state for replicas no
+// longer present in the current config (retired by splits/moves) is dropped,
+// while state for live replicas is kept.
+func TestClient_pruneReplicaStates(t *testing.T) {
+	cfg := CreateEmptyClientTestConfig(t)
+
+	c := &Client{
+		replicaStates: make(map[string]*transport.ReplicaState),
+	}
+	// onConfig builds the router from cfg (trans is nil here, and its type
+	// assertion is nil-safe).
+	c.onConfig(cfg)
+
+	// Two live replicas (present in cfg) and two stale ones (retired ids).
+	for _, id := range []string{"rpl_live_1", "rpl_live_2", "rpl_stale_1", "rpl_stale_2"} {
+		c.replicaStates[id] = &transport.ReplicaState{ReplicaId: id}
+	}
+
+	c.pruneReplicaStates()
+
+	require.Contains(t, c.replicaStates, "rpl_live_1")
+	require.Contains(t, c.replicaStates, "rpl_live_2")
+	require.NotContains(t, c.replicaStates, "rpl_stale_1")
+	require.NotContains(t, c.replicaStates, "rpl_stale_2")
+	require.Len(t, c.replicaStates, 2)
+}
+
+// CreateEmptyClientTestConfig builds a minimal valid 3-node, single-shard config
+// whose replica ids are rpl_live_1..3.
+func CreateEmptyClientTestConfig(t *testing.T) *cluster.Config {
+	t.Helper()
+
+	c := cluster.CreateEmptyConfig()
+	_, err := c.CreateNode("node_1", "localhost:9001")
+	require.NoError(t, err)
+	_, err = c.CreateNode("node_2", "localhost:9002")
+	require.NoError(t, err)
+	_, err = c.CreateNode("node_3", "localhost:9003")
+	require.NoError(t, err)
+
+	a, err := c.CreateApplication("app", "impl", 3)
+	require.NoError(t, err)
+	s, err := c.CreateShard(a.Name, []byte{0x00, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, "")
+	require.NoError(t, err)
+
+	_, err = c.AddReplica(a.Name, s.Id, "rpl_live_1", "node_1")
+	require.NoError(t, err)
+	_, err = c.AddReplica(a.Name, s.Id, "rpl_live_2", "node_2")
+	require.NoError(t, err)
+	_, err = c.AddReplica(a.Name, s.Id, "rpl_live_3", "node_3")
+	require.NoError(t, err)
+
+	require.NoError(t, c.Validate())
+	return c
+}

@@ -185,14 +185,20 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	return d.Sync()
 }
 
+// WriteConfigToJson serializes the config to indented, human-readable JSON
+// (shard bounds as hex, states as lowercase strings).
 func WriteConfigToJson(config *Config) ([]byte, error) {
 	return json.MarshalIndent(config, "", "  ")
 }
 
+// WriteConfigToProto serializes the config to its binary protobuf encoding.
 func WriteConfigToProto(config *Config) ([]byte, error) {
 	return config.MarshalVT()
 }
 
+// CreateEmptyConfig returns a new config at version 1 with no nodes or
+// applications — the starting point for the builder methods (CreateNode,
+// CreateApplication, ...). It does not pass Validate until populated.
 func CreateEmptyConfig() *Config {
 	return &Config{
 		Applications: make([]*Application, 0),
@@ -404,6 +410,12 @@ func (c *Config) Validate() error {
 			if s.ParentId == "" {
 				continue
 			}
+			// A shard cannot be its own parent: self-parenting would otherwise
+			// satisfy both "parent exists" and (for an inactive shard) "has
+			// children", corrupting the split-lineage model.
+			if s.ParentId == s.Id {
+				return fmt.Errorf("shard %s is its own parent in application %s", s.Id, a.Name)
+			}
 			if _, ok := appShardsById[s.ParentId]; !ok {
 				return fmt.Errorf("parent %s of shard %s not found in application %s", s.ParentId, s.Id, a.Name)
 			}
@@ -526,6 +538,8 @@ func (c *Config) sortShards() {
 	}
 }
 
+// validateMetadata checks that metadata keys are unique; parent names the
+// owning entity in the error message.
 func validateMetadata(metadata []*Metadata, parent string) error {
 	metadataKeys := make(map[string]struct{})
 	for _, m := range metadata {
@@ -537,10 +551,14 @@ func validateMetadata(metadata []*Metadata, parent string) error {
 	return nil
 }
 
+// ListApplications returns all applications in the config. The slice is a
+// copy; the elements alias the config and must be treated as read-only.
 func (c *Config) ListApplications() []*Application {
 	return slices.Clone(c.Applications)
 }
 
+// ListNodes returns all nodes in the config. The slice is a copy; the
+// elements alias the config and must be treated as read-only.
 func (c *Config) ListNodes() []*Node {
 	return slices.Clone(c.Nodes)
 }
@@ -567,6 +585,9 @@ func findShard(application *Application, shardId string) (*Shard, error) {
 	return nil, errShardNotFound
 }
 
+// CreateNode appends a new node to the config. It fails if a node with the
+// same id already exists; other invariants (non-empty, unique gRPC address)
+// are checked by Validate.
 func (c *Config) CreateNode(id string, grpcAddress string) (*Node, error) {
 	for _, n := range c.Nodes {
 		if n.Id == id {
@@ -584,6 +605,7 @@ func (c *Config) CreateNode(id string, grpcAddress string) (*Node, error) {
 	return node, nil
 }
 
+// GetNode returns the node with the given id, or an error if there is none.
 func (c *Config) GetNode(nodeId string) (*Node, error) {
 	var node *Node
 	found := false
@@ -601,6 +623,10 @@ func (c *Config) GetNode(nodeId string) (*Node, error) {
 	return node, nil
 }
 
+// ListShards returns all shards of an application, in every state (including
+// inactive parents and activating children — filter with Shard.IsRoutable for
+// the serving set), sorted by lower bound. The slice is a copy; the elements
+// alias the config and must be treated as read-only.
 func (c *Config) ListShards(applicationName string) ([]*Shard, error) {
 	application, err := c.getApplication(applicationName)
 	if err != nil {
@@ -620,6 +646,9 @@ func (c *Config) ListShards(applicationName string) ([]*Shard, error) {
 	return sortedShards, nil
 }
 
+// CreateApplication appends a new application (with no shards yet) to the
+// config. It fails if an application with the same name already exists.
+// implementation names the registered application core that backs it.
 func (c *Config) CreateApplication(applicationName string, implementation string, replicationFactor int32) (*Application, error) {
 	for _, a := range c.Applications {
 		if a.Name == applicationName {
@@ -649,8 +678,21 @@ func (c *Config) CreateShard(applicationName string, lowerBound []byte, upperBou
 		application.Shards = make([]*Shard, 0)
 	}
 
+	if len(lowerBound) != 4 || len(upperBound) != 4 {
+		return nil, fmt.Errorf("invalid bounds for shard in application %s: bounds must be 4 bytes", applicationName)
+	}
+	if bytes.Compare(lowerBound, upperBound) >= 0 {
+		return nil, fmt.Errorf("invalid bounds for shard in application %s: lower bound must be less than upper bound", applicationName)
+	}
+
 	sl, su := ShortenBounds(lowerBound, upperBound)
 	id := fmt.Sprintf("%s_%x_%x", applicationName, sl, su)
+
+	// Shard ids are globally unique. The id is derived from the bounds, so this
+	// also rejects a duplicate-bounds shard in the same application.
+	if _, err := c.GetShard(id); err == nil {
+		return nil, fmt.Errorf("shard %s already exists", id)
+	}
 
 	shard := &Shard{
 		Id:         id,
@@ -665,6 +707,8 @@ func (c *Config) CreateShard(applicationName string, lowerBound []byte, upperBou
 	return shard, nil
 }
 
+// CreateReplica appends a replica with a freshly generated, globally unique id
+// to a shard, assigned to the given node. See AddReplica for caller-provided ids.
 func (c *Config) CreateReplica(applicationName string, shardId string, nodeId string) (*Replica, error) {
 	application, err := c.getApplication(applicationName)
 	if err != nil {
@@ -673,6 +717,10 @@ func (c *Config) CreateReplica(applicationName string, shardId string, nodeId st
 
 	shard, err := findShard(application, shardId)
 	if err != nil {
+		return nil, err
+	}
+
+	if _, err := c.GetNode(nodeId); err != nil {
 		return nil, err
 	}
 
@@ -714,6 +762,10 @@ func (c *Config) AddReplica(applicationName string, shardId string, replicaId st
 		return nil, err
 	}
 
+	if _, err := c.GetNode(nodeId); err != nil {
+		return nil, err
+	}
+
 	// Replica ids must be globally unique across the whole config.
 	if _, err := c.GetReplica(replicaId); err == nil {
 		return nil, errReplicaAlreadyExists
@@ -744,54 +796,13 @@ func (c *Config) Hash() (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// FindShardByShardKey returns the active or splitting shard whose
-// [LowerBound, UpperBound] range contains shardKey. Inactive and activating
-// shards (e.g. children of a splitting shard) may overlap that range and are
-// never returned. It assumes the application's shards are sorted by lower bound and
-// that the active and splitting shards form a contiguous, non-overlapping
-// partition of the 4-byte keyspace (validated, and sorted by the Load*
-// functions), and finds the shard with a binary search over the shard lower
-// bounds.
-//
-// shardKey is compared byte-wise, so a key shorter than 4 bytes is treated as a
-// prefix (padded conceptually with 0x00). A key longer than the 4-byte keyspace
-// is rejected.
-func (c *Config) FindShardByShardKey(applicationName string, shardKey []byte) (*Shard, error) {
-	if len(shardKey) == 0 || len(shardKey) > 4 {
-		return nil, fmt.Errorf("invalid shard key length %d: must be between 1 and 4 bytes", len(shardKey))
-	}
+// Key-based routing (resolving a shard key to its owning shard) lives on the
+// Router type in the monstera package, not on Config: routing must not depend on
+// the ordering of Config.Shards (a config applied over RPC is not normalized by
+// the Load* functions), so the Router builds its own sorted index.
 
-	application, err := c.getApplication(applicationName)
-	if err != nil {
-		return nil, err
-	}
-
-	shards := application.Shards
-
-	// shards are sorted by LowerBound (an invariant established by Validate).
-	// Find the first shard whose LowerBound is strictly greater than shardKey,
-	// then walk backwards from the shard immediately before it, skipping
-	// non-routable shards: the first routable shard found is the one with the
-	// greatest routable LowerBound <= shardKey, i.e. the only routable
-	// candidate that can contain shardKey.
-	i := sort.Search(len(shards), func(i int) bool {
-		return bytes.Compare(shards[i].LowerBound, shardKey) > 0
-	})
-	for j := i - 1; j >= 0; j-- {
-		candidate := shards[j]
-		if !candidate.IsRoutable() {
-			continue
-		}
-		if bytes.Compare(shardKey, candidate.UpperBound) <= 0 {
-			return candidate, nil
-		}
-		// Routable shards do not overlap, so no earlier one can contain shardKey.
-		break
-	}
-
-	return nil, errShardNotFound
-}
-
+// GetShard returns the shard with the given id, searching every application,
+// or an error if there is none.
 func (c *Config) GetShard(shardId string) (*Shard, error) {
 	for _, a := range c.Applications {
 		if s, err := findShard(a, shardId); err == nil {
@@ -802,6 +813,8 @@ func (c *Config) GetShard(shardId string) (*Shard, error) {
 	return nil, errShardNotFound
 }
 
+// GetReplica returns the replica with the given id, searching every shard of
+// every application, or an error if there is none.
 func (c *Config) GetReplica(replicaId string) (*Replica, error) {
 	for _, a := range c.Applications {
 		for _, s := range a.Shards {
@@ -816,6 +829,9 @@ func (c *Config) GetReplica(replicaId string) (*Replica, error) {
 	return nil, errReplicaNotFound
 }
 
+// IncrementVersion bumps the config version by one. Call it after a batch of
+// mutations: ValidateTransition requires every applied config to have a
+// strictly greater version than its predecessor.
 func (c *Config) IncrementVersion() {
 	c.Version++
 }
@@ -1071,6 +1087,8 @@ type shardJsonProxy struct {
 	Metadata   []*Metadata `json:"metadata,omitempty"`
 }
 
+// MarshalJSON implements json.Marshaler using the human-readable form (hex
+// bounds shortened via ShortenBounds, lowercase state names).
 func (s *Shard) MarshalJSON() ([]byte, error) {
 	sl, su := ShortenBounds(s.LowerBound, s.UpperBound)
 
@@ -1099,6 +1117,9 @@ func (s *Shard) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// UnmarshalJSON implements json.Unmarshaler for the human-readable form
+// produced by MarshalJSON. Shortened hex bounds are re-padded: lower bounds
+// with 0x00, upper bounds with 0xff.
 func (s *Shard) UnmarshalJSON(data []byte) error {
 	var p shardJsonProxy
 

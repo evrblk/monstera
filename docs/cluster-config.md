@@ -67,7 +67,7 @@ Here is a snippet of a `cluster_config.json` file:
             }
           ]
         },
-        #...
+        //...
       ],
       "replication_factor": 3
     }
@@ -114,7 +114,7 @@ old version of the config on some nodes in the cluster and a new version on othe
 In order to make it safe, a rollout must follow two simple rules:
 
 * There must be at most 2 versions of the config among all nodes of the cluster.
-* Thete must be no breaking changes between those 2 versions.
+* There must be no breaking changes between those 2 versions.
 
 Since the rollout is a controlled process of pushing a config to all nodes, it easy to resume it from any point and make
 sure all nodes have the latest version. Do not proceed to another rollout if the previous one has not finished.

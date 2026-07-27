@@ -105,11 +105,13 @@ func (a *MyCoreCoreAdapter) Update(rpcReqBytes []byte) (*monstera.UpdateResponse
 			return nil, err
 		}
 		rpcResp.Error = methodResp.ApplicationError
-		methodRespBytes, err := methodResp.Payload.MarshalBinary()
-		if err != nil {
-			return nil, err
+		if methodResp.Payload != nil {
+			methodRespBytes, err := methodResp.Payload.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			rpcResp.Data = methodRespBytes
 		}
-		rpcResp.Data = methodRespBytes
 	case 2:
 		rpcMethodsTotal.WithLabelValues(a.nodeId, "MyCore", "Update2", a.shardId, a.replicaId).Inc()
 		defer measureSince(rpcMethodDuration.WithLabelValues(a.nodeId, "MyCore", "Update2", a.shardId, a.replicaId), t1)
@@ -127,11 +129,13 @@ func (a *MyCoreCoreAdapter) Update(rpcReqBytes []byte) (*monstera.UpdateResponse
 			return nil, err
 		}
 		rpcResp.Error = methodResp.ApplicationError
-		methodRespBytes, err := methodResp.Payload.MarshalBinary()
-		if err != nil {
-			return nil, err
+		if methodResp.Payload != nil {
+			methodRespBytes, err := methodResp.Payload.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			rpcResp.Data = methodRespBytes
 		}
-		rpcResp.Data = methodRespBytes
 	default:
 		return nil, fmt.Errorf("no matching handlers")
 	}
@@ -178,11 +182,13 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 			return nil, err
 		}
 		rpcResp.Error = methodResp.ApplicationError
-		methodRespBytes, err := methodResp.Payload.MarshalBinary()
-		if err != nil {
-			return nil, err
+		if methodResp.Payload != nil {
+			methodRespBytes, err := methodResp.Payload.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			rpcResp.Data = methodRespBytes
 		}
-		rpcResp.Data = methodRespBytes
 	case 2:
 		rpcMethodsTotal.WithLabelValues(a.nodeId, "MyCore", "Read2", a.shardId, a.replicaId).Inc()
 		defer measureSince(rpcMethodDuration.WithLabelValues(a.nodeId, "MyCore", "Read2", a.shardId, a.replicaId), t1)
@@ -200,11 +206,13 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 			return nil, err
 		}
 		rpcResp.Error = methodResp.ApplicationError
-		methodRespBytes, err := methodResp.Payload.MarshalBinary()
-		if err != nil {
-			return nil, err
+		if methodResp.Payload != nil {
+			methodRespBytes, err := methodResp.Payload.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			rpcResp.Data = methodRespBytes
 		}
-		rpcResp.Data = methodRespBytes
 	case 3:
 		rpcMethodsTotal.WithLabelValues(a.nodeId, "MyCore", "Read3", a.shardId, a.replicaId).Inc()
 		defer measureSince(rpcMethodDuration.WithLabelValues(a.nodeId, "MyCore", "Read3", a.shardId, a.replicaId), t1)
@@ -225,11 +233,13 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 			return nil, err
 		}
 		rpcResp.Error = methodResp.ApplicationError
-		methodRespBytes, err := methodResp.Payload.MarshalBinary()
-		if err != nil {
-			return nil, err
+		if methodResp.Payload != nil {
+			methodRespBytes, err := methodResp.Payload.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			rpcResp.Data = methodRespBytes
 		}
-		rpcResp.Data = methodRespBytes
 	default:
 		return nil, fmt.Errorf("no matching handlers")
 	}

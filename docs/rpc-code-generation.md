@@ -88,7 +88,10 @@ stubs:
 ```
 
 Each method has a `method_number`. Like protobuf field numbers, method numbers identify a method on the wire and must 
-be unique within a core and never change. `sharded: true` means the request is routed to a single shard by its shard key 
+never change. Numbers must be explicit (`>= 1`) and unique among methods of the same kind (read/update) within a core; 
+method names must be unique across all cores of the manifest, because each becomes a package-level `*Request`/`*Response` 
+type alias. Both rules (and the overall manifest shape, including unknown keys from typos) are validated by 
+`monstera code generate` before any file is written. `sharded: true` means the request is routed to a single shard by its shard key 
 (see below); `sharded: false` is for cluster-wide or fan-out operations that target a shard by id explicitly. Read 
 methods can also set `allow_read_from_followers: true` to allow serving them from follower replicas when slightly stale 
 data is acceptable.
@@ -128,8 +131,8 @@ Currently, Monstera codegen relies on several conventions in order to make it wo
 * Every `*Request` of a sharded method must implement `ShardKey() []byte`. There are no annotations or reflection — you
   specify explicitly how to extract a shard key from each request, usually with one line of Go code.
 
-Packages `output_package` and `core_types_package` should be different, otherwise it will cause name collision for 
-`*Request`/`*Response` types.
+Packages `output_package` and `core_types_package` must be different, otherwise the generated 
+`*Request`/`*Response` type aliases would collide with the payload types (validated by `monstera code generate`).
 
 You define one `*Request`/`*Response` pair per method. This is conceptually similar to a gRPC service declaration. 
 The envelope exchanged over the Monstera client is the framework's own `rpc.Request` (carrying a `method_number`, 

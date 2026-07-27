@@ -51,7 +51,7 @@ performance of its application core. That also means that a setup for performanc
 can be benchmarked in the traditional Go style. Different states or different amounts of data can be easily prepared for
 a test in the same way that was described above.
 
-Aim for a few nanoseconds for in-memory application cores, and for sub-millisecond for disk-backed cores. 
+Aim for a few microseconds for in-memory application cores, and for a millisecond for disk-backed cores. 
 
 ## Load testing
 

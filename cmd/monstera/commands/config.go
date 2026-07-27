@@ -102,9 +102,21 @@ var addApplicationCmd = &cobra.Command{
 	Use:   "add-application",
 	Short: "Adds application to the cluster config",
 	Run: func(cmd *cobra.Command, args []string) {
+		// Shards must evenly partition the 4-byte keyspace, so the count has
+		// to be a power of 2; anything else would only fail much later in
+		// Validate() with an error that doesn't mention the flag.
+		shardsCount := addApplicationCmdCfg.shardsCount
+		if shardsCount < 1 || shardsCount&(shardsCount-1) != 0 {
+			log.Fatalf("--shards-count must be a power of 2, got %d", shardsCount)
+		}
+
 		config, err := cluster.LoadConfigFromFile(addApplicationCmdCfg.inputConfigPath)
 		if err != nil {
 			log.Fatal(err)
+		}
+
+		if addApplicationCmdCfg.replicationFactor < 1 || addApplicationCmdCfg.replicationFactor > len(config.Nodes) {
+			log.Fatalf("--replication-factor must be between 1 and the number of nodes in the config (%d), got %d", len(config.Nodes), addApplicationCmdCfg.replicationFactor)
 		}
 
 		_, err = config.CreateApplication(addApplicationCmdCfg.applicationName, addApplicationCmdCfg.implementation, int32(addApplicationCmdCfg.replicationFactor))

@@ -1,9 +1,6 @@
 package cluster
 
 import (
-	"encoding/binary"
-	"fmt"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
@@ -67,161 +64,6 @@ func TestConfig_Builder(t *testing.T) {
 
 	err = clusterConfig.Validate()
 	require.NoError(t, err)
-}
-
-func TestConfig_FindShard(t *testing.T) {
-	applications := []*Application{
-		{
-			Name:              "test.app_01",
-			Implementation:    "test.app",
-			ReplicationFactor: 3,
-			Shards: []*Shard{
-				{
-					Id:         "shrd_01",
-					LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
-					UpperBound: []byte{0x3f, 0xff, 0xff, 0xff},
-					State:      ShardState_SHARD_STATE_ACTIVE,
-					Replicas: []*Replica{
-						{Id: "rplc_01", NodeId: "node_1"},
-						{Id: "rplc_02", NodeId: "node_2"},
-						{Id: "rplc_03", NodeId: "node_3"},
-					},
-				},
-				{
-					Id:         "shrd_05",
-					LowerBound: []byte{0x40, 0x00, 0x00, 0x00},
-					UpperBound: []byte{0x4f, 0xff, 0xff, 0xff},
-					State:      ShardState_SHARD_STATE_ACTIVE,
-					Replicas: []*Replica{
-						{Id: "rplc_13", NodeId: "node_1"},
-						{Id: "rplc_14", NodeId: "node_2"},
-						{Id: "rplc_15", NodeId: "node_3"},
-					},
-				},
-				{
-					Id:         "shrd_06",
-					LowerBound: []byte{0x50, 0x00, 0x00, 0x00},
-					UpperBound: []byte{0x5f, 0xff, 0xff, 0xff},
-					State:      ShardState_SHARD_STATE_ACTIVE,
-					Replicas: []*Replica{
-						{Id: "rplc_16", NodeId: "node_1"},
-						{Id: "rplc_17", NodeId: "node_2"},
-						{Id: "rplc_18", NodeId: "node_3"},
-					},
-				},
-				{
-					Id:         "shrd_07",
-					LowerBound: []byte{0x60, 0x00, 0x00, 0x00},
-					UpperBound: []byte{0x6f, 0xff, 0xff, 0xff},
-					State:      ShardState_SHARD_STATE_ACTIVE,
-					Replicas: []*Replica{
-						{Id: "rplc_19", NodeId: "node_1"},
-						{Id: "rplc_20", NodeId: "node_2"},
-						{Id: "rplc_21", NodeId: "node_3"},
-					},
-				},
-				{
-					Id:         "shrd_08",
-					LowerBound: []byte{0x70, 0x00, 0x00, 0x00},
-					UpperBound: []byte{0x74, 0xff, 0xff, 0xff},
-					State:      ShardState_SHARD_STATE_ACTIVE,
-					Replicas: []*Replica{
-						{Id: "rplc_22", NodeId: "node_1"},
-						{Id: "rplc_23", NodeId: "node_2"},
-						{Id: "rplc_24", NodeId: "node_3"},
-					},
-				},
-				{
-					Id:         "shrd_09",
-					LowerBound: []byte{0x75, 0x00, 0x00, 0x00},
-					UpperBound: []byte{0x75, 0x7f, 0xff, 0xff},
-					State:      ShardState_SHARD_STATE_ACTIVE,
-					Replicas: []*Replica{
-						{Id: "rplc_25", NodeId: "node_1"},
-						{Id: "rplc_26", NodeId: "node_2"},
-						{Id: "rplc_27", NodeId: "node_3"},
-					},
-				},
-				{
-					Id:         "shrd_10",
-					LowerBound: []byte{0x75, 0x80, 0x00, 0x00},
-					UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
-					State:      ShardState_SHARD_STATE_ACTIVE,
-					Replicas: []*Replica{
-						{Id: "rplc_28", NodeId: "node_1"},
-						{Id: "rplc_29", NodeId: "node_2"},
-						{Id: "rplc_30", NodeId: "node_3"},
-					},
-				},
-				{
-					Id:         "shrd_03",
-					LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
-					UpperBound: []byte{0xbf, 0xff, 0xff, 0xff},
-					State:      ShardState_SHARD_STATE_ACTIVE,
-					Replicas: []*Replica{
-						{Id: "rplc_07", NodeId: "node_1"},
-						{Id: "rplc_08", NodeId: "node_2"},
-						{Id: "rplc_09", NodeId: "node_3"},
-					},
-				},
-				{
-					Id:         "shrd_04",
-					LowerBound: []byte{0xc0, 0x00, 0x00, 0x00},
-					UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
-					State:      ShardState_SHARD_STATE_ACTIVE,
-					Replicas: []*Replica{
-						{Id: "rplc_10", NodeId: "node_1"},
-						{Id: "rplc_11", NodeId: "node_2"},
-						{Id: "rplc_12", NodeId: "node_3"},
-					},
-				},
-			},
-		},
-	}
-
-	nodes := []*Node{
-		{Id: "node_1", GrpcAddress: "localhost:9001"},
-		{Id: "node_2", GrpcAddress: "localhost:9002"},
-		{Id: "node_3", GrpcAddress: "localhost:9003"},
-	}
-
-	clusterConfig, err := LoadConfig(applications, nodes, nil, 1)
-	require.NoError(t, err)
-
-	p, err := clusterConfig.FindShardByShardKey("test.app_01", []byte{0x14, 0x90, 0x2f, 0x1e})
-	require.NoError(t, err)
-	require.Equal(t, "shrd_01", p.Id)
-
-	p, err = clusterConfig.FindShardByShardKey("test.app_01", []byte{0x00, 0x90})
-	require.NoError(t, err)
-	require.Equal(t, "shrd_01", p.Id)
-
-	_, err = clusterConfig.FindShardByShardKey("test.app_02", []byte{0x14, 0x90, 0x2f, 0x1e})
-	require.Error(t, err)
-
-	p, err = clusterConfig.FindShardByShardKey("test.app_01", []byte{0x80, 0x90, 0x2f, 0x1e})
-	require.NoError(t, err)
-	require.Equal(t, "shrd_03", p.Id)
-
-	p, err = clusterConfig.FindShardByShardKey("test.app_01", []byte{0xff, 0x90, 0x2f, 0x1e})
-	require.NoError(t, err)
-	require.Equal(t, "shrd_04", p.Id)
-
-	p, err = clusterConfig.FindShardByShardKey("test.app_01", []byte{0xff, 0xff, 0xff, 0xff})
-	require.NoError(t, err)
-	require.Equal(t, "shrd_04", p.Id)
-
-	p, err = clusterConfig.FindShardByShardKey("test.app_01", []byte{0x45, 0x90, 0xff, 0xff})
-	require.NoError(t, err)
-	require.Equal(t, "shrd_05", p.Id)
-
-	p, err = clusterConfig.FindShardByShardKey("test.app_01", []byte{0x75, 0x40, 0xff, 0xff})
-	require.NoError(t, err)
-	require.Equal(t, "shrd_09", p.Id)
-
-	p, err = clusterConfig.FindShardByShardKey("test.app_01", []byte{0x75, 0x80, 0xff, 0xff})
-	require.NoError(t, err)
-	require.Equal(t, "shrd_10", p.Id)
 }
 
 func TestConfig_Validate(t *testing.T) {
@@ -1523,56 +1365,6 @@ func TestConfig_Validate_ShardStates(t *testing.T) {
 	})
 }
 
-func TestConfig_FindShardByShardKey_SkipsNonRoutableShards(t *testing.T) {
-	// shrd_01 is splitting into activating shrd_03 and shrd_04; keys in its
-	// range must still resolve to shrd_01, never to the children.
-	cfg := stateTestConfig(
-		stateTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_SPLITTING, ""),
-		stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
-		stateTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
-		stateTestShard("shrd_04", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
-	)
-	require.NoError(t, cfg.Validate())
-	cfg.sortShards()
-
-	for _, key := range [][]byte{
-		{0x00, 0x00, 0x00, 0x00}, // lower bound shared by shrd_01 and shrd_03
-		{0x14, 0x90, 0x2f, 0x1e}, // inside shrd_03's range
-		{0x40, 0x00, 0x00, 0x00}, // lower bound of shrd_04
-		{0x7f, 0xff, 0xff, 0xff}, // upper bound shared by shrd_01 and shrd_04
-	} {
-		s, err := cfg.FindShardByShardKey("app", key)
-		require.NoError(t, err)
-		require.Equal(t, "shrd_01", s.Id, "key %x", key)
-	}
-
-	// Keys outside the splitting range resolve to the active shard.
-	s, err := cfg.FindShardByShardKey("app", []byte{0x80, 0x00, 0x00, 0x00})
-	require.NoError(t, err)
-	require.Equal(t, "shrd_02", s.Id)
-	s, err = cfg.FindShardByShardKey("app", []byte{0xff, 0xff, 0xff, 0xff})
-	require.NoError(t, err)
-	require.Equal(t, "shrd_02", s.Id)
-
-	// After a completed split the inactive parent is skipped and keys resolve
-	// to its active children.
-	cfg = stateTestConfig(
-		stateTestShard("shrd_p", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_INACTIVE, ""),
-		stateTestShard("shrd_c1", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, "shrd_p"),
-		stateTestShard("shrd_c2", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, "shrd_p"),
-		stateTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
-	)
-	require.NoError(t, cfg.Validate())
-	cfg.sortShards()
-
-	s, err = cfg.FindShardByShardKey("app", []byte{0x00, 0x00, 0x00, 0x00})
-	require.NoError(t, err)
-	require.Equal(t, "shrd_c1", s.Id)
-	s, err = cfg.FindShardByShardKey("app", []byte{0x7f, 0xff, 0xff, 0xff})
-	require.NoError(t, err)
-	require.Equal(t, "shrd_c2", s.Id)
-}
-
 func TestConfig_ShardStateMarshaling(t *testing.T) {
 	// A config with all four states: shrd_i was split into shrd_s and shrd_a;
 	// shrd_s is now splitting again into activating shrd_v1 and shrd_v2.
@@ -2114,23 +1906,6 @@ func TestConfig_MetadataRoundTrip(t *testing.T) {
 	})
 }
 
-func TestConfig_FindShardByShardKey_InvalidKeyLength(t *testing.T) {
-	c := newValidConfig(t)
-
-	_, err := c.FindShardByShardKey("Core", nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid shard key length")
-
-	_, err = c.FindShardByShardKey("Core", []byte{0x00, 0x00, 0x00, 0x00, 0x00})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid shard key length")
-
-	// A shorter-than-4-byte key is still accepted and resolves.
-	s, err := c.FindShardByShardKey("Core", []byte{0x00, 0x90})
-	require.NoError(t, err)
-	require.NotNil(t, s)
-}
-
 func TestShard_UnmarshalJSON_RejectsOverlongBounds(t *testing.T) {
 	// A bounds string longer than 8 hex chars would overflow the fixed 4-byte
 	// destination in hex.Decode; it must be rejected rather than panic.
@@ -2221,6 +1996,67 @@ func newValidConfig(t *testing.T) *Config {
 	return c
 }
 
+func TestConfig_Validate_RejectsSelfParentShard(t *testing.T) {
+	// An inactive shard that is its own parent would otherwise satisfy both
+	// "parent exists" and "inactive shard has children" (itself), corrupting the
+	// split lineage. Validate must reject it.
+	cfg := stateTestConfig(
+		// An active shard covers the whole keyspace so the coverage check passes;
+		// the inactive self-parent shard overlaps it (inactive shards may overlap).
+		stateTestShard("shrd_full", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_ACTIVE, ""),
+		stateTestShard("shrd_self", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, ShardState_SHARD_STATE_INACTIVE, "shrd_self"),
+	)
+	err := cfg.Validate()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "its own parent")
+}
+
+func TestConfig_CreateShard_ValidatesBoundsAndDuplicates(t *testing.T) {
+	c := CreateEmptyConfig()
+	_, err := c.CreateApplication("Core", "Core", 3)
+	require.NoError(t, err)
+
+	// Non-4-byte bounds are rejected.
+	_, err = c.CreateShard("Core", []byte{0x00}, []byte{0xff, 0xff, 0xff, 0xff}, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "4 bytes")
+
+	// lower >= upper is rejected.
+	_, err = c.CreateShard("Core", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0x80, 0x00, 0x00, 0x00}, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "lower bound must be less than upper bound")
+
+	// A first valid shard succeeds.
+	s, err := c.CreateShard("Core", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, "")
+	require.NoError(t, err)
+
+	// Re-creating a shard with the same bounds (hence the same derived id) is
+	// rejected as a duplicate.
+	_, err = c.CreateShard("Core", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "already exists")
+	require.Equal(t, "Core__", s.Id)
+}
+
+func TestConfig_CreateReplica_RequiresExistingNode(t *testing.T) {
+	c := CreateEmptyConfig()
+	_, err := c.CreateNode("node_1", "localhost:9001")
+	require.NoError(t, err)
+	_, err = c.CreateApplication("Core", "Core", 3)
+	require.NoError(t, err)
+	s, err := c.CreateShard("Core", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, "")
+	require.NoError(t, err)
+
+	_, err = c.CreateReplica("Core", s.Id, "ghost_node")
+	require.ErrorIs(t, err, errNodeNotFound)
+
+	_, err = c.AddReplica("Core", s.Id, "rpl_1", "ghost_node")
+	require.ErrorIs(t, err, errNodeNotFound)
+
+	_, err = c.CreateReplica("Core", s.Id, "node_1")
+	require.NoError(t, err)
+}
+
 // cloneConfig creates a deep copy of a ClusterConfig for test mutation
 func cloneConfig(cfg *Config) *Config {
 	newCfg := proto.Clone(cfg).(*Config)
@@ -2259,90 +2095,6 @@ func cloneConfig(cfg *Config) *Config {
 	}
 	newCfg.Version = cfg.Version + 1
 	return newCfg
-}
-
-func BenchmarkClusterConfigFindShard(b *testing.B) {
-	const (
-		numNodes       = 1000
-		numApps        = 50
-		shardsPerApp   = 1024
-		replication    = 3
-		keyspacePerApp = 1 << 32 // 4 bytes
-	)
-
-	nodes := make([]*Node, numNodes)
-	for i := range numNodes {
-		nodes[i] = &Node{
-			Id:          fmt.Sprintf("node_%04d", i),
-			GrpcAddress: fmt.Sprintf("localhost:%d", 9000+i),
-		}
-	}
-
-	applications := make([]*Application, numApps)
-	for appIdx := range numApps {
-		appName := fmt.Sprintf("app_%02d", appIdx)
-		shards := make([]*Shard, shardsPerApp)
-		shardSize := keyspacePerApp / shardsPerApp
-		for shardIdx := range shardsPerApp {
-			lower := uint32(shardIdx * shardSize)
-			upper := uint32((shardIdx+1)*shardSize - 1)
-			lowerBound := make([]byte, 4)
-			upperBound := make([]byte, 4)
-			binary.BigEndian.PutUint32(lowerBound, lower)
-			binary.BigEndian.PutUint32(upperBound, upper)
-			// Assign replicas to 3 different nodes in round-robin
-			replicas := make([]*Replica, replication)
-			for r := range replication {
-				nodeIdx := (shardIdx*replication + r) % numNodes
-				replicas[r] = &Replica{
-					Id:     fmt.Sprintf("rpl_%02d_%04d_%d", appIdx, shardIdx, r),
-					NodeId: nodes[nodeIdx].Id,
-				}
-			}
-			shards[shardIdx] = &Shard{
-				Id:         fmt.Sprintf("shrd_%02d_%04d", appIdx, shardIdx),
-				LowerBound: lowerBound,
-				UpperBound: upperBound,
-				State:      ShardState_SHARD_STATE_ACTIVE,
-				Replicas:   replicas,
-			}
-		}
-		applications[appIdx] = &Application{
-			Name:              appName,
-			Implementation:    "impl",
-			ReplicationFactor: replication,
-			Shards:            shards,
-		}
-	}
-
-	clusterConfig, err := LoadConfig(applications, nodes, nil, 1)
-	if err != nil {
-		b.Fatalf("failed to create config: %v", err)
-	}
-
-	rng := rand.New(rand.NewSource(42))
-	lookupKeys := make([]struct {
-		appIdx int
-		key    []byte
-	}, b.N)
-	for i := 0; i < b.N; i++ {
-		appIdx := rng.Intn(numApps)
-		key := make([]byte, 4)
-		binary.BigEndian.PutUint32(key, rng.Uint32())
-		lookupKeys[i] = struct {
-			appIdx int
-			key    []byte
-		}{appIdx, key}
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		app := applications[lookupKeys[i].appIdx]
-		_, err := clusterConfig.FindShardByShardKey(app.Name, lookupKeys[i].key)
-		if err != nil {
-			b.Fatalf("FindShard failed: %v", err)
-		}
-	}
 }
 
 func TestConfig_WriteConfigToFile_Atomic(t *testing.T) {

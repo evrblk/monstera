@@ -2,38 +2,67 @@ package codegen
 
 import (
 	"fmt"
-	"log"
 
 	. "github.com/dave/jennifer/jen" //lint:ignore ST1001 jen helpers are so much nicer to use with dot-importing
 )
 
-func GenerateStubs(cfg *MonsteraYaml) string {
+func GenerateStubs(cfg *MonsteraYaml) (string, error) {
 	f := NewFilePath(cfg.GoCode.OutputPackage)
 	f.HeaderComment(generatedCodeComment)
 	f.ImportAlias(mrpcPkg, "mrpc")
 
-	for _, stub := range cfg.Stubs {
-		cores := make([]*MonsteraCore, len(stub.Cores))
-		for i, coreName := range stub.Cores {
-			found := false
-			for _, core := range cfg.Cores {
-				if core.Name == coreName {
-					cores[i] = core
-					found = true
-					break
-				}
-			}
+	if len(cfg.Stubs) > 0 {
+		generateNilifyIfEmpty(f)
+	}
 
-			if !found {
-				log.Fatalf("core %s not found", coreName)
-			}
+	// Nonclustered core adapter types are keyed by core name, so when several
+	// stubs share a core the type is emitted only once.
+	emittedAdapters := make(map[string]bool)
+
+	for _, stub := range cfg.Stubs {
+		cores, err := resolveStubCores(cfg, stub)
+		if err != nil {
+			return "", err
 		}
 
 		generateMonsteraStub(f, stub, cores, cfg)
-		generateNonclusteredStub(f, stub, cores, cfg)
+		generateNonclusteredStub(f, stub, cores, cfg, emittedAdapters)
 	}
 
-	return fmt.Sprintf("%#v", f)
+	return fmt.Sprintf("%#v", f), nil
+}
+
+// generateShardKeyLengthCheck emits the same shard-key contract check the
+// clustered path enforces (cluster.Config.FindShardByShardKey), so an invalid
+// key fails identically in nonclustered (dev) and clustered mode instead of
+// only on deploy.
+func generateShardKeyLengthCheck(g *Group) {
+	g.If(Len(Id("shardKey")).Op("==").Lit(0).Op("||").Len(Id("shardKey")).Op(">").Lit(4)).Block(
+		Return(Nil(), Qual("fmt", "Errorf").Call(
+			Lit("invalid shard key length %d: must be between 1 and 4 bytes"),
+			Len(Id("shardKey")),
+		)),
+	)
+}
+
+// generateNilifyIfEmpty emits the shared helper that converts an empty/OK
+// rpc.Error into a nil error. It is package-level and must be emitted exactly
+// once per file, regardless of how many stubs share it.
+func generateNilifyIfEmpty(f *File) {
+	f.Func().Id("nilifyIfEmpty").Params(
+		Err().Op("*").Qual(mrpcPkg, "Error"),
+	).Params(
+		Error(),
+	).Block(
+		If(
+			Err().Op("==").Nil().Op("||").Id("err.Code").Op("==").Qual(mrpcPkg, "ErrorCode_INVALID").Op("||").Id("err.Code").Op("==").Qual(mrpcPkg, "ErrorCode_OK"),
+		).Block(
+			Return(Nil()),
+		).Else().Block(
+			Return(Err()),
+		),
+	)
+	f.Line()
 }
 
 func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cfg *MonsteraYaml) {
@@ -267,29 +296,20 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 			)),
 	)
 	f.Line()
-
-	f.Func().Id("nilifyIfEmpty").Params(
-		Err().Op("*").Qual(mrpcPkg, "Error"),
-	).Params(
-		Error(),
-	).Block(
-		If(
-			Err().Op("==").Nil().Op("||").Id("err.Code").Op("==").Qual(mrpcPkg, "ErrorCode_INVALID").Op("||").Id("err.Code").Op("==").Qual(mrpcPkg, "ErrorCode_OK"),
-		).Block(
-			Return(Nil()),
-		).Else().Block(
-			Return(Err()),
-		),
-	)
 }
 
-func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cfg *MonsteraYaml) {
+func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cfg *MonsteraYaml, emittedAdapters map[string]bool) {
 	adapterTypeName := func(coreName string) string {
 		return firstCharToLower(coreName) + "CoreNonclusteredAdapter"
 	}
 
-	// core adapters for internal shards
+	// Core adapters for internal shards. Keyed by core name, shared between
+	// stubs: emit each one only once per file.
 	for _, core := range cores {
+		if emittedAdapters[core.Name] {
+			continue
+		}
+		emittedAdapters[core.Name] = true
 		f.Type().Id(adapterTypeName(core.Name)).StructFunc(func(g *Group) {
 			g.Id("core").Qual(cfg.GoCode.OutputPackage, core.Name+"CoreApi")
 			g.Id("mu").Qual("sync", "RWMutex")
@@ -338,6 +358,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 			).BlockFunc(func(g *Group) {
 				if read.Sharded {
 					g.Id("shardKey").Op(":=").Id("req").Dot("ShardKey").Call()
+					generateShardKeyLengthCheck(g)
 					g.For(List(Id("_"), Id("adapter")).Op(":=").Range().Id("s").Dot(firstCharToLower(core.Name) + "Cores")).Block(
 						If(Qual("bytes", "Compare").Call(Id("shardKey"), Id("adapter").Dot("upperBound")).Op("<=").Lit(0).Op("&&").
 							Qual("bytes", "Compare").Call(Id("shardKey"), Id("adapter").Dot("lowerBound")).Op(">=").Lit(0)).Block(
@@ -362,7 +383,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 					)
 					g.Line()
 
-					g.Return(List(Nil(), Qual("fmt", "Errorf").Call(Lit("no shard found for shardKey: %s"), Id("shardKey"))))
+					g.Return(List(Nil(), Qual("fmt", "Errorf").Call(Lit("no shard found for shardKey: %x"), Id("shardKey"))))
 				} else {
 					g.For(List(Id("_"), Id("adapter")).Op(":=").Range().Id("s").Dot(firstCharToLower(core.Name) + "Cores")).Block(
 						If(Id("adapter").Dot("id").Op("==").Id("shardId")).Block(
@@ -408,6 +429,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 			).BlockFunc(func(g *Group) {
 				if update.Sharded {
 					g.Id("shardKey").Op(":=").Id("req").Dot("ShardKey").Call()
+					generateShardKeyLengthCheck(g)
 					g.For(List(Id("_"), Id("adapter")).Op(":=").Range().Id("s").Dot(firstCharToLower(core.Name) + "Cores")).Block(
 						If(Qual("bytes", "Compare").Call(Id("shardKey"), Id("adapter").Dot("upperBound")).Op("<=").Lit(0).Op("&&").
 							Qual("bytes", "Compare").Call(Id("shardKey"), Id("adapter").Dot("lowerBound")).Op(">=").Lit(0)).Block(
@@ -432,7 +454,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 					)
 					g.Line()
 
-					g.Return(List(Nil(), Qual("fmt", "Errorf").Call(Lit("no shard found for shardKey: %s"), Id("shardKey"))))
+					g.Return(List(Nil(), Qual("fmt", "Errorf").Call(Lit("no shard found for shardKey: %x"), Id("shardKey"))))
 				} else {
 					g.For(List(Id("_"), Id("adapter")).Op(":=").Range().Id("s").Dot(firstCharToLower(core.Name) + "Cores")).Block(
 						If(Id("adapter").Dot("id").Op("==").Id("shardId")).Block(
@@ -496,23 +518,39 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 	).Params(
 		Op("*").Id(stubType),
 	).BlockFunc(func(g *Group) {
+		// Shards must evenly partition the 4-byte keyspace: a shardsPerApp
+		// that does not divide 2^32 would leave the top of the keyspace
+		// unroutable, and there is no cluster config Validate() in this mode
+		// to catch it.
+		g.If(
+			Id("shardsPerApp").Op("<").Lit(1).
+				Op("||").Int64().Call(Id("shardsPerApp")).Op(">").Int64().Call(Qual(clusterPkg, "KeyspacePerApplication")).
+				Op("||").Id("shardsPerApp").Op("&").Parens(Id("shardsPerApp").Op("-").Lit(1)).Op("!=").Lit(0),
+		).Block(
+			Panic(Qual("fmt", "Sprintf").Call(
+				Lit("shardsPerApp must be a power of 2 between 1 and 2^32, got %d"),
+				Id("shardsPerApp"),
+			)),
+		)
+		g.Line()
+
 		for _, core := range cores {
 			g.Id(firstCharToLower(core.Name)+"Cores").Op(":=").Make(Index().Op("*").Id(adapterTypeName(core.Name)), Id("shardsPerApp"))
 		}
 		g.Line()
 
-		g.Id("shardSize").Op(":=").Qual("github.com/evrblk/monstera/cluster", "KeyspacePerApplication").Op("/").Id("shardsPerApp")
+		g.Id("shardSize").Op(":=").Int64().Call(Qual(clusterPkg, "KeyspacePerApplication")).Op("/").Int64().Call(Id("shardsPerApp"))
 
 		g.For(Id("i").Op(":=").Lit(0), Id("i").Op("<").Id("shardsPerApp"), Id("i").Op("++")).BlockFunc(func(g *Group) {
-			g.Id("lower").Op(":=").Uint32().Call(Id("i").Op("*").Id("shardSize"))
-			g.Id("upper").Op(":=").Uint32().Call(Parens(Id("i").Op("+").Lit(1)).Op("*").Id("shardSize").Op("-").Lit(1))
+			g.Id("lower").Op(":=").Uint32().Call(Int64().Call(Id("i")).Op("*").Id("shardSize"))
+			g.Id("upper").Op(":=").Uint32().Call(Int64().Call(Id("i").Op("+").Lit(1)).Op("*").Id("shardSize").Op("-").Lit(1))
 			g.Id("lowerBound").Op(":=").Make(Index().Byte(), Lit(4))
 			g.Id("upperBound").Op(":=").Make(Index().Byte(), Lit(4))
 			g.Qual("encoding/binary", "BigEndian").Dot("PutUint32").Call(Id("lowerBound"), Id("lower"))
 			g.Qual("encoding/binary", "BigEndian").Dot("PutUint32").Call(Id("upperBound"), Id("upper"))
 			g.Line()
 
-			g.List(Id("sl"), Id("su")).Op(":=").Qual("github.com/evrblk/monstera/cluster", "ShortenBounds").Call(Id("lowerBound"), Id("upperBound"))
+			g.List(Id("sl"), Id("su")).Op(":=").Qual(clusterPkg, "ShortenBounds").Call(Id("lowerBound"), Id("upperBound"))
 			g.Line()
 
 			for _, core := range cores {

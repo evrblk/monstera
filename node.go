@@ -45,16 +45,20 @@ type Node struct {
 	nodeId          string
 	coreDescriptors ApplicationCoreDescriptors
 
-	// mu protects replicas and clusterConfig together. They are a matched pair:
-	// every replica in the map corresponds to a replica assigned to this node in
-	// clusterConfig (a replica may be inactive or still initializing, but it
-	// exists in the map). They change only on config reload. Readers hold RLock
-	// just long enough to snapshot the pointers they need, never for the duration
-	// of a read/update, so concurrent reads and updates are not serialized.
+	// mu protects replicas, clusterConfig and router together. They are a matched
+	// set: every replica in the map corresponds to a replica assigned to this node
+	// in clusterConfig (a replica may be inactive or still initializing, but it
+	// exists in the map), and router is the index built from clusterConfig. They
+	// change only on config reload. Readers hold RLock just long enough to
+	// snapshot the pointers they need, never for the duration of a read/update, so
+	// concurrent reads and updates are not serialized.
 	mu            sync.RWMutex
 	replicas      map[string]*replica
 	dormant       map[string]*dormantReplica
 	clusterConfig *cluster.Config
+	// router is the routing index built from clusterConfig; the two are always
+	// swapped together via setClusterConfigLocked.
+	router *Router
 
 	smu       sync.Mutex
 	nodeState NodeState
@@ -303,7 +307,7 @@ func (n *Node) Bootstrap(ctx context.Context, nodeId string, config *cluster.Con
 	// "[]" a freshly-started unprovisioned node had. Safe to reassign here: the node
 	// is not serving yet and nothing else reads n.logger while UNPROVISIONED.
 	n.logger = log.New(os.Stderr, fmt.Sprintf("[%s] ", nodeId), log.LstdFlags)
-	n.clusterConfig = config
+	n.setClusterConfigLocked(config)
 	if err := n.reconcileReplicasLocked(); err != nil {
 		n.mu.Unlock()
 		return err
@@ -341,7 +345,7 @@ func (n *Node) Read(ctx context.Context, req *transport.ReadRequest) (*transport
 	ctx, cancel := context.WithTimeout(ctx, n.nodeConfig.MaxReadTimeout)
 	defer cancel()
 
-	r, clusterConfig, err := n.replicaForShard(req.ApplicationName, req.ShardId, req.ShardKey)
+	r, router, err := n.replicaForShard(req.ApplicationName, req.ShardId, req.ShardKey)
 	if err != nil {
 		return nil, err
 	}
@@ -387,7 +391,7 @@ func (n *Node) Read(ctx context.Context, req *transport.ReadRequest) (*transport
 		return nil, errLeaderUnknown
 	}
 
-	leaderReplica, err := clusterConfig.GetReplica(leaderReplicaId)
+	leaderReplica, err := router.GetReplica(leaderReplicaId)
 	if err != nil {
 		return nil, errLeaderUnknown
 	}
@@ -416,7 +420,7 @@ func (n *Node) Read(ctx context.Context, req *transport.ReadRequest) (*transport
 		if waitErr != nil {
 			return nil, errLeaderUnknown
 		}
-		newLeaderReplica, clusterErr := clusterConfig.GetReplica(newLeaderReplicaId)
+		newLeaderReplica, clusterErr := router.GetReplica(newLeaderReplicaId)
 		if clusterErr != nil {
 			return nil, errLeaderUnknown
 		}
@@ -437,7 +441,7 @@ func (n *Node) Update(ctx context.Context, req *transport.UpdateRequest) (*trans
 	ctx, cancel := context.WithTimeout(ctx, n.nodeConfig.MaxUpdateTimeout)
 	defer cancel()
 
-	r, clusterConfig, err := n.replicaForShard(req.ApplicationName, req.ShardId, req.ShardKey)
+	r, router, err := n.replicaForShard(req.ApplicationName, req.ShardId, req.ShardKey)
 	if err != nil {
 		return nil, err
 	}
@@ -475,7 +479,7 @@ func (n *Node) Update(ctx context.Context, req *transport.UpdateRequest) (*trans
 		return nil, errLeaderUnknown
 	}
 
-	leaderReplica, err := clusterConfig.GetReplica(leaderReplicaId)
+	leaderReplica, err := router.GetReplica(leaderReplicaId)
 	if err != nil {
 		return nil, errLeaderUnknown
 	}
@@ -506,7 +510,7 @@ func (n *Node) Update(ctx context.Context, req *transport.UpdateRequest) (*trans
 		if waitErr != nil {
 			return nil, errLeaderUnknown
 		}
-		newLeaderReplica, clusterErr := clusterConfig.GetReplica(newLeaderReplicaId)
+		newLeaderReplica, clusterErr := router.GetReplica(newLeaderReplicaId)
 		if clusterErr != nil {
 			return nil, errLeaderUnknown
 		}
@@ -844,6 +848,14 @@ func (n *Node) GetClusterConfig() *cluster.Config {
 	return n.clusterConfig
 }
 
+// setClusterConfigLocked swaps in a new cluster config together with the routing
+// index built from it, keeping the pair consistent. Must be called with n.mu
+// held for writing.
+func (n *Node) setClusterConfigLocked(cfg *cluster.Config) {
+	n.clusterConfig = cfg
+	n.router = NewRouter(cfg)
+}
+
 // UpdateClusterConfig installs a new cluster config: it persists the config,
 // swaps it in, and reconciles this node's replicas and Raft group membership to
 // match. This is the only place replicas and clusterConfig change after startup;
@@ -885,9 +897,9 @@ func (n *Node) UpdateClusterConfig(ctx context.Context, newConfig *cluster.Confi
 		return fmt.Errorf("persisting cluster config: %w", err)
 	}
 
-	// replicas and clusterConfig must be updated together under mu so they stay a
-	// matched pair.
-	n.clusterConfig = newConfig
+	// replicas, clusterConfig and router must be updated together under mu so they
+	// stay a matched set.
+	n.setClusterConfigLocked(newConfig)
 
 	if err := n.reconcileReplicasLocked(); err != nil {
 		n.mu.Unlock()
@@ -938,11 +950,13 @@ func (n *Node) getReplica(replicaId string) (*replica, error) {
 }
 
 // replicaForShard resolves the local replica that owns the request together with
-// the cluster config used to resolve it, as a consistent snapshot taken under a
-// single read lock. Because replicas and clusterConfig are only ever mutated
-// together (on config reload), the returned pair is guaranteed to match, and the
-// lock is released before the caller performs the actual read/update so it never
-// serializes them.
+// the routing index used to resolve it, as a consistent snapshot taken under a
+// single read lock. Because replicas and router are only ever mutated together
+// (on config reload), the returned pair is guaranteed to match, and the lock is
+// released before the caller performs the actual read/update so it never
+// serializes them. The returned router is what the caller must use to resolve
+// the shard's leader replica, so leader resolution sees the same config version
+// that resolved the shard.
 //
 // For sharded requests (shardKey is non-empty) the owning shard is resolved from
 // shardKey against this node's own config, so routing is correct even when the
@@ -950,15 +964,15 @@ func (n *Node) getReplica(replicaId string) (*replica, error) {
 // config rollout). For direct-shard requests (empty shardKey) the shard is taken
 // from shardId as-is. A node hosts at most one replica per shard, so the shard
 // determines the replica uniquely.
-func (n *Node) replicaForShard(applicationName string, shardId string, shardKey []byte) (*replica, *cluster.Config, error) {
+func (n *Node) replicaForShard(applicationName string, shardId string, shardKey []byte) (*replica, *Router, error) {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	clusterConfig := n.clusterConfig
+	router := n.router
 
 	targetShardId := shardId
 	if len(shardKey) > 0 {
-		shard, err := clusterConfig.FindShardByShardKey(applicationName, shardKey)
+		shard, err := router.FindShardByShardKey(applicationName, shardKey)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -967,7 +981,7 @@ func (n *Node) replicaForShard(applicationName string, shardId string, shardKey 
 
 	for _, r := range n.replicas {
 		if r.shardId == targetShardId {
-			return r, clusterConfig, nil
+			return r, router, nil
 		}
 	}
 
@@ -1480,6 +1494,7 @@ func NewNode(baseDir string, coreDescriptors ApplicationCoreDescriptors, nodeCon
 		nodeId:          persistedId,
 		coreDescriptors: coreDescriptors,
 		clusterConfig:   effectiveConfig,
+		router:          NewRouter(effectiveConfig),
 		nodeState:       INITIAL,
 		replicas:        make(map[string]*replica),
 		dormant:         make(map[string]*dormantReplica),

@@ -6,7 +6,7 @@ import (
 	. "github.com/dave/jennifer/jen" //lint:ignore ST1001 jen helpers are so much nicer to use with dot-importing
 )
 
-func GenerateAdapters(cfg *MonsteraYaml) string {
+func GenerateAdapters(cfg *MonsteraYaml) (string, error) {
 	f := NewFilePath(cfg.GoCode.OutputPackage)
 	f.HeaderComment(generatedCodeComment)
 	f.ImportAlias(mrpcPkg, "mrpc")
@@ -19,7 +19,7 @@ func GenerateAdapters(cfg *MonsteraYaml) string {
 
 	generateHelpers(f)
 
-	return fmt.Sprintf("%#v", f)
+	return fmt.Sprintf("%#v", f), nil
 }
 
 func generateMetrics(f *File) {
@@ -256,13 +256,18 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 							Return(Nil(), Err()),
 						)
 						g.Id("rpcResp").Dot("Error").Op("=").Id("methodResp").Dot("ApplicationError")
-						g.List(Id("methodRespBytes"), Err()).Op(":=").Id("methodResp").Dot("Payload").Dot("MarshalBinary").Call()
-						g.If(
-							Id("err").Op("!=").Nil(),
-						).Block(
-							Return(Nil(), Err()),
+						// Payload is nil when the method returns only an
+						// ApplicationError; MarshalBinary on a nil payload is
+						// not guaranteed to be safe for hand-written types.
+						g.If(Id("methodResp").Dot("Payload").Op("!=").Nil()).Block(
+							List(Id("methodRespBytes"), Err()).Op(":=").Id("methodResp").Dot("Payload").Dot("MarshalBinary").Call(),
+							If(
+								Id("err").Op("!=").Nil(),
+							).Block(
+								Return(Nil(), Err()),
+							),
+							Id("rpcResp").Dot("Data").Op("=").Id("methodRespBytes"),
 						)
-						g.Id("rpcResp").Dot("Data").Op("=").Id("methodRespBytes")
 						// Id("resp").Dot("Events").Op("=").Id("methodResp").Dot("Events"),
 					})
 				}
@@ -384,13 +389,18 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 							Return(Nil(), Err()),
 						)
 						g.Id("rpcResp").Dot("Error").Op("=").Id("methodResp").Dot("ApplicationError")
-						g.List(Id("methodRespBytes"), Err()).Op(":=").Id("methodResp").Dot("Payload").Dot("MarshalBinary").Call()
-						g.If(
-							Id("err").Op("!=").Nil(),
-						).Block(
-							Return(Nil(), Err()),
+						// Payload is nil when the method returns only an
+						// ApplicationError; MarshalBinary on a nil payload is
+						// not guaranteed to be safe for hand-written types.
+						g.If(Id("methodResp").Dot("Payload").Op("!=").Nil()).Block(
+							List(Id("methodRespBytes"), Err()).Op(":=").Id("methodResp").Dot("Payload").Dot("MarshalBinary").Call(),
+							If(
+								Id("err").Op("!=").Nil(),
+							).Block(
+								Return(Nil(), Err()),
+							),
+							Id("rpcResp").Dot("Data").Op("=").Id("methodRespBytes"),
 						)
-						g.Id("rpcResp").Dot("Data").Op("=").Id("methodRespBytes")
 						// Id("resp").Dot("Events").Op("=").Id("methodResp").Dot("Events"),
 					})
 				}

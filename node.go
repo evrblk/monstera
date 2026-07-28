@@ -298,6 +298,12 @@ func (n *Node) Bootstrap(ctx context.Context, nodeId string, config *cluster.Con
 	if nodeId == "" {
 		return fmt.Errorf("bootstrap requires a node id")
 	}
+	// The config must be internally valid on its own: it is persisted below and
+	// re-validated by LoadConfigFromFile on every restart — accepting an invalid
+	// one here would wedge the node at the next start.
+	if err := config.Validate(); err != nil {
+		return fmt.Errorf("invalid cluster config: %w", err)
+	}
 	if _, err := config.GetNode(nodeId); err != nil {
 		return fmt.Errorf("node %s not found in bootstrap config", nodeId)
 	}

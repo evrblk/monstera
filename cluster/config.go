@@ -948,30 +948,16 @@ func ValidateTransition(old, new *Config) error {
 	oldReplicaMap := make(map[string]*Replica) // key: app|shard|replica
 	newReplicaMap := make(map[string]*Replica)
 	for appName, oldApp := range oldApps {
-		newApp := newApps[appName]
-		if newApp == nil {
-			continue
-		}
-		oldShards := make(map[string]*Shard)
 		for _, s := range oldApp.Shards {
-			oldShards[s.Id] = s
+			for _, r := range s.Replicas {
+				oldReplicaMap[appName+"|"+s.Id+"|"+r.Id] = r
+			}
 		}
-		newShards := make(map[string]*Shard)
+	}
+	for appName, newApp := range newApps {
 		for _, s := range newApp.Shards {
-			newShards[s.Id] = s
-		}
-		for shardId, oldShard := range oldShards {
-			newShard := newShards[shardId]
-			if newShard == nil {
-				continue
-			}
-			for _, oldReplica := range oldShard.Replicas {
-				key := appName + "|" + shardId + "|" + oldReplica.Id
-				oldReplicaMap[key] = oldReplica
-			}
-			for _, newReplica := range newShard.Replicas {
-				key := appName + "|" + shardId + "|" + newReplica.Id
-				newReplicaMap[key] = newReplica
+			for _, r := range s.Replicas {
+				newReplicaMap[appName+"|"+s.Id+"|"+r.Id] = r
 			}
 		}
 	}

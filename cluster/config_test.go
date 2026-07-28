@@ -1605,6 +1605,29 @@ func TestValidateTransition(t *testing.T) {
 		require.Contains(t, err.Error(), "cannot add and remove replicas")
 	})
 
+	t.Run("forbid removing a replica while adding a shard with replicas", func(t *testing.T) {
+		oldConfig := cloneConfig(baseConfig)
+		oldConfig.Nodes = append(oldConfig.Nodes, &Node{Id: "node_4", GrpcAddress: "localhost:9004"})
+		oldConfig.Applications[0].Shards[0].Replicas = append(oldConfig.Applications[0].Shards[0].Replicas,
+			&Replica{Id: "rpl_09", NodeId: "node_4"})
+		require.NoError(t, oldConfig.Validate())
+
+		// Remove rpl_09 from shrd_01 and start splitting shrd_02, whose
+		// activating children carry brand new replicas.
+		newConfig := cloneConfig(oldConfig)
+		newConfig.Applications[0].Shards[0].Replicas = newConfig.Applications[0].Shards[0].Replicas[:3]
+		newConfig.Applications[0].Shards[1].State = ShardState_SHARD_STATE_SPLITTING
+		newConfig.Applications[0].Shards = append(newConfig.Applications[0].Shards,
+			stateTestShard("shrd_03", 0x80000000, 0xbfffffff, ShardState_SHARD_STATE_ACTIVATING, "shrd_02"),
+			stateTestShard("shrd_04", 0xc0000000, 0xffffffff, ShardState_SHARD_STATE_ACTIVATING, "shrd_02"),
+		)
+		require.NoError(t, newConfig.Validate())
+
+		err := ValidateTransition(oldConfig, newConfig)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "cannot add and remove replicas")
+	})
+
 	t.Run("forbid reassigning existing replica to another node", func(t *testing.T) {
 		newConfig := cloneConfig(baseConfig)
 		newConfig.Applications[0].Shards[0].Replicas[0].NodeId = "node_2"

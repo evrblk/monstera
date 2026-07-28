@@ -65,3 +65,36 @@ func TestBootstrapUnprovisionedNode(t *testing.T) {
 	require.Equal(t, monstera.NodeStateReady, node2.NodeState())
 	require.Equal(t, "node_1", node2.NodeId())
 }
+
+// TestBootstrapRejectsInvalidConfig checks that Bootstrap validates the config
+// before persisting anything: an invalid config would otherwise be served and
+// then wedge the node on restart, when LoadConfigFromFile re-validates it. The
+// node must stay UNPROVISIONED and accept a later bootstrap with a valid config.
+func TestBootstrapRejectsInvalidConfig(t *testing.T) {
+	config := testutils.SingleShardLocalConfig(t, 3, 3)
+	baseDir := t.TempDir()
+
+	trans := local.NewLocalTransport()
+	t.Cleanup(func() { _ = trans.Close() })
+	node, err := monstera.NewNode(baseDir, testcore.NopDescriptors(), monstera.DefaultMonsteraNodeConfig, trans)
+	require.NoError(t, err)
+	node.Start()
+	t.Cleanup(node.Stop)
+	trans.Register(node)
+
+	// Shrink the only shard's range so the config no longer covers the full
+	// keyspace — internally invalid.
+	invalidConfig := testutils.SingleShardLocalConfig(t, 3, 3)
+	invalidConfig.Applications[0].Shards[0].UpperBound = 0x7fffffff
+
+	err = node.Bootstrap(context.Background(), "node_1", invalidConfig)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid cluster config")
+	require.Equal(t, monstera.NodeStateUnprovisioned, node.NodeState())
+	require.NoFileExists(t, filepath.Join(baseDir, "config", "node.json"))
+	require.NoFileExists(t, filepath.Join(baseDir, "config", "cluster.json"))
+
+	// The node is still bootstrappable with a valid config.
+	require.NoError(t, node.Bootstrap(context.Background(), "node_1", config))
+	require.Equal(t, monstera.NodeStateReady, node.NodeState())
+}

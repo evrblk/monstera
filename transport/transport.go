@@ -58,6 +58,7 @@ type AdminPlane interface {
 
 	// GetClusterConfig returns the cluster config the node at address is currently
 	// running with (including its version). The returned config is read-only.
+	// An UNPROVISIONED node has no config and returns an error, never (nil, nil).
 	GetClusterConfig(ctx context.Context, address string) (*cluster.Config, error)
 
 	// UpdateClusterConfig installs a new cluster config on the node at address.

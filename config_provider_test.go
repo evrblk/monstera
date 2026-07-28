@@ -113,6 +113,34 @@ func TestPollingClusterConfigProviderNonBlockingWhenUnreachable(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond)
 }
 
+// TestPollingClusterConfigProviderSkipsNilConfigs drives pollOnce directly through
+// the cluster bring-up scenario: reachable but UNPROVISIONED nodes answer with a
+// nil config (older transports returned (nil, nil) instead of an error). A nil
+// must never be adopted (it would wipe the client's routing config) and must not
+// panic the version comparison — neither seen before a real config, alongside
+// one, nor after one.
+func TestPollingClusterConfigProviderSkipsNilConfigs(t *testing.T) {
+	admin := &fakeAdmin{}
+	admin.set("a", nil) // reachable, unprovisioned
+	disc := NewStaticNodeDiscovery([]string{"a", "b"})
+	p := NewPollingClusterConfigProvider(disc, admin, PollingOptions{Interval: time.Hour, Timeout: time.Second})
+
+	// Only unprovisioned nodes reachable: nothing to adopt.
+	require.Error(t, p.pollOnce(context.Background()))
+	require.Nil(t, p.Latest())
+
+	// A provisioned node answers alongside the unprovisioned one: its config wins.
+	admin.set("b", &cluster.Config{Version: 2})
+	require.NoError(t, p.pollOnce(context.Background()))
+	require.Equal(t, int64(2), p.Latest().Version)
+
+	// All nodes report nil again (e.g. wiped and re-bootstrapping): the held
+	// config must survive.
+	admin.set("b", nil)
+	require.Error(t, p.pollOnce(context.Background()))
+	require.Equal(t, int64(2), p.Latest().Version)
+}
+
 func TestPollingClusterConfigProviderAdoptsNewerOnPoll(t *testing.T) {
 	admin := &fakeAdmin{}
 	admin.set("a", &cluster.Config{Version: 1})

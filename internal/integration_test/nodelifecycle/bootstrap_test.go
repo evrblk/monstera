@@ -41,6 +41,14 @@ func TestBootstrapUnprovisionedNode(t *testing.T) {
 	})
 	require.Error(t, err)
 
+	// An unprovisioned node has no cluster config: the admin plane returns an
+	// error, not (nil, nil), so config pollers cannot adopt a nil config. (The
+	// node was registered before Bootstrap, so its transport key is its still
+	// empty node id.)
+	_, err = trans.GetClusterConfig(context.Background(), node.NodeId())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not provisioned")
+
 	// Bootstrap provisions the node.
 	require.NoError(t, node.Bootstrap(context.Background(), "node_1", config))
 	require.Equal(t, monstera.NodeStateReady, node.NodeState())

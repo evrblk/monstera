@@ -196,12 +196,21 @@ func (p *PollingClusterConfigProvider) pollOnce(ctx context.Context) error {
 			continue
 		}
 		reached = true
+		// A reachable but UNPROVISIONED node has no config yet (transports may
+		// surface that as a nil config rather than an error) — normal during
+		// cluster bring-up; never adopt nil.
+		if cfg == nil {
+			continue
+		}
 		if best == nil || cfg.Version > best.Version {
 			best = cfg
 		}
 	}
 	if !reached {
 		return fmt.Errorf("no node reachable for cluster config: %v", lastErr)
+	}
+	if best == nil {
+		return fmt.Errorf("no provisioned node returned a cluster config")
 	}
 
 	p.adopt(best)

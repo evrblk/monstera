@@ -75,7 +75,11 @@ func (t *LocalTransport) GetClusterConfig(ctx context.Context, address string) (
 	if err != nil {
 		return nil, err
 	}
-	return node.GetClusterConfig(), nil
+	config := node.GetClusterConfig()
+	if config == nil {
+		return nil, fmt.Errorf("node %s is not provisioned: no cluster config", address)
+	}
+	return config, nil
 }
 
 func (t *LocalTransport) UpdateClusterConfig(ctx context.Context, address string, config *cluster.Config) error {

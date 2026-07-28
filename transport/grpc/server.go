@@ -187,9 +187,15 @@ func (h *handler) UpdateClusterConfig(ctx context.Context, req *monsterapb.Updat
 
 // GetClusterConfig returns the cluster config this node is currently running
 // with (including its version), for inspecting config rollout across the cluster.
+// An UNPROVISIONED node has no config yet and returns an error rather than a nil
+// config, so pollers cannot mistake "not bootstrapped" for a valid answer.
 func (h *handler) GetClusterConfig(ctx context.Context, req *monsterapb.GetClusterConfigRequest) (*monsterapb.GetClusterConfigResponse, error) {
+	config := h.monsteraNode.GetClusterConfig()
+	if config == nil {
+		return nil, fmt.Errorf("node is not provisioned: no cluster config")
+	}
 	return &monsterapb.GetClusterConfigResponse{
-		Config: h.monsteraNode.GetClusterConfig(),
+		Config: config,
 	}, nil
 }
 

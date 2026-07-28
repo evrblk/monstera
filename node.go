@@ -896,6 +896,22 @@ func (n *Node) UpdateClusterConfig(ctx context.Context, newConfig *cluster.Confi
 		return fmt.Errorf("invalid cluster config: %w", err)
 	}
 
+	// The config must also be applicable to THIS node: it must still contain the
+	// node, and every application must have a registered core implementation
+	// (mirrors Bootstrap and NewNode). These are node-local concerns, so they are
+	// checked here rather than in ValidateTransition — and they must be checked
+	// before the config is persisted: reconcile failing after the write would
+	// leave a config on disk that NewNode refuses to start with.
+	nodeId := n.NodeId()
+	if _, err := newConfig.GetNode(nodeId); err != nil {
+		return fmt.Errorf("node %s not found in new cluster config", nodeId)
+	}
+	for _, a := range newConfig.GetApplications() {
+		if _, ok := n.coreDescriptors[a.Implementation]; !ok {
+			return fmt.Errorf("no core implementation registered for %s", a.Implementation)
+		}
+	}
+
 	// Stop all split seeding pipelines before touching the replica maps; they
 	// are restarted from the new config (and resume from durable progress).
 	n.stopSplitters()

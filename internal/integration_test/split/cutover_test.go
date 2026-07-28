@@ -74,7 +74,7 @@ func runLiveCutover(t *testing.T, cc coreCase) {
 		15*time.Second, 50*time.Millisecond, "writer never got going")
 
 	// Plan and execute the whole split sequence while the writer runs.
-	seq, err := control.PlanSplitShard(base, parentShard, []byte{0x80, 0x00, 0x00, 0x00}, 500*time.Millisecond)
+	seq, err := control.PlanSplitShard(base, parentShard, 0x80000000, 500*time.Millisecond)
 	require.NoError(t, err)
 	require.Len(t, seq.Steps, 4)
 	require.Equal(t, control.StepSendCommand, seq.Steps[1].Kind, "second step must be the cutoff")

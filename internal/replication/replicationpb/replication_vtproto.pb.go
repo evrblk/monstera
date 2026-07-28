@@ -5,6 +5,7 @@
 package replicationpb
 
 import (
+	binary "encoding/binary"
 	fmt "fmt"
 	protohelpers "github.com/planetscale/vtprotobuf/protohelpers"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -48,22 +49,16 @@ func (m *MonsteraCommand) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
-	if m.Stamped {
+	if m.ShardKey != 0 {
+		i -= 4
+		binary.LittleEndian.PutUint32(dAtA[i:], uint32(m.ShardKey))
 		i--
-		if m.Stamped {
-			dAtA[i] = 1
-		} else {
-			dAtA[i] = 0
-		}
-		i--
-		dAtA[i] = 0x20
+		dAtA[i] = 0x25
 	}
-	if len(m.ShardKey) > 0 {
-		i -= len(m.ShardKey)
-		copy(dAtA[i:], m.ShardKey)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.ShardKey)))
+	if m.Routing != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Routing))
 		i--
-		dAtA[i] = 0x1a
+		dAtA[i] = 0x18
 	}
 	if m.Type != 0 {
 		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Type))
@@ -142,12 +137,11 @@ func (m *MonsteraCommand) SizeVT() (n int) {
 	if m.Type != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.Type))
 	}
-	l = len(m.ShardKey)
-	if l > 0 {
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	if m.Routing != 0 {
+		n += 1 + protohelpers.SizeOfVarint(uint64(m.Routing))
 	}
-	if m.Stamped {
-		n += 2
+	if m.ShardKey != 0 {
+		n += 5
 	}
 	n += len(m.unknownFields)
 	return n
@@ -256,59 +250,34 @@ func (m *MonsteraCommand) UnmarshalVT(dAtA []byte) error {
 				}
 			}
 		case 3:
-			if wireType != 2 {
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Routing", wireType)
+			}
+			m.Routing = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Routing |= CommandRouting(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 5 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ShardKey", wireType)
 			}
-			var byteLen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return protohelpers.ErrIntOverflow
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				byteLen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if byteLen < 0 {
-				return protohelpers.ErrInvalidLength
-			}
-			postIndex := iNdEx + byteLen
-			if postIndex < 0 {
-				return protohelpers.ErrInvalidLength
-			}
-			if postIndex > l {
+			m.ShardKey = 0
+			if (iNdEx + 4) > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.ShardKey = append(m.ShardKey[:0], dAtA[iNdEx:postIndex]...)
-			if m.ShardKey == nil {
-				m.ShardKey = []byte{}
-			}
-			iNdEx = postIndex
-		case 4:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Stamped", wireType)
-			}
-			var v int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return protohelpers.ErrIntOverflow
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				v |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			m.Stamped = bool(v != 0)
+			m.ShardKey = uint32(binary.LittleEndian.Uint32(dAtA[iNdEx:]))
+			iNdEx += 4
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])

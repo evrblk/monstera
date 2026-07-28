@@ -134,8 +134,8 @@ func splitTestConfig(addrs [3]string, version int64) *cluster.Config {
 	shards := []*cluster.Shard{
 		{
 			Id:         parentShard,
-			LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
-			UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+			LowerBound: 0x00000000,
+			UpperBound: 0xffffffff,
 			State:      parentState,
 			Replicas:   replicasFor(parentShard),
 		},
@@ -144,16 +144,16 @@ func splitTestConfig(addrs [3]string, version int64) *cluster.Config {
 		shards = append(shards,
 			&cluster.Shard{
 				Id:         child1Shard,
-				LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
-				UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
+				LowerBound: 0x00000000,
+				UpperBound: 0x7fffffff,
 				State:      childState,
 				ParentId:   parentShard,
 				Replicas:   replicasFor(child1Shard),
 			},
 			&cluster.Shard{
 				Id:         child2Shard,
-				LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
-				UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+				LowerBound: 0x80000000,
+				UpperBound: 0xffffffff,
 				State:      childState,
 				ParentId:   parentShard,
 				Replicas:   replicasFor(child2Shard),

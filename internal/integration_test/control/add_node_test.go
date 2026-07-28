@@ -37,7 +37,7 @@ func TestAddNodeSequenceOverGrpc(t *testing.T) {
 
 	// Bootstrap the three existing nodes into the base cluster.
 	testutils.BootstrapNodes(t, admin, addrs[:3], []string{"node_1", "node_2", "node_3"}, base)
-	require.Equal(t, monstera.UNPROVISIONED, node4.NodeState(), "node_4 must be unprovisioned before add-node")
+	require.Equal(t, monstera.NodeStateUnprovisioned, node4.NodeState(), "node_4 must be unprovisioned before add-node")
 
 	// Plan and run add-node for node_4.
 	seq, err := control.PlanAddNode(base, "node_4", addrs[3])
@@ -51,7 +51,7 @@ func TestAddNodeSequenceOverGrpc(t *testing.T) {
 
 	// Sequence completed; every node is at base+1 with node_4 present, and node_4 is READY.
 	require.Equal(t, control.StatusCompleted, seq.Status)
-	require.Equal(t, monstera.READY, node4.NodeState())
+	require.Equal(t, monstera.NodeStateReady, node4.NodeState())
 	for _, addr := range addrs {
 		cctx, c := context.WithTimeout(context.Background(), time.Second)
 		cfg, err := admin.GetClusterConfig(cctx, addr)

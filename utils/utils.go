@@ -3,12 +3,22 @@ package utils
 import (
 	"crypto/sha256"
 	"encoding/binary"
+
+	"github.com/evrblk/monstera/cluster"
 )
 
 func GetTruncatedHash(data []byte, size int) []byte {
 	h := sha256.New()
 	h.Write(data)
 	return h.Sum(nil)[0:size]
+}
+
+// GetShardKey derives a shard key from arbitrary bytes: the first 4 bytes of
+// the SHA-256 hash of data, big-endian. Use it with ConcatBytes to build a
+// shard key from an entity id, e.g. GetShardKey(ConcatBytes(accountId)).
+func GetShardKey(data []byte) cluster.ShardKey {
+	h := sha256.Sum256(data)
+	return cluster.ShardKey(binary.BigEndian.Uint32(h[:4]))
 }
 
 func ConcatBytes(items ...any) []byte {

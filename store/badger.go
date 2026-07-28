@@ -184,9 +184,55 @@ func (s *BadgerStore) Flatten() error {
 	return s.db.Flatten(4)
 }
 
-// DropPrefix deletes all keys that begin with prefix.
+// DropPrefix deletes all keys that begin with prefix at the LSM level:
+// no per-key tombstones, space reclaimed immediately.
+//
+// It STOPS THE WORLD: BadgerDB blocks every write to the ENTIRE database
+// (not just the prefix) while the drop runs — concurrent writers, including
+// in-flight write batches of unrelated keys, fail with ErrBlockedWrites.
+// Only use it when nothing else is writing to the database (e.g. node
+// startup). While serving, use DeletePrefix instead.
 func (s *BadgerStore) DropPrefix(prefix []byte) error {
 	return s.db.DropPrefix(prefix)
+}
+
+// DeletePrefix deletes all keys that begin with prefix as ordinary write
+// traffic: it streams the keys from a read snapshot straight into a write
+// batch, which commits full chunks as it goes. Unlike DropPrefix it never
+// blocks the rest of the database — everything outside the prefix keeps
+// reading and writing throughout — at the cost of one tombstone per key
+// (space is reclaimed later by compaction). Memory use is bounded by one
+// batch chunk, not by the size of the prefix.
+//
+// Keys written under the prefix after the snapshot is taken can survive the
+// sweep. Like any other update, DeletePrefix must not run concurrently with
+// other updates to the same prefix; it is safe to run concurrently with
+// updates to the rest of the database.
+func (s *BadgerStore) DeletePrefix(prefix []byte) error {
+	wb := s.db.NewWriteBatch()
+	defer wb.Cancel()
+
+	err := s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = prefix
+		opts.PrefetchValues = false
+		iter := txn.NewIterator(opts)
+		defer iter.Close()
+
+		for iter.Rewind(); iter.Valid(); iter.Next() {
+			// KeyCopy: the iterator reuses its key buffer, and the batch
+			// retains a key only until the chunk holding it commits.
+			if err := wb.Delete(iter.Item().KeyCopy(nil)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	return wb.Flush()
 }
 
 // Txn wraps a BadgerDB transaction, providing key-value access methods.

@@ -289,10 +289,16 @@ type Request struct {
 	MethodNumber int32 `protobuf:"varint,1,opt,name=method_number,json=methodNumber,proto3" json:"method_number,omitempty"`
 	// data is the marshaled request payload for the selected method.
 	Data []byte `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
-	// now is the request timestamp in Unix nanoseconds. For updates it is stamped
-	// by the leader before the entry is appended to the Raft log, so every replica
-	// applies the same value deterministically; the application core must read it
-	// here rather than calling time.Now() at apply time.
+	// now is the request timestamp in Unix nanoseconds, stamped client-side by the
+	// generated rpc stub when it builds the request (it is opaque to monstera,
+	// which never reads or rewrites it). Carrying it in the request is what makes
+	// updates deterministic: the value travels with the entry into the Raft log, so
+	// every replica applies the same timestamp instead of each calling time.Now()
+	// at apply time. The application core must therefore read it here. The trust
+	// model follows from this: the timestamp is whatever the gateway clock that
+	// built the request produced, and a forwarded or client-retried request keeps
+	// its original stamp. Clock skew between gateways and nodes is not a problem —
+	// the value is only ever used as the single source of "now" for that one entry.
 	Now           int64 `protobuf:"varint,3,opt,name=now,proto3" json:"now,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

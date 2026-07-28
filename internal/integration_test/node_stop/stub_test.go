@@ -23,7 +23,7 @@ func TestPlaygroundApiMonsteraStub_ReadAndUpdate(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		for _, n := range cl.Nodes {
-			if n.NodeState() != monstera.READY {
+			if n.NodeState() != monstera.NodeStateReady {
 				return false
 			}
 		}
@@ -104,8 +104,8 @@ func NewTestClusterConfig(t *testing.T) *cluster.Config {
 			Shards: []*cluster.Shard{
 				{
 					Id:         "shrd_01",
-					LowerBound: []byte{0x00, 0x00, 0x00, 0x00},
-					UpperBound: []byte{0x3f, 0xff, 0xff, 0xff},
+					LowerBound: 0x00000000,
+					UpperBound: 0x3fffffff,
 					State:      cluster.ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*cluster.Replica{
 						{Id: "rplc_01", NodeId: "node_01"},
@@ -115,8 +115,8 @@ func NewTestClusterConfig(t *testing.T) *cluster.Config {
 				},
 				{
 					Id:         "shrd_02",
-					LowerBound: []byte{0x40, 0x00, 0x00, 0x00},
-					UpperBound: []byte{0x7f, 0xff, 0xff, 0xff},
+					LowerBound: 0x40000000,
+					UpperBound: 0x7fffffff,
 					State:      cluster.ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*cluster.Replica{
 						{Id: "rplc_04", NodeId: "node_01"},
@@ -126,8 +126,8 @@ func NewTestClusterConfig(t *testing.T) *cluster.Config {
 				},
 				{
 					Id:         "shrd_03",
-					LowerBound: []byte{0x80, 0x00, 0x00, 0x00},
-					UpperBound: []byte{0xbf, 0xff, 0xff, 0xff},
+					LowerBound: 0x80000000,
+					UpperBound: 0xbfffffff,
 					State:      cluster.ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*cluster.Replica{
 						{Id: "rplc_07", NodeId: "node_01"},
@@ -137,8 +137,8 @@ func NewTestClusterConfig(t *testing.T) *cluster.Config {
 				},
 				{
 					Id:         "shrd_04",
-					LowerBound: []byte{0xc0, 0x00, 0x00, 0x00},
-					UpperBound: []byte{0xff, 0xff, 0xff, 0xff},
+					LowerBound: 0xc0000000,
+					UpperBound: 0xffffffff,
 					State:      cluster.ShardState_SHARD_STATE_ACTIVE,
 					Replicas: []*cluster.Replica{
 						{Id: "rplc_10", NodeId: "node_01"},

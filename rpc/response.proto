@@ -66,9 +66,15 @@ message Request {
   int32 method_number = 1;
   // data is the marshaled request payload for the selected method.
   bytes data = 2;
-  // now is the request timestamp in Unix nanoseconds. For updates it is stamped
-  // by the leader before the entry is appended to the Raft log, so every replica
-  // applies the same value deterministically; the application core must read it
-  // here rather than calling time.Now() at apply time.
+  // now is the request timestamp in Unix nanoseconds, stamped client-side by the
+  // generated rpc stub when it builds the request (it is opaque to monstera,
+  // which never reads or rewrites it). Carrying it in the request is what makes
+  // updates deterministic: the value travels with the entry into the Raft log, so
+  // every replica applies the same timestamp instead of each calling time.Now()
+  // at apply time. The application core must therefore read it here. The trust
+  // model follows from this: the timestamp is whatever the gateway clock that
+  // built the request produced, and a forwarded or client-retried request keeps
+  // its original stamp. Clock skew between gateways and nodes is not a problem —
+  // the value is only ever used as the single source of "now" for that one entry.
   int64 now = 3;
 }

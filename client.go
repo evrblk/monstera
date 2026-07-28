@@ -201,7 +201,7 @@ func (c *Client) pruneReplicaStates() {
 }
 
 // Read routes a read request to the shard responsible for shardKey.
-func (c *Client) Read(ctx context.Context, applicationName string, shardKey []byte, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
+func (c *Client) Read(ctx context.Context, applicationName string, shardKey cluster.ShardKey, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
 	router := c.currentRouter()
 	if router == nil {
 		return nil, ErrNoClusterConfig
@@ -211,7 +211,7 @@ func (c *Client) Read(ctx context.Context, applicationName string, shardKey []by
 		return nil, err
 	}
 
-	return c.readShard(ctx, applicationName, shard, shardKey, allowReadFromFollowers, payload)
+	return c.readShard(ctx, applicationName, shard, shardKey, true, allowReadFromFollowers, payload)
 }
 
 // ReadShard sends a read request directly to the specified shard by ID,
@@ -226,12 +226,12 @@ func (c *Client) ReadShard(ctx context.Context, applicationName string, shardId 
 		return nil, err
 	}
 
-	return c.readShard(ctx, applicationName, shard, nil, allowReadFromFollowers, payload)
+	return c.readShard(ctx, applicationName, shard, 0, false, allowReadFromFollowers, payload)
 }
 
 // readShard tries each replica in turn, retrying transient errors on the same
 // replica up to MaxRetriesOnSingleReplica times before moving to the next.
-func (c *Client) readShard(ctx context.Context, applicationName string, shard *cluster.Shard, shardKey []byte, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
+func (c *Client) readShard(ctx context.Context, applicationName string, shard *cluster.Shard, shardKey cluster.ShardKey, hasShardKey bool, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
 	var replicas []*cluster.Replica
 	if allowReadFromFollowers {
 		replicas = c.shuffleReplicas(shard.Replicas)
@@ -243,6 +243,7 @@ func (c *Client) readShard(ctx context.Context, applicationName string, shard *c
 		ApplicationName:        applicationName,
 		ShardId:                shard.Id,
 		ShardKey:               shardKey,
+		HasShardKey:            hasShardKey,
 		Payload:                payload,
 		AllowReadFromFollowers: allowReadFromFollowers,
 		Hops:                   0,
@@ -276,7 +277,7 @@ func (c *Client) readShard(ctx context.Context, applicationName string, shard *c
 }
 
 // Update routes a write request to the shard responsible for shardKey.
-func (c *Client) Update(ctx context.Context, applicationName string, shardKey []byte, payload []byte) ([]byte, error) {
+func (c *Client) Update(ctx context.Context, applicationName string, shardKey cluster.ShardKey, payload []byte) ([]byte, error) {
 	router := c.currentRouter()
 	if router == nil {
 		return nil, ErrNoClusterConfig
@@ -286,7 +287,7 @@ func (c *Client) Update(ctx context.Context, applicationName string, shardKey []
 		return nil, err
 	}
 
-	return c.updateShard(ctx, applicationName, shard, shardKey, payload)
+	return c.updateShard(ctx, applicationName, shard, shardKey, true, payload)
 }
 
 // UpdateShard sends a write request directly to the specified shard by ID,
@@ -301,18 +302,19 @@ func (c *Client) UpdateShard(ctx context.Context, applicationName string, shardI
 		return nil, err
 	}
 
-	return c.updateShard(ctx, applicationName, shard, nil, payload)
+	return c.updateShard(ctx, applicationName, shard, 0, false, payload)
 }
 
 // updateShard tries replicas leader-first, retrying transient errors on the
 // same replica up to MaxRetriesOnSingleReplica times before moving to the next.
-func (c *Client) updateShard(ctx context.Context, applicationName string, shard *cluster.Shard, shardKey []byte, payload []byte) ([]byte, error) {
+func (c *Client) updateShard(ctx context.Context, applicationName string, shard *cluster.Shard, shardKey cluster.ShardKey, hasShardKey bool, payload []byte) ([]byte, error) {
 	replicas := c.shuffleReplicasAndLeaderFirst(shard.Replicas)
 
 	req := &transport.UpdateRequest{
 		ApplicationName: applicationName,
 		ShardId:         shard.Id,
 		ShardKey:        shardKey,
+		HasShardKey:     hasShardKey,
 		Payload:         payload,
 		Hops:            0,
 	}

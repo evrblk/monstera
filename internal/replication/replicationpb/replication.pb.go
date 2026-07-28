@@ -21,6 +21,63 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// CommandRouting tells the split seeder how to route an update entry to the
+// children of a splitting shard.
+type CommandRouting int32
+
+const (
+	// Proposed by a leader that was not in splitting mode — either the shard is
+	// not splitting (the common case), or the leader had not applied the
+	// splitting config yet. In the latter case the entry is unroutable and the
+	// seeder restarts the affected children from a fresh base.
+	CommandRouting_COMMAND_ROUTING_UNSTAMPED CommandRouting = 0
+	// A sharded update: shard_key routes the entry to the child that owns it.
+	CommandRouting_COMMAND_ROUTING_SHARDED CommandRouting = 1
+	// A shard-wide (unsharded) update: seeded to every child in full.
+	CommandRouting_COMMAND_ROUTING_SHARD_WIDE CommandRouting = 2
+)
+
+// Enum value maps for CommandRouting.
+var (
+	CommandRouting_name = map[int32]string{
+		0: "COMMAND_ROUTING_UNSTAMPED",
+		1: "COMMAND_ROUTING_SHARDED",
+		2: "COMMAND_ROUTING_SHARD_WIDE",
+	}
+	CommandRouting_value = map[string]int32{
+		"COMMAND_ROUTING_UNSTAMPED":  0,
+		"COMMAND_ROUTING_SHARDED":    1,
+		"COMMAND_ROUTING_SHARD_WIDE": 2,
+	}
+)
+
+func (x CommandRouting) Enum() *CommandRouting {
+	p := new(CommandRouting)
+	*p = x
+	return p
+}
+
+func (x CommandRouting) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (CommandRouting) Descriptor() protoreflect.EnumDescriptor {
+	return file_internal_replication_replicationpb_replication_proto_enumTypes[0].Descriptor()
+}
+
+func (CommandRouting) Type() protoreflect.EnumType {
+	return &file_internal_replication_replicationpb_replication_proto_enumTypes[0]
+}
+
+func (x CommandRouting) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use CommandRouting.Descriptor instead.
+func (CommandRouting) EnumDescriptor() ([]byte, []int) {
+	return file_internal_replication_replicationpb_replication_proto_rawDescGZIP(), []int{0}
+}
+
 type CommandType int32
 
 const (
@@ -62,11 +119,11 @@ func (x CommandType) String() string {
 }
 
 func (CommandType) Descriptor() protoreflect.EnumDescriptor {
-	return file_internal_replication_replicationpb_replication_proto_enumTypes[0].Descriptor()
+	return file_internal_replication_replicationpb_replication_proto_enumTypes[1].Descriptor()
 }
 
 func (CommandType) Type() protoreflect.EnumType {
-	return &file_internal_replication_replicationpb_replication_proto_enumTypes[0]
+	return &file_internal_replication_replicationpb_replication_proto_enumTypes[1]
 }
 
 func (x CommandType) Number() protoreflect.EnumNumber {
@@ -75,24 +132,19 @@ func (x CommandType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CommandType.Descriptor instead.
 func (CommandType) EnumDescriptor() ([]byte, []int) {
-	return file_internal_replication_replicationpb_replication_proto_rawDescGZIP(), []int{0}
+	return file_internal_replication_replicationpb_replication_proto_rawDescGZIP(), []int{1}
 }
 
 type MonsteraCommand struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Payload []byte                 `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
 	Type    CommandType            `protobuf:"varint,2,opt,name=type,proto3,enum=evrblk.monstera.replication.CommandType" json:"type,omitempty"`
-	// Shard key of the update, stamped by the leader at propose time only while
-	// this shard is SPLITTING; used to route seeded entries to the child that
-	// owns the key. Empty at all other times (it costs nothing outside a
-	// split), and empty during a split for unsharded updates, which are seeded
-	// to every child.
-	ShardKey []byte `protobuf:"bytes,3,opt,name=shard_key,json=shardKey,proto3" json:"shard_key,omitempty"`
-	// True iff the proposing leader was in splitting mode. Distinguishes a
-	// key-less unsharded update proposed by a splitting-aware leader (seeded to
-	// every child) from an update proposed by a leader that had not applied the
-	// splitting config yet (unroutable: the seeder restarts from a fresh base).
-	Stamped       bool `protobuf:"varint,4,opt,name=stamped,proto3" json:"stamped,omitempty"`
+	// Routing of this update for split seeding, stamped by the leader at
+	// propose time only while this shard is SPLITTING. UNSTAMPED (the zero
+	// value) at all other times: it costs nothing outside a split.
+	Routing CommandRouting `protobuf:"varint,3,opt,name=routing,proto3,enum=evrblk.monstera.replication.CommandRouting" json:"routing,omitempty"`
+	// The update's shard key; meaningful only when routing == SHARDED.
+	ShardKey      uint32 `protobuf:"fixed32,4,opt,name=shard_key,json=shardKey,proto3" json:"shard_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -141,18 +193,18 @@ func (x *MonsteraCommand) GetType() CommandType {
 	return CommandType_COMMAND_TYPE_INVALID
 }
 
-func (x *MonsteraCommand) GetShardKey() []byte {
+func (x *MonsteraCommand) GetRouting() CommandRouting {
+	if x != nil {
+		return x.Routing
+	}
+	return CommandRouting_COMMAND_ROUTING_UNSTAMPED
+}
+
+func (x *MonsteraCommand) GetShardKey() uint32 {
 	if x != nil {
 		return x.ShardKey
 	}
-	return nil
-}
-
-func (x *MonsteraCommand) GetStamped() bool {
-	if x != nil {
-		return x.Stamped
-	}
-	return false
+	return 0
 }
 
 // Cutoff is the payload of COMMAND_TYPE_CUTOFF.
@@ -212,15 +264,19 @@ var File_internal_replication_replicationpb_replication_proto protoreflect.FileD
 
 const file_internal_replication_replicationpb_replication_proto_rawDesc = "" +
 	"\n" +
-	"4internal/replication/replicationpb/replication.proto\x12\x1bevrblk.monstera.replication\"\xa0\x01\n" +
+	"4internal/replication/replicationpb/replication.proto\x12\x1bevrblk.monstera.replication\"\xcd\x01\n" +
 	"\x0fMonsteraCommand\x12\x18\n" +
 	"\apayload\x18\x01 \x01(\fR\apayload\x12<\n" +
-	"\x04type\x18\x02 \x01(\x0e2(.evrblk.monstera.replication.CommandTypeR\x04type\x12\x1b\n" +
-	"\tshard_key\x18\x03 \x01(\fR\bshardKey\x12\x18\n" +
-	"\astamped\x18\x04 \x01(\bR\astamped\"X\n" +
+	"\x04type\x18\x02 \x01(\x0e2(.evrblk.monstera.replication.CommandTypeR\x04type\x12E\n" +
+	"\arouting\x18\x03 \x01(\x0e2+.evrblk.monstera.replication.CommandRoutingR\arouting\x12\x1b\n" +
+	"\tshard_key\x18\x04 \x01(\aR\bshardKey\"X\n" +
 	"\x06Cutoff\x12&\n" +
 	"\x0fparent_shard_id\x18\x01 \x01(\tR\rparentShardId\x12&\n" +
-	"\x0fchild_shard_ids\x18\x02 \x03(\tR\rchildShardIds*p\n" +
+	"\x0fchild_shard_ids\x18\x02 \x03(\tR\rchildShardIds*l\n" +
+	"\x0eCommandRouting\x12\x1d\n" +
+	"\x19COMMAND_ROUTING_UNSTAMPED\x10\x00\x12\x1b\n" +
+	"\x17COMMAND_ROUTING_SHARDED\x10\x01\x12\x1e\n" +
+	"\x1aCOMMAND_ROUTING_SHARD_WIDE\x10\x02*p\n" +
 	"\vCommandType\x12\x18\n" +
 	"\x14COMMAND_TYPE_INVALID\x10\x00\x12\x17\n" +
 	"\x13COMMAND_TYPE_UPDATE\x10\x01\x12\x15\n" +
@@ -239,20 +295,22 @@ func file_internal_replication_replicationpb_replication_proto_rawDescGZIP() []b
 	return file_internal_replication_replicationpb_replication_proto_rawDescData
 }
 
-var file_internal_replication_replicationpb_replication_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_internal_replication_replicationpb_replication_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_internal_replication_replicationpb_replication_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_internal_replication_replicationpb_replication_proto_goTypes = []any{
-	(CommandType)(0),        // 0: evrblk.monstera.replication.CommandType
-	(*MonsteraCommand)(nil), // 1: evrblk.monstera.replication.MonsteraCommand
-	(*Cutoff)(nil),          // 2: evrblk.monstera.replication.Cutoff
+	(CommandRouting)(0),     // 0: evrblk.monstera.replication.CommandRouting
+	(CommandType)(0),        // 1: evrblk.monstera.replication.CommandType
+	(*MonsteraCommand)(nil), // 2: evrblk.monstera.replication.MonsteraCommand
+	(*Cutoff)(nil),          // 3: evrblk.monstera.replication.Cutoff
 }
 var file_internal_replication_replicationpb_replication_proto_depIdxs = []int32{
-	0, // 0: evrblk.monstera.replication.MonsteraCommand.type:type_name -> evrblk.monstera.replication.CommandType
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	1, // 0: evrblk.monstera.replication.MonsteraCommand.type:type_name -> evrblk.monstera.replication.CommandType
+	0, // 1: evrblk.monstera.replication.MonsteraCommand.routing:type_name -> evrblk.monstera.replication.CommandRouting
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_internal_replication_replicationpb_replication_proto_init() }
@@ -265,7 +323,7 @@ func file_internal_replication_replicationpb_replication_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_replication_replicationpb_replication_proto_rawDesc), len(file_internal_replication_replicationpb_replication_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,

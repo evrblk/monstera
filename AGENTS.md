@@ -30,6 +30,16 @@ go test -v --race ./...       # run all tests with Go directly
 make lint                     # run linter, static check, go vet
 ```
 
+## Domain conventions
+
+- Shard keys are `cluster.ShardKey` (uint32) everywhere — never raw `[]byte`. Every uint32 value is
+  a valid key, and shard bounds are ShardKeys too (`fixed32` in the cluster proto). The canonical
+  4-byte big-endian encoding (`ShardKey.Bytes()` / `ShardKeyFromBytes`), which sorts identically to
+  the integers, is used only at the edges: JSON hex bounds, derived shard ids, and row-range scans
+  in persisted cores. The absence of a key (direct-shard requests, shard-wide updates) is always an
+  explicit signal — a `HasShardKey` bool on transport requests, the `CommandRouting` enum on
+  replicated commands — never a zero value or empty-slice sentinel.
+
 ## Code Style Guidelines
 
 - Follow standard Go formatting (gofmt/goimports)

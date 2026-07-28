@@ -63,9 +63,9 @@ enum ShardState {
 message Shard {
   // Unique across the whole cluster.
   string id = 1;
-  // Inclusive 4-byte bounds of the owned key range: lower_bound <= upper_bound.
-  bytes lower_bound = 2;
-  bytes upper_bound = 3;
+  // Inclusive bounds of the owned key range (shard keys): lower_bound <= upper_bound.
+  fixed32 lower_bound = 2;
+  fixed32 upper_bound = 3;
   // Id of the shard this shard was split from. Empty for shards created directly.
   string parent_id = 4;
   repeated Replica replicas = 5;

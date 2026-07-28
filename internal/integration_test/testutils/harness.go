@@ -164,7 +164,7 @@ func StartLocalNode(t *testing.T, baseDir, nodeId string, config *cluster.Config
 	node, err := monstera.NewNode(baseDir, testcore.NopDescriptors(), nodeConfig, trans)
 	require.NoError(t, err)
 	node.Start()
-	if node.NodeState() == monstera.UNPROVISIONED {
+	if node.NodeState() == monstera.NodeStateUnprovisioned {
 		require.NoError(t, node.Bootstrap(context.Background(), nodeId, config))
 	}
 	trans.Register(node)

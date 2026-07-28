@@ -594,3 +594,114 @@ func TestBadgerStore_Flatten(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []byte("value99"), value)
 }
+
+func TestBadgerStore_DeletePrefix(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
+	defer store.Close()
+
+	txn := store.Update()
+	err = txn.Set([]byte("prefix1:key1"), []byte("value1"))
+	require.NoError(t, err)
+	err = txn.Set([]byte("prefix1:key2"), []byte("value2"))
+	require.NoError(t, err)
+	err = txn.Set([]byte("prefix2:key1"), []byte("value3"))
+	require.NoError(t, err)
+	err = txn.Set([]byte("other:key1"), []byte("value4"))
+	require.NoError(t, err)
+	err = txn.Commit()
+	require.NoError(t, err)
+
+	// Deleting a prefix with no keys is a no-op.
+	err = store.DeletePrefix([]byte("nothing:"))
+	require.NoError(t, err)
+
+	err = store.DeletePrefix([]byte("prefix1:"))
+	require.NoError(t, err)
+
+	// Unlike DropPrefix, DeletePrefix goes through MVCC, so the deletions are
+	// observed by snapshots taken after it (not by ones taken before).
+	viewTxn := store.View()
+	defer viewTxn.Discard()
+
+	_, err = viewTxn.Get([]byte("prefix1:key1"))
+	require.ErrorIs(t, err, ErrNotFound)
+	_, err = viewTxn.Get([]byte("prefix1:key2"))
+	require.ErrorIs(t, err, ErrNotFound)
+
+	value, err := viewTxn.Get([]byte("prefix2:key1"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("value3"), value)
+	value, err = viewTxn.Get([]byte("other:key1"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("value4"), value)
+}
+
+// TestBadgerStore_DeletePrefixDoesNotBlockOtherWrites is the regression test
+// for using stop-the-world DropPrefix on a store shared with live writers: a
+// writer on an unrelated prefix must keep succeeding for the whole duration
+// of a large prefix sweep (DropPrefix would fail it with badger's
+// "writes are blocked" error).
+func TestBadgerStore_DeletePrefixDoesNotBlockOtherWrites(t *testing.T) {
+	store, err := NewBadgerInMemoryStore()
+	require.NoError(t, err)
+	defer store.Close()
+
+	// A large victim prefix so the sweep spans multiple write-batch chunks.
+	const victimKeys = 50000
+	err = store.BatchUpdate(func(b *Batch) error {
+		for i := 0; i < victimKeys; i++ {
+			if err := b.Set(fmt.Appendf(nil, "victim:%08d", i), []byte("v")); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	started := make(chan struct{})
+	stop := make(chan struct{})
+	writerErr := make(chan error, 1)
+	go func() {
+		defer close(writerErr)
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			txn := store.Update()
+			if err := txn.Set(fmt.Appendf(nil, "other:%08d", i), []byte("w")); err != nil {
+				txn.Discard()
+				writerErr <- err
+				return
+			}
+			if err := txn.Commit(); err != nil {
+				writerErr <- err
+				return
+			}
+			if i == 0 {
+				close(started)
+			}
+		}
+	}()
+
+	// Make sure the writer is live before the sweep starts, so the two
+	// genuinely overlap.
+	<-started
+	err = store.DeletePrefix([]byte("victim:"))
+	require.NoError(t, err)
+	close(stop)
+	require.NoError(t, <-writerErr)
+
+	viewTxn := store.View()
+	defer viewTxn.Discard()
+
+	exists, err := viewTxn.PrefixExists([]byte("victim:"))
+	require.NoError(t, err)
+	require.False(t, exists)
+
+	exists, err = viewTxn.PrefixExists([]byte("other:"))
+	require.NoError(t, err)
+	require.True(t, exists)
+}

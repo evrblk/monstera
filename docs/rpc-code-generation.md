@@ -128,8 +128,10 @@ Currently, Monstera codegen relies on several conventions in order to make it wo
   bytes inside a generic envelope, so it does not need to know their concrete types. (Grackle generates these one-line 
   wrappers over the proto's `MarshalVT` / `UnmarshalVT` with a small helper tool of its own, but you can choose whatever
   you want).
-* Every `*Request` of a sharded method must implement `ShardKey() []byte`. There are no annotations or reflection — you
-  specify explicitly how to extract a shard key from each request, usually with one line of Go code.
+* Every `*Request` of a sharded method must implement `ShardKey() cluster.ShardKey`. There are no annotations or
+  reflection — you specify explicitly how to extract a shard key from each request, usually with one line of Go code
+  (`utils.GetShardKey` derives one from arbitrary bytes). A `cluster.ShardKey` is a plain uint32: every value is a
+  valid key, and the framework routes it to the shard whose range contains it.
 
 Packages `output_package` and `core_types_package` must be different, otherwise the generated 
 `*Request`/`*Response` type aliases would collide with the payload types (validated by `monstera code generate`).
@@ -207,5 +209,5 @@ The second returned value `error` is an internal error that killed the applicati
 What is left for you to implement:
 
 * The application cores themselves (`GrackleLocksCoreApi`, `GrackleSemaphoresCoreApi`, etc. interfaces).
-* `ShardKey() []byte` on every sharded `*Request` payload type.
+* `ShardKey() cluster.ShardKey` on every sharded `*Request` payload type.
 * `MarshalBinary` / `UnmarshalBinary` on all request and response payload types.

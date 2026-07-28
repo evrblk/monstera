@@ -1,6 +1,10 @@
 package rpc
 
-import "encoding"
+import (
+	"encoding"
+
+	"github.com/evrblk/monstera/cluster"
+)
 
 // Event is emitted to the Monstera Pub/Sub bus to notify subscribers about
 // changes that happened in the given transaction.
@@ -21,7 +25,7 @@ type request interface {
 	encoding.BinaryMarshaler
 	encoding.BinaryUnmarshaler
 
-	ShardKey() []byte
+	ShardKey() cluster.ShardKey
 }
 
 // unshardedRequest is the payload of an RPC that is not routed by shard (e.g. a

@@ -1,7 +1,6 @@
 package monstera
 
 import (
-	"encoding/binary"
 	"fmt"
 	"math/rand"
 	"testing"
@@ -12,11 +11,11 @@ import (
 )
 
 // routerTestShard builds a shard with three replicas on node_1/2/3.
-func routerTestShard(id string, lower, upper []byte, state cluster.ShardState, parentId string) *cluster.Shard {
+func routerTestShard(id string, lower, upper cluster.ShardKey, state cluster.ShardState, parentId string) *cluster.Shard {
 	return &cluster.Shard{
 		Id:         id,
-		LowerBound: lower,
-		UpperBound: upper,
+		LowerBound: uint32(lower),
+		UpperBound: uint32(upper),
 		State:      state,
 		ParentId:   parentId,
 		Replicas: []*cluster.Replica{
@@ -55,10 +54,10 @@ func routerTestConfig(shards ...*cluster.Shard) *cluster.Config {
 // config's slice order.
 func TestRouter_RoutesOverUnsortedConfig(t *testing.T) {
 	cfg := routerTestConfig(
-		routerTestShard("shrd_c", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xbf, 0xff, 0xff, 0xff}, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
-		routerTestShard("shrd_a", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
-		routerTestShard("shrd_d", []byte{0xc0, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
-		routerTestShard("shrd_b", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
+		routerTestShard("shrd_c", 0x80000000, 0xbfffffff, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
+		routerTestShard("shrd_a", 0x00000000, 0x3fffffff, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
+		routerTestShard("shrd_d", 0xc0000000, 0xffffffff, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
+		routerTestShard("shrd_b", 0x40000000, 0x7fffffff, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
 	)
 	// The config is valid but intentionally left unsorted.
 	require.NoError(t, cfg.Validate())
@@ -66,22 +65,22 @@ func TestRouter_RoutesOverUnsortedConfig(t *testing.T) {
 	router := NewRouter(cfg)
 
 	cases := []struct {
-		key  []byte
+		key  cluster.ShardKey
 		want string
 	}{
-		{[]byte{0x00, 0x00, 0x00, 0x00}, "shrd_a"},
-		{[]byte{0x3f, 0xff, 0xff, 0xff}, "shrd_a"},
-		{[]byte{0x40, 0x00, 0x00, 0x00}, "shrd_b"},
-		{[]byte{0x7f, 0xff, 0xff, 0xff}, "shrd_b"},
-		{[]byte{0x80, 0x00, 0x00, 0x00}, "shrd_c"},
-		{[]byte{0xbf, 0xff, 0xff, 0xff}, "shrd_c"},
-		{[]byte{0xc0, 0x00, 0x00, 0x00}, "shrd_d"},
-		{[]byte{0xff, 0xff, 0xff, 0xff}, "shrd_d"},
+		{0x00000000, "shrd_a"},
+		{0x3fffffff, "shrd_a"},
+		{0x40000000, "shrd_b"},
+		{0x7fffffff, "shrd_b"},
+		{0x80000000, "shrd_c"},
+		{0xbfffffff, "shrd_c"},
+		{0xc0000000, "shrd_d"},
+		{0xffffffff, "shrd_d"},
 	}
 	for _, c := range cases {
 		s, err := router.FindShardByShardKey("app", c.key)
-		require.NoError(t, err, "key %x", c.key)
-		require.Equal(t, c.want, s.Id, "key %x", c.key)
+		require.NoError(t, err, "key %s", c.key)
+		require.Equal(t, c.want, s.Id, "key %s", c.key)
 	}
 }
 
@@ -90,45 +89,38 @@ func TestRouter_RoutesOverUnsortedConfig(t *testing.T) {
 // in favour of its active children.
 func TestRouter_SkipsNonRoutableShards(t *testing.T) {
 	cfg := routerTestConfig(
-		routerTestShard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, cluster.ShardState_SHARD_STATE_SPLITTING, ""),
-		routerTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
+		routerTestShard("shrd_01", 0x00000000, 0x7fffffff, cluster.ShardState_SHARD_STATE_SPLITTING, ""),
+		routerTestShard("shrd_02", 0x80000000, 0xffffffff, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
 		// activating children appended out of order, sharing bounds with the parent
-		routerTestShard("shrd_04", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, cluster.ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
-		routerTestShard("shrd_03", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, cluster.ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		routerTestShard("shrd_04", 0x40000000, 0x7fffffff, cluster.ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
+		routerTestShard("shrd_03", 0x00000000, 0x3fffffff, cluster.ShardState_SHARD_STATE_ACTIVATING, "shrd_01"),
 	)
 	require.NoError(t, cfg.Validate())
 	router := NewRouter(cfg)
 
-	for _, key := range [][]byte{
-		{0x00, 0x00, 0x00, 0x00},
-		{0x14, 0x90, 0x2f, 0x1e},
-		{0x40, 0x00, 0x00, 0x00},
-		{0x7f, 0xff, 0xff, 0xff},
+	for _, key := range []cluster.ShardKey{
+		0x00000000,
+		0x14902f1e,
+		0x40000000,
+		0x7fffffff,
 	} {
 		s, err := router.FindShardByShardKey("app", key)
-		require.NoError(t, err, "key %x", key)
-		require.Equal(t, "shrd_01", s.Id, "key %x", key)
+		require.NoError(t, err, "key %s", key)
+		require.Equal(t, "shrd_01", s.Id, "key %s", key)
 	}
 }
 
-func TestRouter_FindShardByShardKey_InvalidKeyAndUnknownApp(t *testing.T) {
+func TestRouter_FindShardByShardKey_UnknownApp(t *testing.T) {
 	router := NewRouter(routerTestConfig(
-		routerTestShard("shrd_a", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
+		routerTestShard("shrd_a", 0x00000000, 0xffffffff, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
 	))
 
-	_, err := router.FindShardByShardKey("app", nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid shard key length")
-
-	_, err = router.FindShardByShardKey("app", []byte{0x00, 0x00, 0x00, 0x00, 0x00})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid shard key length")
-
-	_, err = router.FindShardByShardKey("does-not-exist", []byte{0x00})
+	// Every ShardKey value is valid by construction; the only lookup failure on
+	// a valid config is an unknown application.
+	_, err := router.FindShardByShardKey("does-not-exist", 0)
 	require.ErrorIs(t, err, errRouteApplicationNotFound)
 
-	// A shorter-than-4-byte key is still accepted and resolves.
-	s, err := router.FindShardByShardKey("app", []byte{0x00, 0x90})
+	s, err := router.FindShardByShardKey("app", 0x00900000)
 	require.NoError(t, err)
 	require.NotNil(t, s)
 }
@@ -156,12 +148,8 @@ func BenchmarkRouterFindShard(b *testing.B) {
 		shards := make([]*cluster.Shard, shardsPerApp)
 		shardSize := keyspacePerApp / shardsPerApp
 		for shardIdx := range shardsPerApp {
-			lower := uint32(shardIdx * shardSize)
-			upper := uint32((shardIdx+1)*shardSize - 1)
-			lowerBound := make([]byte, 4)
-			upperBound := make([]byte, 4)
-			binary.BigEndian.PutUint32(lowerBound, lower)
-			binary.BigEndian.PutUint32(upperBound, upper)
+			lowerBound := uint32(shardIdx * shardSize)
+			upperBound := uint32((shardIdx+1)*shardSize - 1)
 			replicas := make([]*cluster.Replica, replication)
 			for r := range replication {
 				nodeIdx := (shardIdx*replication + r) % numNodes
@@ -195,16 +183,14 @@ func BenchmarkRouterFindShard(b *testing.B) {
 	rng := rand.New(rand.NewSource(42))
 	lookupKeys := make([]struct {
 		appIdx int
-		key    []byte
+		key    cluster.ShardKey
 	}, b.N)
 	for i := 0; i < b.N; i++ {
 		appIdx := rng.Intn(numApps)
-		key := make([]byte, 4)
-		binary.BigEndian.PutUint32(key, rng.Uint32())
 		lookupKeys[i] = struct {
 			appIdx int
-			key    []byte
-		}{appIdx, key}
+			key    cluster.ShardKey
+		}{appIdx, cluster.ShardKey(rng.Uint32())}
 	}
 
 	b.ResetTimer()
@@ -219,8 +205,8 @@ func BenchmarkRouterFindShard(b *testing.B) {
 
 func TestRouter_IdLookups(t *testing.T) {
 	cfg := routerTestConfig(
-		routerTestShard("shrd_a", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
-		routerTestShard("shrd_b", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
+		routerTestShard("shrd_a", 0x00000000, 0x7fffffff, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
+		routerTestShard("shrd_b", 0x80000000, 0xffffffff, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
 	)
 	require.NoError(t, cfg.Validate())
 	router := NewRouter(cfg)
@@ -259,10 +245,10 @@ func TestRouter_ListRoutableShards(t *testing.T) {
 	// A completed split: inactive parent overlapped by two active children,
 	// plus an unrelated active shard.
 	cfg := routerTestConfig(
-		routerTestShard("shrd_p", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, cluster.ShardState_SHARD_STATE_INACTIVE, ""),
-		routerTestShard("shrd_c1", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}, cluster.ShardState_SHARD_STATE_ACTIVE, "shrd_p"),
-		routerTestShard("shrd_c2", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}, cluster.ShardState_SHARD_STATE_ACTIVE, "shrd_p"),
-		routerTestShard("shrd_02", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
+		routerTestShard("shrd_p", 0x00000000, 0x7fffffff, cluster.ShardState_SHARD_STATE_INACTIVE, ""),
+		routerTestShard("shrd_c1", 0x00000000, 0x3fffffff, cluster.ShardState_SHARD_STATE_ACTIVE, "shrd_p"),
+		routerTestShard("shrd_c2", 0x40000000, 0x7fffffff, cluster.ShardState_SHARD_STATE_ACTIVE, "shrd_p"),
+		routerTestShard("shrd_02", 0x80000000, 0xffffffff, cluster.ShardState_SHARD_STATE_ACTIVE, ""),
 	)
 	require.NoError(t, cfg.Validate())
 	router := NewRouter(cfg)
@@ -279,10 +265,10 @@ func TestRouter_ListRoutableShards(t *testing.T) {
 }
 
 // TestRouter_FindShard_MultiShard exercises routing over a many-shard, single
-// application config with fine-grained boundaries, cross-application isolation,
-// and sub-4-byte keys.
+// application config with fine-grained boundaries and cross-application
+// isolation.
 func TestRouter_FindShard_MultiShard(t *testing.T) {
-	shard := func(id string, lower, upper []byte) *cluster.Shard {
+	shard := func(id string, lower, upper cluster.ShardKey) *cluster.Shard {
 		return routerTestShard(id, lower, upper, cluster.ShardState_SHARD_STATE_ACTIVE, "")
 	}
 	applications := []*cluster.Application{
@@ -291,15 +277,15 @@ func TestRouter_FindShard_MultiShard(t *testing.T) {
 			Implementation:    "test.app",
 			ReplicationFactor: 3,
 			Shards: []*cluster.Shard{
-				shard("shrd_01", []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x3f, 0xff, 0xff, 0xff}),
-				shard("shrd_05", []byte{0x40, 0x00, 0x00, 0x00}, []byte{0x4f, 0xff, 0xff, 0xff}),
-				shard("shrd_06", []byte{0x50, 0x00, 0x00, 0x00}, []byte{0x5f, 0xff, 0xff, 0xff}),
-				shard("shrd_07", []byte{0x60, 0x00, 0x00, 0x00}, []byte{0x6f, 0xff, 0xff, 0xff}),
-				shard("shrd_08", []byte{0x70, 0x00, 0x00, 0x00}, []byte{0x74, 0xff, 0xff, 0xff}),
-				shard("shrd_09", []byte{0x75, 0x00, 0x00, 0x00}, []byte{0x75, 0x7f, 0xff, 0xff}),
-				shard("shrd_10", []byte{0x75, 0x80, 0x00, 0x00}, []byte{0x7f, 0xff, 0xff, 0xff}),
-				shard("shrd_03", []byte{0x80, 0x00, 0x00, 0x00}, []byte{0xbf, 0xff, 0xff, 0xff}),
-				shard("shrd_04", []byte{0xc0, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}),
+				shard("shrd_01", 0x00000000, 0x3fffffff),
+				shard("shrd_05", 0x40000000, 0x4fffffff),
+				shard("shrd_06", 0x50000000, 0x5fffffff),
+				shard("shrd_07", 0x60000000, 0x6fffffff),
+				shard("shrd_08", 0x70000000, 0x74ffffff),
+				shard("shrd_09", 0x75000000, 0x757fffff),
+				shard("shrd_10", 0x75800000, 0x7fffffff),
+				shard("shrd_03", 0x80000000, 0xbfffffff),
+				shard("shrd_04", 0xc0000000, 0xffffffff),
 			},
 		},
 	}
@@ -316,26 +302,26 @@ func TestRouter_FindShard_MultiShard(t *testing.T) {
 
 	cases := []struct {
 		app  string
-		key  []byte
+		key  cluster.ShardKey
 		want string
 	}{
-		{"test.app_01", []byte{0x14, 0x90, 0x2f, 0x1e}, "shrd_01"},
-		{"test.app_01", []byte{0x00, 0x90}, "shrd_01"}, // sub-4-byte key
-		{"test.app_01", []byte{0x80, 0x90, 0x2f, 0x1e}, "shrd_03"},
-		{"test.app_01", []byte{0xff, 0x90, 0x2f, 0x1e}, "shrd_04"},
-		{"test.app_01", []byte{0xff, 0xff, 0xff, 0xff}, "shrd_04"},
-		{"test.app_01", []byte{0x45, 0x90, 0xff, 0xff}, "shrd_05"},
-		{"test.app_01", []byte{0x75, 0x40, 0xff, 0xff}, "shrd_09"},
-		{"test.app_01", []byte{0x75, 0x80, 0xff, 0xff}, "shrd_10"},
+		{"test.app_01", 0x14902f1e, "shrd_01"},
+		{"test.app_01", 0x00900000, "shrd_01"},
+		{"test.app_01", 0x80902f1e, "shrd_03"},
+		{"test.app_01", 0xff902f1e, "shrd_04"},
+		{"test.app_01", 0xffffffff, "shrd_04"},
+		{"test.app_01", 0x4590ffff, "shrd_05"},
+		{"test.app_01", 0x7540ffff, "shrd_09"},
+		{"test.app_01", 0x7580ffff, "shrd_10"},
 	}
 	for _, c := range cases {
 		p, err := router.FindShardByShardKey(c.app, c.key)
-		require.NoError(t, err, "key %x", c.key)
-		require.Equal(t, c.want, p.Id, "key %x", c.key)
+		require.NoError(t, err, "key %s", c.key)
+		require.Equal(t, c.want, p.Id, "key %s", c.key)
 	}
 
 	// An unknown application is not routable.
-	_, err = router.FindShardByShardKey("test.app_02", []byte{0x14, 0x90, 0x2f, 0x1e})
+	_, err = router.FindShardByShardKey("test.app_02", 0x14902f1e)
 	require.ErrorIs(t, err, errRouteApplicationNotFound)
 }
 
@@ -343,7 +329,7 @@ func TestRouter_FindShard_MultiShard(t *testing.T) {
 // everything as not found rather than panicking.
 func TestRouter_Nil(t *testing.T) {
 	router := NewRouter(nil)
-	_, err := router.FindShardByShardKey("app", []byte{0x00})
+	_, err := router.FindShardByShardKey("app", 0)
 	require.ErrorIs(t, err, errRouteApplicationNotFound)
 	_, err = router.GetShard("x")
 	require.ErrorIs(t, err, errRouteShardNotFound)

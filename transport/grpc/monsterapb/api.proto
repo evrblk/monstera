@@ -26,7 +26,9 @@ service MonsteraApi {
 
 message UpdateRequest {
   bytes payload = 1;
-  bytes shard_key = 2;
+  // Shard key routing the request to its owning shard. Absent for
+  // direct-shard requests addressed by shard_id only.
+  optional fixed32 shard_key = 2;
   string application_name = 3;
   string shard_id = 4;
   int32 hops = 5;
@@ -39,7 +41,9 @@ message UpdateResponse {
 message ReadRequest {
   bytes payload = 1;
   bool allow_read_from_followers = 2;
-  bytes shard_key = 3;
+  // Shard key routing the request to its owning shard. Absent for
+  // direct-shard requests addressed by shard_id only.
+  optional fixed32 shard_key = 3;
   string application_name = 4;
   string shard_id = 5;
   int32 hops = 6;

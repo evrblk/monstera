@@ -14,7 +14,6 @@
 package cluster
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -223,7 +222,7 @@ func CreateEmptyConfig() *Config {
 //   - Shards have non-empty id
 //   - Shards have globally unique ids
 //   - Shards have a known state (active, inactive, splitting or activating)
-//   - Shards have 4 bytes ranges
+//   - Shards have non-degenerate ranges (LowerBound < UpperBound)
 //   - Non-empty shard ParentId references an existing shard within the same application
 //   - Active and splitting shards have no overlap in range
 //   - All active and splitting shards together cover the full range of keys with no gaps
@@ -337,11 +336,7 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("not enough replicas for shard %s", s.Id)
 			}
 
-			if len(s.LowerBound) != 4 || len(s.UpperBound) != 4 {
-				return fmt.Errorf("invalid lower bound/upper bounds for shard %s", s.Id)
-			}
-
-			if bytes.Compare(s.LowerBound, s.UpperBound) >= 0 {
+			if s.LowerBound >= s.UpperBound {
 				return fmt.Errorf("invalid lower bound/upper bounds for shard %s", s.Id)
 			}
 
@@ -393,9 +388,7 @@ func (c *Config) Validate() error {
 		if len(routableShards) == 0 {
 			return fmt.Errorf("no active shards for %s", a.Name)
 		}
-		lowest := []byte{0x00, 0x00, 0x00, 0x00}
-		highest := []byte{0xff, 0xff, 0xff, 0xff}
-		if err := validateContiguousCoverage(routableShards, lowest, highest); err != nil {
+		if err := validateContiguousCoverage(routableShards, 0x00000000, 0xffffffff); err != nil {
 			return fmt.Errorf("%w for application %s", err, a.Name)
 		}
 
@@ -447,7 +440,7 @@ func (c *Config) Validate() error {
 				if len(children) < 2 {
 					return fmt.Errorf("splitting shard %s must have at least 2 activating children", s.Id)
 				}
-				if err := validateContiguousCoverage(children, s.LowerBound, s.UpperBound); err != nil {
+				if err := validateContiguousCoverage(children, s.LowerKey(), s.UpperKey()); err != nil {
 					return fmt.Errorf("children of splitting shard %s do not cover its range: %w", s.Id, err)
 				}
 				// Split seeding is node-local: every node hosting a parent
@@ -477,29 +470,26 @@ func (c *Config) Validate() error {
 // validateContiguousCoverage checks that shards exactly cover the range
 // [lowerBound, upperBound] with no overlaps and no gaps. shards must be
 // non-empty; the slice is not modified.
-func validateContiguousCoverage(shards []*Shard, lowerBound []byte, upperBound []byte) error {
+func validateContiguousCoverage(shards []*Shard, lowerBound ShardKey, upperBound ShardKey) error {
 	// Sort shards by LowerBound
 	sortedShards := make([]*Shard, len(shards))
 	copy(sortedShards, shards)
 	sort.Slice(sortedShards, func(i, j int) bool {
-		return bytes.Compare(sortedShards[i].LowerBound, sortedShards[j].LowerBound) < 0
+		return sortedShards[i].LowerBound < sortedShards[j].LowerBound
 	})
 
-	if !bytes.Equal(sortedShards[0].LowerBound, lowerBound) {
-		return fmt.Errorf("shards do not start at 0x%x", lowerBound)
+	if sortedShards[0].LowerKey() != lowerBound {
+		return fmt.Errorf("shards do not start at %s", lowerBound)
 	}
-	if !bytes.Equal(sortedShards[len(sortedShards)-1].UpperBound, upperBound) {
-		return fmt.Errorf("shards do not end at 0x%x", upperBound)
+	if sortedShards[len(sortedShards)-1].UpperKey() != upperBound {
+		return fmt.Errorf("shards do not end at %s", upperBound)
 	}
 	// Check contiguous coverage
 	for i := 1; i < len(sortedShards); i++ {
 		prev := sortedShards[i-1]
 		curr := sortedShards[i]
-		// prev.UpperBound + 1 == curr.LowerBound
-		prevUpper := binary.BigEndian.Uint32(prev.UpperBound)
-		currLower := binary.BigEndian.Uint32(curr.LowerBound)
-		if prevUpper+1 != currLower {
-			return fmt.Errorf("shards are not contiguous between %x and %x", prev.UpperBound, curr.LowerBound)
+		if prev.UpperBound+1 != curr.LowerBound {
+			return fmt.Errorf("shards are not contiguous between %s and %s", prev.UpperKey(), curr.LowerKey())
 		}
 	}
 	return nil
@@ -530,8 +520,8 @@ func (s *Shard) IsRoutable() bool {
 func (c *Config) sortShards() {
 	for _, a := range c.Applications {
 		sort.Slice(a.Shards, func(i, j int) bool {
-			if cmp := bytes.Compare(a.Shards[i].LowerBound, a.Shards[j].LowerBound); cmp != 0 {
-				return cmp < 0
+			if a.Shards[i].LowerBound != a.Shards[j].LowerBound {
+				return a.Shards[i].LowerBound < a.Shards[j].LowerBound
 			}
 			return a.Shards[i].Id < a.Shards[j].Id
 		})
@@ -637,8 +627,8 @@ func (c *Config) ListShards(applicationName string) ([]*Shard, error) {
 	copy(sortedShards, application.Shards)
 
 	sort.Slice(sortedShards, func(i, j int) bool {
-		if cmp := bytes.Compare(sortedShards[i].LowerBound, sortedShards[j].LowerBound); cmp != 0 {
-			return cmp < 0
+		if sortedShards[i].LowerBound != sortedShards[j].LowerBound {
+			return sortedShards[i].LowerBound < sortedShards[j].LowerBound
 		}
 		return sortedShards[i].Id < sortedShards[j].Id
 	})
@@ -668,7 +658,7 @@ func (c *Config) CreateApplication(applicationName string, implementation string
 }
 
 // CreateShard appends a new active shard with the given bounds to the application.
-func (c *Config) CreateShard(applicationName string, lowerBound []byte, upperBound []byte, parentId string) (*Shard, error) {
+func (c *Config) CreateShard(applicationName string, lowerBound ShardKey, upperBound ShardKey, parentId string) (*Shard, error) {
 	application, err := c.getApplication(applicationName)
 	if err != nil {
 		return nil, err
@@ -678,14 +668,11 @@ func (c *Config) CreateShard(applicationName string, lowerBound []byte, upperBou
 		application.Shards = make([]*Shard, 0)
 	}
 
-	if len(lowerBound) != 4 || len(upperBound) != 4 {
-		return nil, fmt.Errorf("invalid bounds for shard in application %s: bounds must be 4 bytes", applicationName)
-	}
-	if bytes.Compare(lowerBound, upperBound) >= 0 {
+	if lowerBound >= upperBound {
 		return nil, fmt.Errorf("invalid bounds for shard in application %s: lower bound must be less than upper bound", applicationName)
 	}
 
-	sl, su := ShortenBounds(lowerBound, upperBound)
+	sl, su := ShortenBounds(lowerBound.Bytes(), upperBound.Bytes())
 	id := fmt.Sprintf("%s_%x_%x", applicationName, sl, su)
 
 	// Shard ids are globally unique. The id is derived from the bounds, so this
@@ -696,8 +683,8 @@ func (c *Config) CreateShard(applicationName string, lowerBound []byte, upperBou
 
 	shard := &Shard{
 		Id:         id,
-		LowerBound: lowerBound,
-		UpperBound: upperBound,
+		LowerBound: uint32(lowerBound),
+		UpperBound: uint32(upperBound),
 		ParentId:   parentId,
 		State:      ShardState_SHARD_STATE_ACTIVE,
 	}
@@ -931,8 +918,8 @@ func ValidateTransition(old, new *Config) error {
 			if !exists {
 				return fmt.Errorf("cannot remove shard %s from application %s", shardId, appName)
 			}
-			if !bytes.Equal(oldShard.LowerBound, newShard.LowerBound) ||
-				!bytes.Equal(oldShard.UpperBound, newShard.UpperBound) {
+			if oldShard.LowerBound != newShard.LowerBound ||
+				oldShard.UpperBound != newShard.UpperBound {
 				return fmt.Errorf("cannot change bounds for shard %s in application %s", shardId, appName)
 			}
 			if oldShard.ParentId != newShard.ParentId {
@@ -1090,7 +1077,7 @@ type shardJsonProxy struct {
 // MarshalJSON implements json.Marshaler using the human-readable form (hex
 // bounds shortened via ShortenBounds, lowercase state names).
 func (s *Shard) MarshalJSON() ([]byte, error) {
-	sl, su := ShortenBounds(s.LowerBound, s.UpperBound)
+	sl, su := ShortenBounds(s.LowerKey().Bytes(), s.UpperKey().Bytes())
 
 	var state string
 	switch s.State {
@@ -1138,21 +1125,20 @@ func (s *Shard) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("upper bound %q is too long: at most 8 hex characters", p.UpperBound)
 	}
 
-	// Initialize with 0x00s
-	s.LowerBound = []byte{0x00, 0x00, 0x00, 0x00}
-	// Decode can rewrite less than 4 bytes leaving 0x00s in the end
-	_, err = hex.Decode(s.LowerBound, []byte(p.LowerBound))
-	if err != nil {
+	// Initialize with 0x00s: Decode can rewrite less than 4 bytes, leaving
+	// 0x00s in the end (shortened lower bounds pad with zeros).
+	lower := []byte{0x00, 0x00, 0x00, 0x00}
+	if _, err := hex.Decode(lower, []byte(p.LowerBound)); err != nil {
 		return err
 	}
+	s.LowerBound = binary.BigEndian.Uint32(lower)
 
-	// Initialize with 0xffs
-	s.UpperBound = []byte{0xff, 0xff, 0xff, 0xff}
-	// Decode can rewrite less than 4 bytes leaving 0xffs in the end
-	_, err = hex.Decode(s.UpperBound, []byte(p.UpperBound))
-	if err != nil {
+	// Initialize with 0xffs: shortened upper bounds pad with 0xff.
+	upper := []byte{0xff, 0xff, 0xff, 0xff}
+	if _, err := hex.Decode(upper, []byte(p.UpperBound)); err != nil {
 		return err
 	}
+	s.UpperBound = binary.BigEndian.Uint32(upper)
 
 	switch p.State {
 	case "active":

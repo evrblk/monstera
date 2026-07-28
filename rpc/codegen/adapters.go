@@ -71,19 +71,15 @@ func generateHelpers(f *File) {
 
 	// checkShardBounds func
 	f.Func().Id("checkShardBounds").Params(
-		Id("shardKey").Index().Byte(),
-		Id("lowerBound").Index().Byte(),
-		Id("upperBound").Index().Byte(),
+		List(Id("shardKey"), Id("lowerBound"), Id("upperBound")).Qual(clusterPkg, "ShardKey"),
 	).Params(
 		Error(),
 	).Block(
 		If(
-			Qual("bytes", "Compare").Call(Id("shardKey"), Id("lowerBound")).Op("<").Lit(0).
-				Op("||").
-				Qual("bytes", "Compare").Call(Id("shardKey"), Id("upperBound")).Op(">").Lit(0),
+			Id("shardKey").Op("<").Id("lowerBound").Op("||").Id("shardKey").Op(">").Id("upperBound"),
 		).Block(
 			Return(Qual("fmt", "Errorf").Call(
-				Lit("routing violation: shard key %x is outside shard bounds [%x, %x]"),
+				Lit("routing violation: shard key %s is outside shard bounds [%s, %s]"),
 				Id("shardKey"),
 				Id("lowerBound"),
 				Id("upperBound"),
@@ -104,8 +100,8 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 		Id("shardId").String(),
 		Id("replicaId").String(),
 		Line(),
-		Id("shardLowerBound").Index().Byte(),
-		Id("shardUpperBound").Index().Byte(),
+		Id("shardLowerBound").Qual(clusterPkg, "ShardKey"),
+		Id("shardUpperBound").Qual(clusterPkg, "ShardKey"),
 		Line(),
 		Id(coreVarName).Qual(cfg.GoCode.OutputPackage, apiName),
 	)
@@ -120,8 +116,8 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 		Id("nodeId").String(),
 		Id("shardId").String(),
 		Id("replicaId").String(),
-		Id("shardLowerBound").Index().Byte(),
-		Id("shardUpperBound").Index().Byte(),
+		Id("shardLowerBound").Qual(clusterPkg, "ShardKey"),
+		Id("shardUpperBound").Qual(clusterPkg, "ShardKey"),
 		Id(coreVarName).Qual(cfg.GoCode.OutputPackage, apiName),
 	).Params(
 		Op("*").Id(adapterName),

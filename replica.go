@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/evrblk/monstera/cluster"
 	"github.com/evrblk/monstera/internal/raft"
 	"github.com/evrblk/monstera/internal/replication"
 	"github.com/evrblk/monstera/internal/replication/replicationpb"
@@ -68,10 +69,10 @@ func (r *replica) Read(request []byte) (response *ReadResponse, err error) {
 }
 
 // Update proposes an application update through Raft. shardKey is the
-// update's shard key (empty for unsharded updates); it is stamped into the
-// replicated command only while the shard is splitting, so seeded entries can
-// be routed to children by key.
-func (r *replica) Update(request []byte, shardKey []byte) (updateResponse *UpdateResponse, err error) {
+// update's shard key (hasShardKey is false for shard-wide, unsharded updates);
+// it is stamped into the replicated command's routing only while the shard is
+// splitting, so seeded entries can be routed to children by key.
+func (r *replica) Update(request []byte, shardKey cluster.ShardKey, hasShardKey bool) (updateResponse *UpdateResponse, err error) {
 	t1 := time.Now()
 	defer func() {
 		result := "ok"
@@ -87,8 +88,12 @@ func (r *replica) Update(request []byte, shardKey []byte) (updateResponse *Updat
 		Type:    replicationpb.CommandType_COMMAND_TYPE_UPDATE,
 	}
 	if r.splitting.Load() {
-		cmd.ShardKey = shardKey
-		cmd.Stamped = true
+		if hasShardKey {
+			cmd.Routing = replicationpb.CommandRouting_COMMAND_ROUTING_SHARDED
+			cmd.ShardKey = uint32(shardKey)
+		} else {
+			cmd.Routing = replicationpb.CommandRouting_COMMAND_ROUTING_SHARD_WIDE
+		}
 	}
 
 	cmdBytes, err := r.commandCodec.Encode(cmd)

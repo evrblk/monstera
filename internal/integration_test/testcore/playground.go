@@ -70,10 +70,11 @@ func NewBoundedInMemoryPlaygroundCore(lowerBound, upperBound []byte) *InMemoryPl
 
 func (c *InMemoryPlaygroundCore) Close() {}
 
-// ShardKeyOf computes the shard key of a logical key: the truncated hash the
-// client stub routes by.
+// ShardKeyOf computes the shard key of a logical key, as its canonical 4-byte
+// encoding — derived from utils.GetShardKey so it agrees with what the client
+// stub routes by, by construction.
 func ShardKeyOf(key uint64) []byte {
-	return utils.GetTruncatedHash(utils.ConcatBytes(key), 4)
+	return utils.GetShardKey(utils.ConcatBytes(key)).Bytes()
 }
 
 // ownsPlaygroundKey reports whether a logical key belongs to the given shard
@@ -395,9 +396,12 @@ func (c *ExclusivePlaygroundCore) Restore(snapshots ...io.ReadCloser) error {
 		return err
 	}
 
-	// Replace semantics: this core exclusively owns its prefix, so dropping
-	// it wholesale is safe by construction.
-	if err := c.store.DropPrefix(c.prefix); err != nil {
+	// Replace semantics: this core exclusively owns its prefix, so deleting
+	// it wholesale is safe by construction. DeletePrefix, not DropPrefix: the
+	// store is shared with other cores on the node, whose applies must keep
+	// flowing while this core restores (e.g. split seeding of a child while
+	// the parent serves).
+	if err := c.store.DeletePrefix(c.prefix); err != nil {
 		return err
 	}
 	return c.store.BatchUpdate(func(b *store.Batch) error {

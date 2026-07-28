@@ -50,18 +50,18 @@ func splitShard(cfg *cluster.Config, m Mutation) error {
 		parent.State = cluster.ShardState_SHARD_STATE_SPLITTING
 
 		for _, spec := range m.SplitChildren {
-			lower, err := hex.DecodeString(spec.LowerBound)
+			lower, err := decodeBoundHex(spec.LowerBound)
 			if err != nil {
 				return fmt.Errorf("child %s lower bound: %w", spec.ShardId, err)
 			}
-			upper, err := hex.DecodeString(spec.UpperBound)
+			upper, err := decodeBoundHex(spec.UpperBound)
 			if err != nil {
 				return fmt.Errorf("child %s upper bound: %w", spec.ShardId, err)
 			}
 			child := &cluster.Shard{
 				Id:         spec.ShardId,
-				LowerBound: lower,
-				UpperBound: upper,
+				LowerBound: uint32(lower),
+				UpperBound: uint32(upper),
 				State:      cluster.ShardState_SHARD_STATE_ACTIVATING,
 				ParentId:   parent.Id,
 			}
@@ -204,4 +204,14 @@ func validateSequence(base *cluster.Config, seq *Sequence) error {
 		}
 	}
 	return nil
+}
+
+// decodeBoundHex parses a full 8-hex-character shard bound (the sequence-file
+// JSON representation) into a shard key.
+func decodeBoundHex(s string) (cluster.ShardKey, error) {
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return 0, err
+	}
+	return cluster.ShardKeyFromBytes(b)
 }

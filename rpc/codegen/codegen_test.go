@@ -234,14 +234,16 @@ func TestGeneratedAdapterGuardsNilPayload(t *testing.T) {
 	require.Contains(t, out, "if methodResp.Payload != nil {")
 }
 
-// TestGeneratedNonclusteredStubValidatesShardKeys checks that the nonclustered
-// stub enforces the same 1-4 byte shard key contract as the clustered path
-// (cluster.Config.FindShardByShardKey), so invalid keys fail in dev, not on
-// deploy.
-func TestGeneratedNonclusteredStubValidatesShardKeys(t *testing.T) {
+// TestGeneratedNonclusteredStubUsesTypedShardKeys checks that the nonclustered
+// stub routes with cluster.ShardKey (plain integer comparisons — every key
+// value is valid by construction, matching the clustered path) and that its
+// constructor validates shardsPerApp.
+func TestGeneratedNonclusteredStubUsesTypedShardKeys(t *testing.T) {
 	out, err := GenerateStubs(validYaml())
 	require.NoError(t, err)
 
-	require.Contains(t, out, "invalid shard key length %d: must be between 1 and 4 bytes")
+	require.Contains(t, out, "lowerBound cluster.ShardKey")
+	require.Contains(t, out, "shardKey >= adapter.lowerBound && shardKey <= adapter.upperBound")
 	require.Contains(t, out, "shardsPerApp must be a power of 2 between 1 and 2^32")
+	require.NotContains(t, out, "invalid shard key length")
 }

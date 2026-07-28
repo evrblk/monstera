@@ -1,7 +1,6 @@
 package monstera
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -87,7 +86,7 @@ func newSplitter(parent *replica, coreType CoreType, children []*splitChild,
 	factory func(*cluster.Shard, *cluster.Replica) ApplicationCore, promote func() error, logger *log.Logger) *splitter {
 	// Sort children by lower bound so routing can mirror FindShardByShardKey.
 	sort.Slice(children, func(i, j int) bool {
-		return bytes.Compare(children[i].shard.LowerBound, children[j].shard.LowerBound) < 0
+		return children[i].shard.LowerBound < children[j].shard.LowerBound
 	})
 	return &splitter{
 		parent:   parent,
@@ -409,23 +408,26 @@ func (s *splitter) copyRange(from, to uint64) error {
 
 		switch cmd.Type {
 		case replicationpb.CommandType_COMMAND_TYPE_UPDATE:
-			if !cmd.Stamped {
+			switch cmd.Routing {
+			case replicationpb.CommandRouting_COMMAND_ROUTING_UNSTAMPED:
 				// Proposed by a leader that had not applied the splitting
 				// config yet: unroutable. Restart from a base past it.
 				return s.restartLagging(i, "unstamped update entry in the seed tail")
-			}
-			if len(cmd.ShardKey) == 0 {
-				// Unsharded update: every child receives it in full.
+			case replicationpb.CommandRouting_COMMAND_ROUTING_SHARD_WIDE:
+				// Shard-wide update: every child receives it in full.
 				entries = append(entries, routed{index: i, data: e.Data})
 				continue
+			case replicationpb.CommandRouting_COMMAND_ROUTING_SHARDED:
+				owner := s.childOwning(cluster.ShardKey(cmd.ShardKey))
+				if owner == nil {
+					// The children partition the parent's range and the key was
+					// routed to the parent: this cannot happen on a valid config.
+					panic(fmt.Sprintf("split seeding of shard %s: no child owns shard key %d", s.parent.shardId, cmd.ShardKey))
+				}
+				entries = append(entries, routed{index: i, owner: owner, data: e.Data})
+			default:
+				panic(fmt.Sprintf("split seeding of shard %s: unknown command routing %v at index %d", s.parent.shardId, cmd.Routing, i))
 			}
-			owner := s.childOwning(cmd.ShardKey)
-			if owner == nil {
-				// The children partition the parent's range and the key was
-				// routed to the parent: this cannot happen on a valid config.
-				panic(fmt.Sprintf("split seeding of shard %s: no child owns shard key %x", s.parent.shardId, cmd.ShardKey))
-			}
-			entries = append(entries, routed{index: i, owner: owner, data: e.Data})
 
 		default:
 			// Framework commands (NOOP, CUTOFF) carry no application state
@@ -499,39 +501,24 @@ func (s *splitter) restartLagging(index uint64, reason string) error {
 }
 
 // childOwning routes a stamped shard key to the child whose bounds contain
-// it, mirroring cluster.FindShardByShardKey (children are sorted by lower
-// bound; keys shorter than 4 bytes are prefixes).
-func (s *splitter) childOwning(shardKey []byte) *splitChild {
-	i := sort.Search(len(s.children), func(i int) bool {
-		return bytes.Compare(s.children[i].shard.LowerBound, shardKey) > 0
-	})
-	if i == 0 {
-		return nil
-	}
-	candidate := s.children[i-1]
-	if bytes.Compare(shardKey, candidate.shard.UpperBound) <= 0 {
-		return candidate
+// it, mirroring Router.FindShardByShardKey (children are sorted by lower
+// bound).
+func (s *splitter) childOwning(shardKey cluster.ShardKey) *splitChild {
+	for _, ch := range s.children {
+		if ch.shard.ContainsKey(shardKey) {
+			return ch
+		}
 	}
 	return nil
 }
 
 // shardOwningKey returns the shard from shards whose bounds contain shardKey,
-// or nil. Same routing rules as cluster.FindShardByShardKey.
-func shardOwningKey(shards []*cluster.Shard, shardKey []byte) *cluster.Shard {
-	sorted := make([]*cluster.Shard, len(shards))
-	copy(sorted, shards)
-	sort.Slice(sorted, func(i, j int) bool {
-		return bytes.Compare(sorted[i].LowerBound, sorted[j].LowerBound) < 0
-	})
-	i := sort.Search(len(sorted), func(i int) bool {
-		return bytes.Compare(sorted[i].LowerBound, shardKey) > 0
-	})
-	if i == 0 {
-		return nil
-	}
-	candidate := sorted[i-1]
-	if bytes.Compare(shardKey, candidate.UpperBound) <= 0 {
-		return candidate
+// or nil. Same routing rules as Router.FindShardByShardKey.
+func shardOwningKey(shards []*cluster.Shard, shardKey cluster.ShardKey) *cluster.Shard {
+	for _, sh := range shards {
+		if sh.ContainsKey(shardKey) {
+			return sh
+		}
 	}
 	return nil
 }

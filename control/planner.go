@@ -1,10 +1,7 @@
 package control
 
 import (
-	"bytes"
 	"crypto/sha256"
-	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -213,7 +210,7 @@ func deterministicReplicaId(baseHash, shardId, toNodeId string) string {
 const splitShardMaxLag = 16
 
 // PlanSplitShard builds a sequence that splits an active shard into two
-// children at splitAt (the first shard key of the second child; 4 bytes). See
+// children at splitAt (the first shard key of the second child). See
 // notes/shard-split-design.md for the full model. The steps:
 //
 //   - Step 0 (apply_config): parent -> splitting; create the two ACTIVATING
@@ -229,7 +226,7 @@ const splitShardMaxLag = 16
 // Child shard ids follow cluster.CreateShard's "<app>_<lower>_<upper>" scheme
 // and child replica ids are derived deterministically from the base hash, so
 // the plan is reproducible. CreatedAt is left empty (stamped at persist time).
-func PlanSplitShard(base *cluster.Config, shardId string, splitAt []byte, bakeFor time.Duration) (*Sequence, error) {
+func PlanSplitShard(base *cluster.Config, shardId string, splitAt cluster.ShardKey, bakeFor time.Duration) (*Sequence, error) {
 	shard, err := base.GetShard(shardId)
 	if err != nil {
 		return nil, err
@@ -241,11 +238,11 @@ func PlanSplitShard(base *cluster.Config, shardId string, splitAt []byte, bakeFo
 	if err != nil {
 		return nil, err
 	}
-	if len(splitAt) != 4 {
-		return nil, fmt.Errorf("split point must be 4 bytes, got %d", len(splitAt))
-	}
-	if bytes.Compare(splitAt, shard.LowerBound) <= 0 || bytes.Compare(splitAt, shard.UpperBound) > 0 {
-		return nil, fmt.Errorf("split point %x must be within (%x, %x]", splitAt, shard.LowerBound, shard.UpperBound)
+	// Children are [lower, splitAt-1] and [splitAt, upper]; both must be
+	// non-degenerate ranges (Validate rejects lower >= upper), so the valid
+	// split points are [lower+2, upper-1].
+	if splitAt <= shard.LowerKey()+1 || splitAt >= shard.UpperKey() {
+		return nil, fmt.Errorf("split point %s must be within [%s, %s]", splitAt, shard.LowerKey()+2, shard.UpperKey()-1)
 	}
 
 	hash, err := base.Hash()
@@ -254,11 +251,9 @@ func PlanSplitShard(base *cluster.Config, shardId string, splitAt []byte, bakeFo
 	}
 
 	// Children bounds: [lower, splitAt-1] and [splitAt, upper].
-	firstUpper := make([]byte, 4)
-	binary.BigEndian.PutUint32(firstUpper, binary.BigEndian.Uint32(splitAt)-1)
 	children := []SplitChildSpec{
-		childSpec(appName, hash, shard, shard.LowerBound, firstUpper),
-		childSpec(appName, hash, shard, splitAt, shard.UpperBound),
+		childSpec(appName, hash, shard, shard.LowerKey(), splitAt-1),
+		childSpec(appName, hash, shard, splitAt, shard.UpperKey()),
 	}
 
 	childLeaderGates := []Gate{
@@ -267,7 +262,7 @@ func PlanSplitShard(base *cluster.Config, shardId string, splitAt []byte, bakeFo
 	}
 
 	seq := &Sequence{
-		Name:        fmt.Sprintf("split-shard-%s-at-%x", shardId, splitAt),
+		Name:        fmt.Sprintf("split-shard-%s-at-%s", shardId, splitAt),
 		Kind:        KindSplitShard,
 		BaseVersion: base.Version,
 		BaseHash:    hash,
@@ -276,7 +271,7 @@ func PlanSplitShard(base *cluster.Config, shardId string, splitAt []byte, bakeFo
 		Steps: []*Step{
 			{
 				Index:       0,
-				Description: fmt.Sprintf("split shard %s at %x into %s and %s", shardId, splitAt, children[0].ShardId, children[1].ShardId),
+				Description: fmt.Sprintf("split shard %s at %s into %s and %s", shardId, splitAt, children[0].ShardId, children[1].ShardId),
 				Kind:        StepApplyConfig,
 				Version:     base.Version + 1,
 				Mutations: []Mutation{{
@@ -333,13 +328,13 @@ func PlanSplitShard(base *cluster.Config, shardId string, splitAt []byte, bakeFo
 // childSpec freezes one split child: id from the bounds (cluster.CreateShard's
 // scheme), replicas co-located with the parent's, ids derived from the base
 // hash.
-func childSpec(appName, baseHash string, parent *cluster.Shard, lower, upper []byte) SplitChildSpec {
-	sl, su := cluster.ShortenBounds(lower, upper)
+func childSpec(appName, baseHash string, parent *cluster.Shard, lower, upper cluster.ShardKey) SplitChildSpec {
+	sl, su := cluster.ShortenBounds(lower.Bytes(), upper.Bytes())
 	childId := fmt.Sprintf("%s_%x_%x", appName, sl, su)
 	spec := SplitChildSpec{
 		ShardId:    childId,
-		LowerBound: hex.EncodeToString(lower),
-		UpperBound: hex.EncodeToString(upper),
+		LowerBound: lower.String(),
+		UpperBound: upper.String(),
 	}
 	for _, r := range parent.Replicas {
 		spec.Replicas = append(spec.Replicas, SplitChildReplica{

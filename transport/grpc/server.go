@@ -81,10 +81,12 @@ type handler struct {
 var _ monsterapb.MonsteraApiServer = &handler{}
 
 func (h *handler) Read(ctx context.Context, req *monsterapb.ReadRequest) (*monsterapb.ReadResponse, error) {
+	shardKey, hasShardKey := decodeShardKey(req.ShardKey)
 	resp, err := h.monsteraNode.Read(ctx, &transport.ReadRequest{
 		ApplicationName:        req.ApplicationName,
 		ShardId:                req.ShardId,
-		ShardKey:               req.ShardKey,
+		ShardKey:               shardKey,
+		HasShardKey:            hasShardKey,
 		Payload:                req.Payload,
 		AllowReadFromFollowers: req.AllowReadFromFollowers,
 		Hops:                   req.Hops,
@@ -100,10 +102,12 @@ func (h *handler) Read(ctx context.Context, req *monsterapb.ReadRequest) (*monst
 }
 
 func (h *handler) Update(ctx context.Context, req *monsterapb.UpdateRequest) (*monsterapb.UpdateResponse, error) {
+	shardKey, hasShardKey := decodeShardKey(req.ShardKey)
 	resp, err := h.monsteraNode.Update(ctx, &transport.UpdateRequest{
 		ApplicationName: req.ApplicationName,
 		ShardId:         req.ShardId,
-		ShardKey:        req.ShardKey,
+		ShardKey:        shardKey,
+		HasShardKey:     hasShardKey,
 		Payload:         req.Payload,
 		Hops:            req.Hops,
 	})

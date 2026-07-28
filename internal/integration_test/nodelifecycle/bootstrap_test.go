@@ -31,7 +31,7 @@ func TestBootstrapUnprovisionedNode(t *testing.T) {
 	require.NoError(t, err)
 	node.Start()
 	trans.Register(node)
-	require.Equal(t, monstera.UNPROVISIONED, node.NodeState())
+	require.Equal(t, monstera.NodeStateUnprovisioned, node.NodeState())
 
 	// Data-plane is rejected while unprovisioned.
 	_, err = node.Update(context.Background(), &transport.UpdateRequest{
@@ -43,13 +43,13 @@ func TestBootstrapUnprovisionedNode(t *testing.T) {
 
 	// Bootstrap provisions the node.
 	require.NoError(t, node.Bootstrap(context.Background(), "node_1", config))
-	require.Equal(t, monstera.READY, node.NodeState())
+	require.Equal(t, monstera.NodeStateReady, node.NodeState())
 	requireFile(t, filepath.Join(baseDir, "config", "node.json"))
 	requireFile(t, filepath.Join(baseDir, "config", "cluster.json"))
 
 	// Re-bootstrapping with the same id is an idempotent no-op; a different id is rejected.
 	require.NoError(t, node.Bootstrap(context.Background(), "node_1", config))
-	require.Equal(t, monstera.READY, node.NodeState())
+	require.Equal(t, monstera.NodeStateReady, node.NodeState())
 	require.Error(t, node.Bootstrap(context.Background(), "node_2", config))
 
 	node.Stop()
@@ -62,6 +62,6 @@ func TestBootstrapUnprovisionedNode(t *testing.T) {
 	require.NoError(t, err)
 	node2.Start()
 	t.Cleanup(node2.Stop)
-	require.Equal(t, monstera.READY, node2.NodeState())
+	require.Equal(t, monstera.NodeStateReady, node2.NodeState())
 	require.Equal(t, "node_1", node2.NodeId())
 }

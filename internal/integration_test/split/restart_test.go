@@ -99,7 +99,7 @@ func runSeedingNodeRestart(t *testing.T, cc coreCase) {
 	// Restart over the same data dir: the node reloads the applied splitting
 	// config and resumes seeding from durable progress.
 	node := cl.StartNodeAt(t, dirs[victim], nodeConfig, addrs[victim], cc.newDescriptors(stores.reopen(victim)))
-	require.Eventually(t, func() bool { return node.NodeState() == monstera.READY },
+	require.Eventually(t, func() bool { return node.NodeState() == monstera.NodeStateReady },
 		15*time.Second, 100*time.Millisecond, "restarted node never became READY")
 	t.Log("restarted node_3")
 

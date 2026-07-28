@@ -46,6 +46,17 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
 - `node.go` — `Node`: hosts replicas, `Read`/`Update` routing + leader forwarding, lifecycle +
   provisioning + reconciliation (see below). `replicaForShard` resolves the local replica by shard key
   against the node's OWN config (correct under config-version skew), else by shard id.
+- `router.go` — `Router`: immutable, index-backed routing view built from a `cluster.Config`
+  (`NewRouter`); safe for concurrent reads, swapped wholesale on config change.
+  `FindShardByShardKey(app, cluster.ShardKey)` binary-searches its own sorted uint32 index of the
+  routable (active|splitting) shards — routing does not depend on the config's slice order.
+  `GetShard/GetReplica/GetNode` are map lookups; `ListRoutableShards` is the fanout target list.
+- `cluster/shardkey.go` — `ShardKey` (uint32): the shard key type used everywhere (routing, stubs,
+  transport). Every value is valid; shard bounds are ShardKeys too (`fixed32` in the proto;
+  `Shard.LowerKey/UpperKey/ContainsKey`). `Bytes()`/`ShardKeyFromBytes` convert to/from the canonical
+  4-byte big-endian encoding (sorts identically) used for JSON hex bounds, derived shard ids, and
+  row-range scans in persisted cores. "No key" (direct-shard requests) is an explicit flag, never a
+  sentinel value.
 - `replica.go` — `replica` wraps `raft.Raft` + `appCoreAdapter`; membership passthroughs
   (`AddVoter/RemoveServer/GetConfiguration/Bootstrap/LeadershipTransfer`). `coreMu` (RWMutex) guards
   core `Read` (RLock) vs `Restore` (Lock); `Apply`/`Snapshot` run on raft's single FSM thread.
@@ -54,8 +65,6 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
   PersistedExclusive, zero value rejected) derives restore-on-start and the split seeding mechanism.
 - `cluster/config.go` — `Config`: apps→shards→replicas + nodes. Shards have a `State`
   (active | inactive | splitting | activating; the zero value is invalid and rejected by `Validate`).
-  `FindShardByShardKey` (binary search; `sortShards` invariant established on load; skips non-routable
-  inactive/activating shards),
   `GetShard/GetReplica/GetNode`, `Validate`,
   `ValidateTransition`, builders (`CreateShard/Replica/Node/Application`, `AddReplica` with
   caller-supplied id), `IncrementVersion`, `Hash()` (SHA-256 of proto), JSON round-trip with hex bounds
@@ -86,8 +95,9 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
   via `--sequence` checkpoint file).
 - `transport/transport.go` — `DataPlane` + `AdminPlane` interfaces (former single `Transport`),
   `ClusterConfigConsumer` (optional data-plane capability), and DTOs: `ReadRequest` carries
-  ApplicationName, ShardId, ShardKey, Payload, Hops, AllowReadFromFollowers; `UpdateRequest` the same
-  minus AllowReadFromFollowers; neither carries ReplicaId. `ReplicaState{ReplicaId, RaftState, Stats}`.
+  ApplicationName, ShardId, ShardKey+HasShardKey (`cluster.ShardKey`; on the wire an
+  `optional fixed32`, presence = HasShardKey), Payload, Hops, AllowReadFromFollowers; `UpdateRequest`
+  the same minus AllowReadFromFollowers; neither carries ReplicaId. `ReplicaState{ReplicaId, RaftState, Stats}`.
 - `transport/grpc/` — `dataplane.go`: `DataPlaneClient` (implements DataPlane + ClusterConfigConsumer;
   holds config under `configMu`, conn pool, per-node persistent bidi `raftMessageStream` with
   message-id→channel correlation; `SetClusterConfig` drops conns/streams of removed nodes). `admin.go`:
@@ -161,14 +171,17 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
   contiguous partition (inclusive bounds, no gaps/overlap; `Validate` enforces full coverage). Inactive
   shards may overlap anything; each splitting shard must have ≥2 activating children (`ParentId`) exactly
   covering its range; active/activating shards have no children; inactive shards (retired parents) have
-  children. Shard keys should be 4 bytes.
+  children. A shard key is a `cluster.ShardKey` (uint32; every value is valid); shard bounds are
+  inclusive ShardKeys (`fixed32` in the proto), hex-encoded in config JSON.
 - A node hosts **≤1 replica per shard** (`Validate`: a shard's replicas are on distinct nodes).
   So `(node, shardId)` → unique replica; and `shardKey → routable (active/splitting) shard` is unique.
 - `Node.replicas` + `Node.clusterConfig` are a **matched pair** under `Node.mu` (RWMutex); they change
   together only in Start/Bootstrap/UpdateClusterConfig (via `reconcileReplicasLocked`). Read/Update
   snapshot both under one RLock, then release before slow work.
 - Cores must be **deterministic, side-effect-free, explode on internal errors**. No `time.Now()`/rand
-  inside apply; the request timestamp is leader-stamped in `Request.Now` (Unix nanos). Watch map iteration order.
+  inside apply; use the request timestamp in `Request.Now` (Unix nanos), stamped client-side by the
+  generated rpc stub and opaque to monstera — it rides into the Raft log with the entry, so every replica
+  applies the same value. Watch map iteration order.
 - Raft log store **must be durable**: `WithSyncWrites(true)`. `node.go` sets it for the raft store;
   `store.DefaultOptions` defaults to `false` (footgun for any new raft-store caller).
 - Config `Version` is the cluster-wide monotonic clock: providers adopt highest, transitions must
@@ -178,8 +191,9 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
 
 1. Client computes shard from key, orders candidate nodes leader-first, sends to a node.
 2. Node `replicaForShard` → local replica. Follower-read or leader → serve locally.
-3. Else forward to leader's node: `forward` request pinned by `ShardId=r.shardId`, `ShardKey` cleared
-   (so the leader node doesn't re-resolve under a different config version), `Hops+1`, guarded by `MaxHops`.
+3. Else forward to leader's node: `forward` request pinned by `ShardId=r.shardId`, shard key dropped
+   (`HasShardKey=false`, so the leader node doesn't re-resolve under a different config version),
+   `Hops+1`, guarded by `MaxHops`.
    On `Unavailable`, `WaitForNewLeader` then retry once.
 4. **Two intentional retry layers**: client (across nodes; handles unavailability + stale leader) and
    node (precise leader forwarding via live Raft state). The node layer is what you'd drop if switching to etcd/raft.
@@ -193,7 +207,7 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
   declares per-core RPC Prometheus metrics + a `RegisterMetrics(prometheus.Registerer)`), `stubs.go`
   (`<Stub>MonsteraStub` + `<Stub>NonclusteredStub`).
 - Per method `Foo`: needs `FooRequest`/`FooResponse` proto in `core_types_package`, each implementing
-  `encoding.BinaryMarshaler`/`Unmarshaler`; sharded `*Request` implements `ShardKey() []byte`.
+  `encoding.BinaryMarshaler`/`Unmarshaler`; sharded `*Request` implements `ShardKey() cluster.ShardKey`.
   These (MarshalBinary + ShardKey) are **user-provided**, NOT generated by monstera. Method numbers are
   wire-stable; never renumber.
 - Core method signature: `Foo(*FooRequest) (*FooResponse, error)` where the aliases wrap payloads in

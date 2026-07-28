@@ -5,6 +5,7 @@
 package monsterapb
 
 import (
+	binary "encoding/binary"
 	fmt "fmt"
 	cluster "github.com/evrblk/monstera/cluster"
 	protohelpers "github.com/planetscale/vtprotobuf/protohelpers"
@@ -69,12 +70,11 @@ func (m *UpdateRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x1a
 	}
-	if len(m.ShardKey) > 0 {
-		i -= len(m.ShardKey)
-		copy(dAtA[i:], m.ShardKey)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.ShardKey)))
+	if m.ShardKey != nil {
+		i -= 4
+		binary.LittleEndian.PutUint32(dAtA[i:], uint32(*m.ShardKey))
 		i--
-		dAtA[i] = 0x12
+		dAtA[i] = 0x15
 	}
 	if len(m.Payload) > 0 {
 		i -= len(m.Payload)
@@ -175,12 +175,11 @@ func (m *ReadRequest) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x22
 	}
-	if len(m.ShardKey) > 0 {
-		i -= len(m.ShardKey)
-		copy(dAtA[i:], m.ShardKey)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.ShardKey)))
+	if m.ShardKey != nil {
+		i -= 4
+		binary.LittleEndian.PutUint32(dAtA[i:], uint32(*m.ShardKey))
 		i--
-		dAtA[i] = 0x1a
+		dAtA[i] = 0x1d
 	}
 	if m.AllowReadFromFollowers {
 		i--
@@ -1235,9 +1234,8 @@ func (m *UpdateRequest) SizeVT() (n int) {
 	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
-	l = len(m.ShardKey)
-	if l > 0 {
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	if m.ShardKey != nil {
+		n += 5
 	}
 	l = len(m.ApplicationName)
 	if l > 0 {
@@ -1281,9 +1279,8 @@ func (m *ReadRequest) SizeVT() (n int) {
 	if m.AllowReadFromFollowers {
 		n += 2
 	}
-	l = len(m.ShardKey)
-	if l > 0 {
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	if m.ShardKey != nil {
+		n += 5
 	}
 	l = len(m.ApplicationName)
 	if l > 0 {
@@ -1740,39 +1737,16 @@ func (m *UpdateRequest) UnmarshalVT(dAtA []byte) error {
 			}
 			iNdEx = postIndex
 		case 2:
-			if wireType != 2 {
+			if wireType != 5 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ShardKey", wireType)
 			}
-			var byteLen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return protohelpers.ErrIntOverflow
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				byteLen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if byteLen < 0 {
-				return protohelpers.ErrInvalidLength
-			}
-			postIndex := iNdEx + byteLen
-			if postIndex < 0 {
-				return protohelpers.ErrInvalidLength
-			}
-			if postIndex > l {
+			var v uint32
+			if (iNdEx + 4) > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.ShardKey = append(m.ShardKey[:0], dAtA[iNdEx:postIndex]...)
-			if m.ShardKey == nil {
-				m.ShardKey = []byte{}
-			}
-			iNdEx = postIndex
+			v = uint32(binary.LittleEndian.Uint32(dAtA[iNdEx:]))
+			iNdEx += 4
+			m.ShardKey = &v
 		case 3:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ApplicationName", wireType)
@@ -2047,39 +2021,16 @@ func (m *ReadRequest) UnmarshalVT(dAtA []byte) error {
 			}
 			m.AllowReadFromFollowers = bool(v != 0)
 		case 3:
-			if wireType != 2 {
+			if wireType != 5 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ShardKey", wireType)
 			}
-			var byteLen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return protohelpers.ErrIntOverflow
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				byteLen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if byteLen < 0 {
-				return protohelpers.ErrInvalidLength
-			}
-			postIndex := iNdEx + byteLen
-			if postIndex < 0 {
-				return protohelpers.ErrInvalidLength
-			}
-			if postIndex > l {
+			var v uint32
+			if (iNdEx + 4) > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.ShardKey = append(m.ShardKey[:0], dAtA[iNdEx:postIndex]...)
-			if m.ShardKey == nil {
-				m.ShardKey = []byte{}
-			}
-			iNdEx = postIndex
+			v = uint32(binary.LittleEndian.Uint32(dAtA[iNdEx:]))
+			iNdEx += 4
+			m.ShardKey = &v
 		case 4:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ApplicationName", wireType)

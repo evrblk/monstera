@@ -51,7 +51,7 @@ func CreateEmptyClientTestConfig(t *testing.T) *cluster.Config {
 
 	a, err := c.CreateApplication("app", "impl", 3)
 	require.NoError(t, err)
-	s, err := c.CreateShard(a.Name, []byte{0x00, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, "")
+	s, err := c.CreateShard(a.Name, 0x00000000, 0xffffffff, "")
 	require.NoError(t, err)
 
 	_, err = c.AddReplica(a.Name, s.Id, "rpl_live_1", "node_1")

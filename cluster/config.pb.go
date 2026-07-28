@@ -297,9 +297,9 @@ type Shard struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Unique across the whole cluster.
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// Inclusive 4-byte bounds of the owned key range: lower_bound <= upper_bound.
-	LowerBound []byte `protobuf:"bytes,2,opt,name=lower_bound,json=lowerBound,proto3" json:"lower_bound,omitempty"`
-	UpperBound []byte `protobuf:"bytes,3,opt,name=upper_bound,json=upperBound,proto3" json:"upper_bound,omitempty"`
+	// Inclusive bounds of the owned key range (shard keys): lower_bound <= upper_bound.
+	LowerBound uint32 `protobuf:"fixed32,2,opt,name=lower_bound,json=lowerBound,proto3" json:"lower_bound,omitempty"`
+	UpperBound uint32 `protobuf:"fixed32,3,opt,name=upper_bound,json=upperBound,proto3" json:"upper_bound,omitempty"`
 	// Id of the shard this shard was split from. Empty for shards created directly.
 	ParentId      string      `protobuf:"bytes,4,opt,name=parent_id,json=parentId,proto3" json:"parent_id,omitempty"`
 	Replicas      []*Replica  `protobuf:"bytes,5,rep,name=replicas,proto3" json:"replicas,omitempty"`
@@ -346,18 +346,18 @@ func (x *Shard) GetId() string {
 	return ""
 }
 
-func (x *Shard) GetLowerBound() []byte {
+func (x *Shard) GetLowerBound() uint32 {
 	if x != nil {
 		return x.LowerBound
 	}
-	return nil
+	return 0
 }
 
-func (x *Shard) GetUpperBound() []byte {
+func (x *Shard) GetUpperBound() uint32 {
 	if x != nil {
 		return x.UpperBound
 	}
-	return nil
+	return 0
 }
 
 func (x *Shard) GetParentId() string {
@@ -545,9 +545,9 @@ const file_cluster_config_proto_rawDesc = "" +
 	"\bmetadata\x18\x05 \x03(\v2%.com.evrblk.monstera.cluster.MetadataR\bmetadata\"\xba\x02\n" +
 	"\x05Shard\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
-	"\vlower_bound\x18\x02 \x01(\fR\n" +
+	"\vlower_bound\x18\x02 \x01(\aR\n" +
 	"lowerBound\x12\x1f\n" +
-	"\vupper_bound\x18\x03 \x01(\fR\n" +
+	"\vupper_bound\x18\x03 \x01(\aR\n" +
 	"upperBound\x12\x1b\n" +
 	"\tparent_id\x18\x04 \x01(\tR\bparentId\x12@\n" +
 	"\breplicas\x18\x05 \x03(\v2$.com.evrblk.monstera.cluster.ReplicaR\breplicas\x12A\n" +

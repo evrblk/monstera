@@ -13,7 +13,7 @@ func InMemoryPlaygroundDescriptors() monstera.ApplicationCoreDescriptors {
 		"Core": {
 			CoreType: monstera.CoreTypeInMemory,
 			CoreFactoryFunc: func(shard *cluster.Shard, replica *cluster.Replica) monstera.ApplicationCore {
-				return NewBoundedInMemoryPlaygroundCore(shard.LowerBound, shard.UpperBound)
+				return NewBoundedInMemoryPlaygroundCore(shard.LowerKey().Bytes(), shard.UpperKey().Bytes())
 			},
 		},
 	}
@@ -27,7 +27,7 @@ func SharedPlaygroundDescriptors(s *store.BadgerStore) monstera.ApplicationCoreD
 		"Core": {
 			CoreType: monstera.CoreTypePersistedShared,
 			CoreFactoryFunc: func(shard *cluster.Shard, replica *cluster.Replica) monstera.ApplicationCore {
-				return NewSharedPlaygroundCore(s, shard.LowerBound, shard.UpperBound)
+				return NewSharedPlaygroundCore(s, shard.LowerKey().Bytes(), shard.UpperKey().Bytes())
 			},
 		},
 	}
@@ -41,7 +41,7 @@ func ExclusivePlaygroundDescriptors(s *store.BadgerStore) monstera.ApplicationCo
 		"Core": {
 			CoreType: monstera.CoreTypePersistedExclusive,
 			CoreFactoryFunc: func(shard *cluster.Shard, replica *cluster.Replica) monstera.ApplicationCore {
-				return NewExclusivePlaygroundCore(s, shard.Id, shard.LowerBound, shard.UpperBound)
+				return NewExclusivePlaygroundCore(s, shard.Id, shard.LowerKey().Bytes(), shard.UpperKey().Bytes())
 			},
 		},
 	}

@@ -5,6 +5,7 @@
 package cluster
 
 import (
+	binary "encoding/binary"
 	fmt "fmt"
 	protohelpers "github.com/planetscale/vtprotobuf/protohelpers"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -266,19 +267,17 @@ func (m *Shard) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x22
 	}
-	if len(m.UpperBound) > 0 {
-		i -= len(m.UpperBound)
-		copy(dAtA[i:], m.UpperBound)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.UpperBound)))
+	if m.UpperBound != 0 {
+		i -= 4
+		binary.LittleEndian.PutUint32(dAtA[i:], uint32(m.UpperBound))
 		i--
-		dAtA[i] = 0x1a
+		dAtA[i] = 0x1d
 	}
-	if len(m.LowerBound) > 0 {
-		i -= len(m.LowerBound)
-		copy(dAtA[i:], m.LowerBound)
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.LowerBound)))
+	if m.LowerBound != 0 {
+		i -= 4
+		binary.LittleEndian.PutUint32(dAtA[i:], uint32(m.LowerBound))
 		i--
-		dAtA[i] = 0x12
+		dAtA[i] = 0x15
 	}
 	if len(m.Id) > 0 {
 		i -= len(m.Id)
@@ -508,13 +507,11 @@ func (m *Shard) SizeVT() (n int) {
 	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
-	l = len(m.LowerBound)
-	if l > 0 {
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	if m.LowerBound != 0 {
+		n += 5
 	}
-	l = len(m.UpperBound)
-	if l > 0 {
-		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	if m.UpperBound != 0 {
+		n += 5
 	}
 	l = len(m.ParentId)
 	if l > 0 {
@@ -1122,73 +1119,25 @@ func (m *Shard) UnmarshalVT(dAtA []byte) error {
 			m.Id = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 2:
-			if wireType != 2 {
+			if wireType != 5 {
 				return fmt.Errorf("proto: wrong wireType = %d for field LowerBound", wireType)
 			}
-			var byteLen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return protohelpers.ErrIntOverflow
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				byteLen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if byteLen < 0 {
-				return protohelpers.ErrInvalidLength
-			}
-			postIndex := iNdEx + byteLen
-			if postIndex < 0 {
-				return protohelpers.ErrInvalidLength
-			}
-			if postIndex > l {
+			m.LowerBound = 0
+			if (iNdEx + 4) > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.LowerBound = append(m.LowerBound[:0], dAtA[iNdEx:postIndex]...)
-			if m.LowerBound == nil {
-				m.LowerBound = []byte{}
-			}
-			iNdEx = postIndex
+			m.LowerBound = uint32(binary.LittleEndian.Uint32(dAtA[iNdEx:]))
+			iNdEx += 4
 		case 3:
-			if wireType != 2 {
+			if wireType != 5 {
 				return fmt.Errorf("proto: wrong wireType = %d for field UpperBound", wireType)
 			}
-			var byteLen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return protohelpers.ErrIntOverflow
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				byteLen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if byteLen < 0 {
-				return protohelpers.ErrInvalidLength
-			}
-			postIndex := iNdEx + byteLen
-			if postIndex < 0 {
-				return protohelpers.ErrInvalidLength
-			}
-			if postIndex > l {
+			m.UpperBound = 0
+			if (iNdEx + 4) > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.UpperBound = append(m.UpperBound[:0], dAtA[iNdEx:postIndex]...)
-			if m.UpperBound == nil {
-				m.UpperBound = []byte{}
-			}
-			iNdEx = postIndex
+			m.UpperBound = uint32(binary.LittleEndian.Uint32(dAtA[iNdEx:]))
+			iNdEx += 4
 		case 4:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ParentId", wireType)

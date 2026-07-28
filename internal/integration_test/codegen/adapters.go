@@ -3,9 +3,9 @@
 package codegen
 
 import (
-	"bytes"
 	"fmt"
 	monstera "github.com/evrblk/monstera"
+	cluster "github.com/evrblk/monstera/cluster"
 	types "github.com/evrblk/monstera/internal/integration_test/codegen/types"
 	mrpc "github.com/evrblk/monstera/rpc"
 	prometheus "github.com/prometheus/client_golang/prometheus"
@@ -41,15 +41,15 @@ type MyCoreCoreAdapter struct {
 	shardId   string
 	replicaId string
 
-	shardLowerBound []byte
-	shardUpperBound []byte
+	shardLowerBound cluster.ShardKey
+	shardUpperBound cluster.ShardKey
 
 	myCoreCore MyCoreCoreApi
 }
 
 var _ monstera.ApplicationCore = &MyCoreCoreAdapter{}
 
-func NewMyCoreCoreAdapter(nodeId string, shardId string, replicaId string, shardLowerBound []byte, shardUpperBound []byte, myCoreCore MyCoreCoreApi) *MyCoreCoreAdapter {
+func NewMyCoreCoreAdapter(nodeId string, shardId string, replicaId string, shardLowerBound cluster.ShardKey, shardUpperBound cluster.ShardKey, myCoreCore MyCoreCoreApi) *MyCoreCoreAdapter {
 	return &MyCoreCoreAdapter{
 		myCoreCore:      myCoreCore,
 		nodeId:          nodeId,
@@ -257,9 +257,9 @@ func measureSince(o prometheus.Observer, t1 time.Time) {
 	o.Observe(time.Since(t1).Seconds())
 }
 
-func checkShardBounds(shardKey []byte, lowerBound []byte, upperBound []byte) error {
-	if bytes.Compare(shardKey, lowerBound) < 0 || bytes.Compare(shardKey, upperBound) > 0 {
-		return fmt.Errorf("routing violation: shard key %x is outside shard bounds [%x, %x]", shardKey, lowerBound, upperBound)
+func checkShardBounds(shardKey, lowerBound, upperBound cluster.ShardKey) error {
+	if shardKey < lowerBound || shardKey > upperBound {
+		return fmt.Errorf("routing violation: shard key %s is outside shard bounds [%s, %s]", shardKey, lowerBound, upperBound)
 	}
 	return nil
 }

@@ -86,19 +86,35 @@ type Node struct {
 }
 
 // NodeState is the lifecycle state of a Node.
-type NodeState = int
+type NodeState int
 
 const (
-	// INITIAL is the state before Start finishes; the node does not serve yet.
-	INITIAL NodeState = iota
-	// UNPROVISIONED means the node started without a cluster config: it serves
-	// only Bootstrap (and read-only status calls), awaiting provisioning.
-	UNPROVISIONED
-	// READY means replicas are loaded and the node serves reads and updates.
-	READY
-	// STOPPED means the node has been shut down and rejects further requests.
-	STOPPED
+	// NodeStateInitial is the state before Start finishes; the node does not serve yet.
+	NodeStateInitial NodeState = iota
+	// NodeStateUnprovisioned means the node started without a cluster config: it
+	// serves only Bootstrap (and read-only status calls), awaiting provisioning.
+	NodeStateUnprovisioned
+	// NodeStateReady means replicas are loaded and the node serves reads and updates.
+	NodeStateReady
+	// NodeStateStopped means the node has been shut down and rejects further requests.
+	NodeStateStopped
 )
+
+// String returns the lowercase name of the state.
+func (s NodeState) String() string {
+	switch s {
+	case NodeStateInitial:
+		return "initial"
+	case NodeStateUnprovisioned:
+		return "unprovisioned"
+	case NodeStateReady:
+		return "ready"
+	case NodeStateStopped:
+		return "stopped"
+	default:
+		return fmt.Sprintf("NodeState(%d)", int(s))
+	}
+}
 
 type NodeConfig struct {
 	// MaxHops bounds how many times a read/update may be forwarded between nodes
@@ -142,14 +158,14 @@ func (n *Node) Stop() {
 	n.smu.Lock()
 	defer n.smu.Unlock()
 
-	if n.nodeState == STOPPED {
+	if n.nodeState == NodeStateStopped {
 		n.logger.Printf("Monstera Node already stopped")
 		return
 	}
 
 	n.logger.Printf("Stopping Monstera Node")
 
-	n.nodeState = STOPPED
+	n.nodeState = NodeStateStopped
 	n.setReadyMetric(false)
 
 	// Stop the background reconcile loop before tearing down replicas so it never
@@ -191,7 +207,7 @@ func (n *Node) Start() {
 	if n.clusterConfig == nil {
 		// No config yet: come up UNPROVISIONED and serve only Bootstrap.
 		n.mu.Unlock()
-		n.nodeState = UNPROVISIONED
+		n.nodeState = NodeStateUnprovisioned
 		n.logger.Printf("Node is unprovisioned; awaiting Bootstrap")
 		return
 	}
@@ -219,7 +235,7 @@ func (n *Node) Start() {
 	// pushes in Bootstrap and UpdateClusterConfig.
 	n.refreshTransportConfig(config)
 
-	n.nodeState = READY
+	n.nodeState = NodeStateReady
 	n.setReadyMetric(true)
 	n.setConfigVersionMetric(config.Version)
 	n.logger.Printf("Node is ready")
@@ -271,7 +287,7 @@ func (n *Node) Bootstrap(ctx context.Context, nodeId string, config *cluster.Con
 	n.smu.Lock()
 	defer n.smu.Unlock()
 
-	if n.nodeState != UNPROVISIONED {
+	if n.nodeState != NodeStateUnprovisioned {
 		if nodeId != "" && nodeId != n.nodeId {
 			return fmt.Errorf("node is already provisioned as %q, cannot bootstrap as %q", n.nodeId, nodeId)
 		}
@@ -322,7 +338,7 @@ func (n *Node) Bootstrap(ctx context.Context, nodeId string, config *cluster.Con
 	// now so it can reach peers.
 	n.refreshTransportConfig(config)
 
-	n.nodeState = READY
+	n.nodeState = NodeStateReady
 	n.setReadyMetric(true)
 	n.setConfigVersionMetric(config.Version)
 	n.logger.Printf("Node bootstrapped at config version %d; ready", config.Version)
@@ -338,14 +354,14 @@ func (n *Node) Bootstrap(ctx context.Context, nodeId string, config *cluster.Con
 // leader's node otherwise. It returns errLeaderUnknown once the forwarding hop
 // budget (MaxHops) is exhausted.
 func (n *Node) Read(ctx context.Context, req *transport.ReadRequest) (*transport.ReadResponse, error) {
-	if n.NodeState() != READY {
+	if n.NodeState() != NodeStateReady {
 		return nil, errNodeNotReady
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, n.nodeConfig.MaxReadTimeout)
 	defer cancel()
 
-	r, router, err := n.replicaForShard(req.ApplicationName, req.ShardId, req.ShardKey)
+	r, router, err := n.replicaForShard(req.ApplicationName, req.ShardId, req.ShardKey, req.HasShardKey)
 	if err != nil {
 		return nil, err
 	}
@@ -434,14 +450,14 @@ func (n *Node) Read(ctx context.Context, req *transport.ReadRequest) (*transport
 // locally, otherwise the request is forwarded to the leader's node. It returns
 // errLeaderUnknown once the forwarding hop budget (MaxHops) is exhausted.
 func (n *Node) Update(ctx context.Context, req *transport.UpdateRequest) (*transport.UpdateResponse, error) {
-	if n.NodeState() != READY {
+	if n.NodeState() != NodeStateReady {
 		return nil, errNodeNotReady
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, n.nodeConfig.MaxUpdateTimeout)
 	defer cancel()
 
-	r, router, err := n.replicaForShard(req.ApplicationName, req.ShardId, req.ShardKey)
+	r, router, err := n.replicaForShard(req.ApplicationName, req.ShardId, req.ShardKey, req.HasShardKey)
 	if err != nil {
 		return nil, err
 	}
@@ -454,7 +470,7 @@ func (n *Node) Update(ctx context.Context, req *transport.UpdateRequest) (*trans
 
 	// Writes are applied only on the leader.
 	if r.IsLeader() {
-		resp, err := r.Update(req.Payload, req.ShardKey)
+		resp, err := r.Update(req.Payload, req.ShardKey, req.HasShardKey)
 		if err != nil {
 			// The cutoff may have committed between the frozen check above and
 			// the propose: the write mutated nothing; re-route it.
@@ -493,6 +509,7 @@ func (n *Node) Update(ctx context.Context, req *transport.UpdateRequest) (*trans
 		ApplicationName: req.ApplicationName,
 		ShardId:         r.shardId,
 		ShardKey:        req.ShardKey,
+		HasShardKey:     req.HasShardKey,
 		Payload:         req.Payload,
 		Hops:            req.Hops + 1,
 	}
@@ -524,7 +541,7 @@ func (n *Node) Update(ctx context.Context, req *transport.UpdateRequest) (*trans
 // key) return errShardFrozen so the origin node — which has the key — can
 // re-route instead.
 func (n *Node) rerouteRead(ctx context.Context, req *transport.ReadRequest, parentShardId string) (*transport.ReadResponse, error) {
-	childShardId, err := n.childShardOwningKey(parentShardId, req.ShardKey)
+	childShardId, err := n.childShardOwningKey(parentShardId, req.ShardKey, req.HasShardKey)
 	if err != nil {
 		return nil, err
 	}
@@ -544,7 +561,7 @@ func (n *Node) rerouteRead(ctx context.Context, req *transport.ReadRequest, pare
 // write mutated nothing on the parent, so re-dispatching it to the child is
 // the same at-least-once delivery the system already has.
 func (n *Node) rerouteUpdate(ctx context.Context, req *transport.UpdateRequest, parentShardId string) (*transport.UpdateResponse, error) {
-	childShardId, err := n.childShardOwningKey(parentShardId, req.ShardKey)
+	childShardId, err := n.childShardOwningKey(parentShardId, req.ShardKey, req.HasShardKey)
 	if err != nil {
 		return nil, err
 	}
@@ -563,8 +580,8 @@ func (n *Node) rerouteUpdate(ctx context.Context, req *transport.UpdateRequest, 
 // shardKey, from this node's own applied config. Children are identified by
 // ParentId, independent of the config version's routing states, so this works
 // on both sides of the split's config flip.
-func (n *Node) childShardOwningKey(parentShardId string, shardKey []byte) (string, error) {
-	if len(shardKey) == 0 {
+func (n *Node) childShardOwningKey(parentShardId string, shardKey cluster.ShardKey, hasShardKey bool) (string, error) {
+	if !hasShardKey {
 		return "", errShardFrozen
 	}
 
@@ -584,7 +601,7 @@ func (n *Node) childShardOwningKey(parentShardId string, shardKey []byte) (strin
 	if child == nil {
 		// The children partition the frozen parent's range; a routed key
 		// always has an owner on a valid config.
-		return "", fmt.Errorf("no child of frozen shard %s owns shard key %x", parentShardId, shardKey)
+		return "", fmt.Errorf("no child of frozen shard %s owns shard key %s", parentShardId, shardKey)
 	}
 	return child.Id, nil
 }
@@ -595,7 +612,7 @@ func (n *Node) childShardOwningKey(parentShardId string, shardKey []byte) (strin
 // delayed rather than failed.
 func (n *Node) awaitLocalReplica(ctx context.Context, applicationName string, shardId string) error {
 	for {
-		if _, _, err := n.replicaForShard(applicationName, shardId, nil); err == nil {
+		if _, _, err := n.replicaForShard(applicationName, shardId, 0, false); err == nil {
 			return nil
 		}
 		select {
@@ -612,7 +629,7 @@ func (n *Node) awaitLocalReplica(ctx context.Context, applicationName string, sh
 // index. Idempotent: an already-frozen shard returns its original cutoff
 // index.
 func (n *Node) SplitCutoff(ctx context.Context, shardId string) (uint64, error) {
-	if n.NodeState() != READY {
+	if n.NodeState() != NodeStateReady {
 		return 0, errNodeNotReady
 	}
 
@@ -662,7 +679,7 @@ func (n *Node) SplitCutoff(ctx context.Context, shardId string) (uint64, error) 
 
 // TriggerSnapshot asks the replica with the given id to take a Raft snapshot.
 func (n *Node) TriggerSnapshot(replicaId string) error {
-	if n.NodeState() != READY {
+	if n.NodeState() != NodeStateReady {
 		return errNodeNotReady
 	}
 
@@ -680,7 +697,7 @@ func (n *Node) TriggerSnapshot(replicaId string) error {
 // It reads the replica's snapshot store from disk, so it is meant for on-demand
 // admin/ops use rather than frequent polling.
 func (n *Node) ListSnapshots(replicaId string) ([]raft.SnapshotMetadata, error) {
-	if n.NodeState() != READY {
+	if n.NodeState() != NodeStateReady {
 		return nil, errNodeNotReady
 	}
 
@@ -695,7 +712,7 @@ func (n *Node) ListSnapshots(replicaId string) ([]raft.SnapshotMetadata, error) 
 // LeadershipTransfer asks the replica with the given id to hand off Raft
 // leadership to another replica in its group (used for graceful node drain).
 func (n *Node) LeadershipTransfer(replicaId string) error {
-	if n.NodeState() != READY {
+	if n.NodeState() != NodeStateReady {
 		return errNodeNotReady
 	}
 
@@ -711,7 +728,7 @@ func (n *Node) LeadershipTransfer(replicaId string) error {
 // on this node. It is the receiving end of the Raft transport between replicas of
 // the same shard.
 func (n *Node) RaftMessage(ctx context.Context, req *transport.RaftMessageRequest) (*transport.RaftMessageResponse, error) {
-	if n.NodeState() != READY {
+	if n.NodeState() != NodeStateReady {
 		return nil, errNodeNotReady
 	}
 
@@ -864,7 +881,7 @@ func (n *Node) setClusterConfigLocked(cfg *cluster.Config) {
 // transport's view of the cluster so it can dial added nodes and drop
 // connections to removed ones.
 func (n *Node) UpdateClusterConfig(ctx context.Context, newConfig *cluster.Config) error {
-	if n.NodeState() != READY {
+	if n.NodeState() != NodeStateReady {
 		return errNodeNotReady
 	}
 
@@ -958,20 +975,20 @@ func (n *Node) getReplica(replicaId string) (*replica, error) {
 // the shard's leader replica, so leader resolution sees the same config version
 // that resolved the shard.
 //
-// For sharded requests (shardKey is non-empty) the owning shard is resolved from
+// For sharded requests (hasShardKey is true) the owning shard is resolved from
 // shardKey against this node's own config, so routing is correct even when the
 // caller's config is a different version (e.g. mid-split or during a rolling
-// config rollout). For direct-shard requests (empty shardKey) the shard is taken
-// from shardId as-is. A node hosts at most one replica per shard, so the shard
-// determines the replica uniquely.
-func (n *Node) replicaForShard(applicationName string, shardId string, shardKey []byte) (*replica, *Router, error) {
+// config rollout). For direct-shard requests (hasShardKey is false) the shard is
+// taken from shardId as-is. A node hosts at most one replica per shard, so the
+// shard determines the replica uniquely.
+func (n *Node) replicaForShard(applicationName string, shardId string, shardKey cluster.ShardKey, hasShardKey bool) (*replica, *Router, error) {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
 	router := n.router
 
 	targetShardId := shardId
-	if len(shardKey) > 0 {
+	if hasShardKey {
 		shard, err := router.FindShardByShardKey(applicationName, shardKey)
 		if err != nil {
 			return nil, nil, err
@@ -1272,10 +1289,12 @@ func (n *Node) stopSplitters() {
 }
 
 // dropReplicaData deletes a replica's durable state: its prefix in the shared
-// raft store and its snapshot directory. Failures are logged, not returned —
-// leftover data of a removed replica is unreachable (ids are never reused).
+// raft store and its snapshot directory. It uses DeletePrefix (not DropPrefix,
+// which would block the raft-log writes of every other replica on this node).
+// Failures are logged, not returned — leftover data of a removed replica is
+// unreachable (ids are never reused).
 func (n *Node) dropReplicaData(id string) {
-	if err := n.raftStore.DropPrefix([]byte(id)); err != nil {
+	if err := n.raftStore.DeletePrefix([]byte(id)); err != nil {
 		n.logger.Printf("error dropping raft data for replica %s: %v", id, err)
 	}
 	if err := os.RemoveAll(filepath.Join(n.baseDir, "snapshots", id)); err != nil {
@@ -1495,7 +1514,7 @@ func NewNode(baseDir string, coreDescriptors ApplicationCoreDescriptors, nodeCon
 		coreDescriptors: coreDescriptors,
 		clusterConfig:   effectiveConfig,
 		router:          NewRouter(effectiveConfig),
-		nodeState:       INITIAL,
+		nodeState:       NodeStateInitial,
 		replicas:        make(map[string]*replica),
 		dormant:         make(map[string]*dormantReplica),
 		splitters:       make(map[string]*splitter),

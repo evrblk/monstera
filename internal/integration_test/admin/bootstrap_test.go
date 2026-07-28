@@ -26,7 +26,7 @@ func TestAdminBootstrapOverGrpc(t *testing.T) {
 	// A fresh node (empty data dir) comes up UNPROVISIONED, serving only admin RPCs.
 	cl := testutils.NewGrpcCluster(t)
 	node := cl.StartNode(t, testutils.InMemoryNodeConfig(), addr, testcore.NopDescriptors())
-	require.Equal(t, monstera.UNPROVISIONED, node.NodeState())
+	require.Equal(t, monstera.NodeStateUnprovisioned, node.NodeState())
 
 	admin := grpc.NewAdminClient()
 	t.Cleanup(func() { _ = admin.Close() })
@@ -35,7 +35,7 @@ func TestAdminBootstrapOverGrpc(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	require.NoError(t, admin.Bootstrap(ctx, addr, "node_1", config))
-	require.Equal(t, monstera.READY, node.NodeState())
+	require.Equal(t, monstera.NodeStateReady, node.NodeState())
 
 	// Re-bootstrapping with the same id is an idempotent no-op; a different id is rejected.
 	require.NoError(t, admin.Bootstrap(ctx, addr, "node_1", config))
@@ -58,7 +58,7 @@ func TestAdminBootstrapAllNodesOverGrpc(t *testing.T) {
 	nodes := map[string]*monstera.Node{}
 	for _, cn := range config.Nodes {
 		node := cl.StartNode(t, testutils.InMemoryNodeConfig(), cn.GrpcAddress, testcore.NopDescriptors())
-		require.Equal(t, monstera.UNPROVISIONED, node.NodeState())
+		require.Equal(t, monstera.NodeStateUnprovisioned, node.NodeState())
 		nodes[cn.Id] = node
 	}
 
@@ -72,7 +72,7 @@ func TestAdminBootstrapAllNodesOverGrpc(t *testing.T) {
 		cancel()
 	}
 	for id, node := range nodes {
-		require.Equalf(t, monstera.READY, node.NodeState(), "node %s not READY after bootstrap", id)
+		require.Equalf(t, monstera.NodeStateReady, node.NodeState(), "node %s not READY after bootstrap", id)
 	}
 
 	// With all three provisioned, the shard's Raft group elects a leader.

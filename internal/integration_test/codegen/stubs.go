@@ -3,9 +3,7 @@
 package codegen
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
 	monstera "github.com/evrblk/monstera"
 	cluster "github.com/evrblk/monstera/cluster"
@@ -224,12 +222,12 @@ type myCoreCoreNonclusteredAdapter struct {
 	core       MyCoreCoreApi
 	mu         sync.RWMutex
 	id         string
-	lowerBound []byte
-	upperBound []byte
+	lowerBound cluster.ShardKey
+	upperBound cluster.ShardKey
 }
 
 type MyStubNonclusteredApplicationCoresFactory struct {
-	MyCoreCoreFactoryFunc func(shardId string, lowerBound []byte, upperBound []byte) MyCoreCoreApi
+	MyCoreCoreFactoryFunc func(shardId string, lowerBound cluster.ShardKey, upperBound cluster.ShardKey) MyCoreCoreApi
 }
 type MyStubNonclusteredStub struct {
 	myCoreCores []*myCoreCoreNonclusteredAdapter
@@ -239,11 +237,8 @@ var _ MyStubClientApi = &MyStubNonclusteredStub{}
 
 func (s *MyStubNonclusteredStub) Read1(ctx context.Context, req *types.Read1Request) (*types.Read1Response, error) {
 	shardKey := req.ShardKey()
-	if len(shardKey) == 0 || len(shardKey) > 4 {
-		return nil, fmt.Errorf("invalid shard key length %d: must be between 1 and 4 bytes", len(shardKey))
-	}
 	for _, adapter := range s.myCoreCores {
-		if bytes.Compare(shardKey, adapter.upperBound) <= 0 && bytes.Compare(shardKey, adapter.lowerBound) >= 0 {
+		if shardKey >= adapter.lowerBound && shardKey <= adapter.upperBound {
 			adapter.mu.RLock()
 			defer adapter.mu.RUnlock()
 
@@ -262,7 +257,7 @@ func (s *MyStubNonclusteredStub) Read1(ctx context.Context, req *types.Read1Requ
 		}
 	}
 
-	return nil, fmt.Errorf("no shard found for shardKey: %x", shardKey)
+	return nil, fmt.Errorf("no shard found for shardKey: %s", shardKey)
 }
 
 func (s *MyStubNonclusteredStub) Read2(ctx context.Context, req *types.Read2Request, shardId string) (*types.Read2Response, error) {
@@ -291,11 +286,8 @@ func (s *MyStubNonclusteredStub) Read2(ctx context.Context, req *types.Read2Requ
 
 func (s *MyStubNonclusteredStub) Read3(ctx context.Context, req *types.Read3Request) (*types.Read3Response, error) {
 	shardKey := req.ShardKey()
-	if len(shardKey) == 0 || len(shardKey) > 4 {
-		return nil, fmt.Errorf("invalid shard key length %d: must be between 1 and 4 bytes", len(shardKey))
-	}
 	for _, adapter := range s.myCoreCores {
-		if bytes.Compare(shardKey, adapter.upperBound) <= 0 && bytes.Compare(shardKey, adapter.lowerBound) >= 0 {
+		if shardKey >= adapter.lowerBound && shardKey <= adapter.upperBound {
 			adapter.mu.RLock()
 			defer adapter.mu.RUnlock()
 
@@ -314,16 +306,13 @@ func (s *MyStubNonclusteredStub) Read3(ctx context.Context, req *types.Read3Requ
 		}
 	}
 
-	return nil, fmt.Errorf("no shard found for shardKey: %x", shardKey)
+	return nil, fmt.Errorf("no shard found for shardKey: %s", shardKey)
 }
 
 func (s *MyStubNonclusteredStub) Update1(ctx context.Context, req *types.Update1Request) (*types.Update1Response, error) {
 	shardKey := req.ShardKey()
-	if len(shardKey) == 0 || len(shardKey) > 4 {
-		return nil, fmt.Errorf("invalid shard key length %d: must be between 1 and 4 bytes", len(shardKey))
-	}
 	for _, adapter := range s.myCoreCores {
-		if bytes.Compare(shardKey, adapter.upperBound) <= 0 && bytes.Compare(shardKey, adapter.lowerBound) >= 0 {
+		if shardKey >= adapter.lowerBound && shardKey <= adapter.upperBound {
 			adapter.mu.Lock()
 			defer adapter.mu.Unlock()
 
@@ -342,7 +331,7 @@ func (s *MyStubNonclusteredStub) Update1(ctx context.Context, req *types.Update1
 		}
 	}
 
-	return nil, fmt.Errorf("no shard found for shardKey: %x", shardKey)
+	return nil, fmt.Errorf("no shard found for shardKey: %s", shardKey)
 }
 
 func (s *MyStubNonclusteredStub) Update2(ctx context.Context, req *types.Update2Request, shardId string) (*types.Update2Response, error) {
@@ -391,14 +380,10 @@ func NewMyStubNonclusteredStub(shardsPerApp int, coresFactory *MyStubNonclustere
 
 	shardSize := int64(cluster.KeyspacePerApplication) / int64(shardsPerApp)
 	for i := 0; i < shardsPerApp; i++ {
-		lower := uint32(int64(i) * shardSize)
-		upper := uint32(int64(i+1)*shardSize - 1)
-		lowerBound := make([]byte, 4)
-		upperBound := make([]byte, 4)
-		binary.BigEndian.PutUint32(lowerBound, lower)
-		binary.BigEndian.PutUint32(upperBound, upper)
+		lowerBound := cluster.ShardKey(int64(i) * shardSize)
+		upperBound := cluster.ShardKey(int64(i+1)*shardSize - 1)
 
-		sl, su := cluster.ShortenBounds(lowerBound, upperBound)
+		sl, su := cluster.ShortenBounds(lowerBound.Bytes(), upperBound.Bytes())
 
 		myCoreShardId := fmt.Sprintf("%s_%x_%x", "MyCore", sl, su)
 		myCoreCores[i] = &myCoreCoreNonclusteredAdapter{core: coresFactory.MyCoreCoreFactoryFunc(myCoreShardId, lowerBound, upperBound), id: myCoreShardId, lowerBound: lowerBound, upperBound: upperBound}

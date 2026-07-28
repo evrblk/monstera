@@ -82,12 +82,14 @@ func (RaftState) EnumDescriptor() ([]byte, []int) {
 }
 
 type UpdateRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Payload         []byte                 `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
-	ShardKey        []byte                 `protobuf:"bytes,2,opt,name=shard_key,json=shardKey,proto3" json:"shard_key,omitempty"`
-	ApplicationName string                 `protobuf:"bytes,3,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
-	ShardId         string                 `protobuf:"bytes,4,opt,name=shard_id,json=shardId,proto3" json:"shard_id,omitempty"`
-	Hops            int32                  `protobuf:"varint,5,opt,name=hops,proto3" json:"hops,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Payload []byte                 `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
+	// Shard key routing the request to its owning shard. Absent for
+	// direct-shard requests addressed by shard_id only.
+	ShardKey        *uint32 `protobuf:"fixed32,2,opt,name=shard_key,json=shardKey,proto3,oneof" json:"shard_key,omitempty"`
+	ApplicationName string  `protobuf:"bytes,3,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
+	ShardId         string  `protobuf:"bytes,4,opt,name=shard_id,json=shardId,proto3" json:"shard_id,omitempty"`
+	Hops            int32   `protobuf:"varint,5,opt,name=hops,proto3" json:"hops,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -129,11 +131,11 @@ func (x *UpdateRequest) GetPayload() []byte {
 	return nil
 }
 
-func (x *UpdateRequest) GetShardKey() []byte {
-	if x != nil {
-		return x.ShardKey
+func (x *UpdateRequest) GetShardKey() uint32 {
+	if x != nil && x.ShardKey != nil {
+		return *x.ShardKey
 	}
-	return nil
+	return 0
 }
 
 func (x *UpdateRequest) GetApplicationName() string {
@@ -205,12 +207,14 @@ type ReadRequest struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	Payload                []byte                 `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
 	AllowReadFromFollowers bool                   `protobuf:"varint,2,opt,name=allow_read_from_followers,json=allowReadFromFollowers,proto3" json:"allow_read_from_followers,omitempty"`
-	ShardKey               []byte                 `protobuf:"bytes,3,opt,name=shard_key,json=shardKey,proto3" json:"shard_key,omitempty"`
-	ApplicationName        string                 `protobuf:"bytes,4,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
-	ShardId                string                 `protobuf:"bytes,5,opt,name=shard_id,json=shardId,proto3" json:"shard_id,omitempty"`
-	Hops                   int32                  `protobuf:"varint,6,opt,name=hops,proto3" json:"hops,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	// Shard key routing the request to its owning shard. Absent for
+	// direct-shard requests addressed by shard_id only.
+	ShardKey        *uint32 `protobuf:"fixed32,3,opt,name=shard_key,json=shardKey,proto3,oneof" json:"shard_key,omitempty"`
+	ApplicationName string  `protobuf:"bytes,4,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
+	ShardId         string  `protobuf:"bytes,5,opt,name=shard_id,json=shardId,proto3" json:"shard_id,omitempty"`
+	Hops            int32   `protobuf:"varint,6,opt,name=hops,proto3" json:"hops,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ReadRequest) Reset() {
@@ -257,11 +261,11 @@ func (x *ReadRequest) GetAllowReadFromFollowers() bool {
 	return false
 }
 
-func (x *ReadRequest) GetShardKey() []byte {
-	if x != nil {
-		return x.ShardKey
+func (x *ReadRequest) GetShardKey() uint32 {
+	if x != nil && x.ShardKey != nil {
+		return *x.ShardKey
 	}
-	return nil
+	return 0
 }
 
 func (x *ReadRequest) GetApplicationName() string {
@@ -1399,22 +1403,26 @@ var File_transport_grpc_monsterapb_api_proto protoreflect.FileDescriptor
 
 const file_transport_grpc_monsterapb_api_proto_rawDesc = "" +
 	"\n" +
-	"#transport/grpc/monsterapb/api.proto\x12\x1ecom.evrblk.monstera.monsterapb\x1a\x14cluster/config.proto\"\xa0\x01\n" +
+	"#transport/grpc/monsterapb/api.proto\x12\x1ecom.evrblk.monstera.monsterapb\x1a\x14cluster/config.proto\"\xb3\x01\n" +
 	"\rUpdateRequest\x12\x18\n" +
-	"\apayload\x18\x01 \x01(\fR\apayload\x12\x1b\n" +
-	"\tshard_key\x18\x02 \x01(\fR\bshardKey\x12)\n" +
+	"\apayload\x18\x01 \x01(\fR\apayload\x12 \n" +
+	"\tshard_key\x18\x02 \x01(\aH\x00R\bshardKey\x88\x01\x01\x12)\n" +
 	"\x10application_name\x18\x03 \x01(\tR\x0fapplicationName\x12\x19\n" +
 	"\bshard_id\x18\x04 \x01(\tR\ashardId\x12\x12\n" +
-	"\x04hops\x18\x05 \x01(\x05R\x04hops\"*\n" +
+	"\x04hops\x18\x05 \x01(\x05R\x04hopsB\f\n" +
+	"\n" +
+	"_shard_key\"*\n" +
 	"\x0eUpdateResponse\x12\x18\n" +
-	"\apayload\x18\x01 \x01(\fR\apayload\"\xd9\x01\n" +
+	"\apayload\x18\x01 \x01(\fR\apayload\"\xec\x01\n" +
 	"\vReadRequest\x12\x18\n" +
 	"\apayload\x18\x01 \x01(\fR\apayload\x129\n" +
-	"\x19allow_read_from_followers\x18\x02 \x01(\bR\x16allowReadFromFollowers\x12\x1b\n" +
-	"\tshard_key\x18\x03 \x01(\fR\bshardKey\x12)\n" +
+	"\x19allow_read_from_followers\x18\x02 \x01(\bR\x16allowReadFromFollowers\x12 \n" +
+	"\tshard_key\x18\x03 \x01(\aH\x00R\bshardKey\x88\x01\x01\x12)\n" +
 	"\x10application_name\x18\x04 \x01(\tR\x0fapplicationName\x12\x19\n" +
 	"\bshard_id\x18\x05 \x01(\tR\ashardId\x12\x12\n" +
-	"\x04hops\x18\x06 \x01(\x05R\x04hops\"(\n" +
+	"\x04hops\x18\x06 \x01(\x05R\x04hopsB\f\n" +
+	"\n" +
+	"_shard_key\"(\n" +
 	"\fReadResponse\x12\x18\n" +
 	"\apayload\x18\x01 \x01(\fR\apayload\"\x1a\n" +
 	"\x18ListReplicaStatesRequest\"p\n" +
@@ -1590,6 +1598,8 @@ func file_transport_grpc_monsterapb_api_proto_init() {
 	if File_transport_grpc_monsterapb_api_proto != nil {
 		return
 	}
+	file_transport_grpc_monsterapb_api_proto_msgTypes[0].OneofWrappers = []any{}
+	file_transport_grpc_monsterapb_api_proto_msgTypes[2].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

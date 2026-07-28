@@ -1,9 +1,7 @@
 package monstera
 
 import (
-	"bytes"
 	"errors"
-	"fmt"
 	"sort"
 
 	"github.com/evrblk/monstera/cluster"
@@ -26,12 +24,6 @@ var (
 // Callers that swap in a new config (a node applying a cluster config update, a
 // client adopting a polled config) build a fresh Router alongside it and publish
 // the pair together.
-//
-// Crucially, routing correctness does NOT depend on the ordering of the source
-// config's shard slices. NewRouter builds its own sorted index of the routable
-// shards, so a config applied over RPC (which is not normalized by the config
-// package's Load* functions) still routes correctly. This is why key routing
-// lives here and not on cluster.Config.
 type Router struct {
 	nodesById    map[string]*cluster.Node
 	shardsById   map[string]*cluster.Shard
@@ -40,12 +32,19 @@ type Router struct {
 }
 
 // routerApp holds an application's routing index: the routable shards (active or
-// splitting), sorted by lower bound. Because the routable shards form a
-// contiguous, non-overlapping partition of the keyspace, FindShardByShardKey can
-// binary-search this slice directly, and inactive/activating shards are excluded
-// from both routing and ListRoutableShards.
+// splitting), sorted by lower bound. Because the routable shards form a contiguous,
+// non-overlapping partition of the keyspace, FindShardByShardKey can binary-search
+// this slice directly, and inactive/activating shards are excluded from both routing
+// and ListRoutableShards.
 type routerApp struct {
-	routable []*cluster.Shard
+	routable []routableShard
+}
+
+// routableShard is one entry of the routing index: a routable shard with its bounds.
+type routableShard struct {
+	lower cluster.ShardKey
+	upper cluster.ShardKey
+	shard *cluster.Shard
 }
 
 // NewRouter builds a Router from cfg. cfg is only read, never retained beyond
@@ -72,7 +71,7 @@ func NewRouter(cfg *cluster.Config) *Router {
 
 	for _, a := range cfg.Applications {
 		app := &routerApp{
-			routable: make([]*cluster.Shard, 0, len(a.Shards)),
+			routable: make([]routableShard, 0, len(a.Shards)),
 		}
 		for _, s := range a.Shards {
 			r.shardsById[s.Id] = s
@@ -80,40 +79,30 @@ func NewRouter(cfg *cluster.Config) *Router {
 				r.replicasById[rep.Id] = rep
 			}
 			if s.IsRoutable() {
-				app.routable = append(app.routable, s)
+				app.routable = append(app.routable, routableShard{
+					lower: s.LowerKey(),
+					upper: s.UpperKey(),
+					shard: s,
+				})
 			}
 		}
-		sortShardsByLowerBound(app.routable)
+		// Routable shards never share a lower bound (they partition the
+		// keyspace), so sorting by lower alone is total.
+		sort.Slice(app.routable, func(i, j int) bool {
+			return app.routable[i].lower < app.routable[j].lower
+		})
 		r.apps[a.Name] = app
 	}
 
 	return r
 }
 
-// sortShardsByLowerBound sorts shards in place by lower bound, breaking ties by
-// id (an inactive parent and its active child can share a lower bound after a
-// split, though only one of them is ever routable).
-func sortShardsByLowerBound(shards []*cluster.Shard) {
-	sort.Slice(shards, func(i, j int) bool {
-		if cmp := bytes.Compare(shards[i].LowerBound, shards[j].LowerBound); cmp != 0 {
-			return cmp < 0
-		}
-		return shards[i].Id < shards[j].Id
-	})
-}
-
 // FindShardByShardKey returns the routable (active or splitting) shard whose
-// [LowerBound, UpperBound] range contains shardKey. Inactive and activating
-// shards may overlap that range and are never returned.
-//
-// shardKey is compared byte-wise, so a key shorter than 4 bytes is treated as a
-// prefix (conceptually padded with 0x00). A key longer than the 4-byte keyspace
-// is rejected.
-func (r *Router) FindShardByShardKey(applicationName string, shardKey []byte) (*cluster.Shard, error) {
-	if len(shardKey) == 0 || len(shardKey) > 4 {
-		return nil, fmt.Errorf("invalid shard key length %d: must be between 1 and 4 bytes", len(shardKey))
-	}
-
+// [LowerKey, UpperKey] range contains shardKey. Inactive and activating shards
+// may overlap that range and are never returned. Every ShardKey value is valid;
+// on a validated config (routable shards cover the whole keyspace) the lookup
+// only fails when the application is unknown.
+func (r *Router) FindShardByShardKey(applicationName string, shardKey cluster.ShardKey) (*cluster.Shard, error) {
 	app, ok := r.apps[applicationName]
 	if !ok {
 		return nil, errRouteApplicationNotFound
@@ -122,18 +111,18 @@ func (r *Router) FindShardByShardKey(applicationName string, shardKey []byte) (*
 	shards := app.routable
 
 	// The routable shards partition the keyspace with no gaps or overlaps, so
-	// the shard containing shardKey is the one with the greatest LowerBound that
-	// is <= shardKey. Find the first shard with LowerBound strictly greater than
-	// shardKey; the one immediately before it is that candidate.
+	// the shard containing shardKey is the one with the greatest lower bound
+	// that is <= shardKey. Find the first shard with a lower bound strictly
+	// greater than shardKey; the one immediately before it is that candidate.
 	i := sort.Search(len(shards), func(i int) bool {
-		return bytes.Compare(shards[i].LowerBound, shardKey) > 0
+		return shards[i].lower > shardKey
 	})
 	if i == 0 {
 		return nil, errRouteShardNotFound
 	}
 	candidate := shards[i-1]
-	if bytes.Compare(shardKey, candidate.UpperBound) <= 0 {
-		return candidate, nil
+	if shardKey <= candidate.upper {
+		return candidate.shard, nil
 	}
 	return nil, errRouteShardNotFound
 }
@@ -176,6 +165,8 @@ func (r *Router) ListRoutableShards(applicationName string) ([]*cluster.Shard, e
 		return nil, errRouteApplicationNotFound
 	}
 	out := make([]*cluster.Shard, len(app.routable))
-	copy(out, app.routable)
+	for i, rs := range app.routable {
+		out[i] = rs.shard
+	}
 	return out, nil
 }

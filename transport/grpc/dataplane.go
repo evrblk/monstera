@@ -106,7 +106,7 @@ func (t *DataPlaneClient) Read(ctx context.Context, nodeId string, req *transpor
 
 	resp, err := conn.Read(ctx, &monsterapb.ReadRequest{
 		Payload:                req.Payload,
-		ShardKey:               req.ShardKey,
+		ShardKey:               encodeShardKey(req.ShardKey, req.HasShardKey),
 		ApplicationName:        req.ApplicationName,
 		ShardId:                req.ShardId,
 		AllowReadFromFollowers: req.AllowReadFromFollowers,
@@ -129,7 +129,7 @@ func (t *DataPlaneClient) Update(ctx context.Context, nodeId string, req *transp
 
 	resp, err := conn.Update(ctx, &monsterapb.UpdateRequest{
 		Payload:         req.Payload,
-		ShardKey:        req.ShardKey,
+		ShardKey:        encodeShardKey(req.ShardKey, req.HasShardKey),
 		ApplicationName: req.ApplicationName,
 		ShardId:         req.ShardId,
 		Hops:            req.Hops,

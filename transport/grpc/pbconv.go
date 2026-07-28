@@ -4,10 +4,29 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/evrblk/monstera/cluster"
 	"github.com/evrblk/monstera/internal/raft"
 	"github.com/evrblk/monstera/transport"
 	"github.com/evrblk/monstera/transport/grpc/monsterapb"
 )
+
+// encodeShardKey converts a transport-level (ShardKey, HasShardKey) pair to the
+// wire form: presence of the optional shard_key field.
+func encodeShardKey(key cluster.ShardKey, has bool) *uint32 {
+	if !has {
+		return nil
+	}
+	k := uint32(key)
+	return &k
+}
+
+// decodeShardKey is the inverse of encodeShardKey.
+func decodeShardKey(key *uint32) (cluster.ShardKey, bool) {
+	if key == nil {
+		return 0, false
+	}
+	return cluster.ShardKey(*key), true
+}
 
 // decodeReplicaStates converts the wire ListReplicaStates response into the
 // transport-level DTOs. It is shared by both the data plane (addressed by nodeId)

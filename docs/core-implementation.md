@@ -32,20 +32,24 @@ Express the shard key as a small pure function in a dedicated package, and use i
 ```go
 package sharding
 
-import "github.com/evrblk/monstera/utils"
+import (
+    "github.com/evrblk/monstera/cluster"
+    "github.com/evrblk/monstera/utils"
+)
 
-func ByAccount(accountId uint64) []byte {
-    return utils.GetTruncatedHash(utils.ConcatBytes(accountId), 4)
+func ByAccount(accountId uint64) cluster.ShardKey {
+    return utils.GetShardKey(utils.ConcatBytes(accountId))
 }
 
-func ByAccountAndNamespace(accountId uint64, namespaceId uint64) []byte {
-    return utils.GetTruncatedHash(utils.ConcatBytes(accountId, namespaceId), 4)
+func ByAccountAndNamespace(accountId uint64, namespaceId uint64) cluster.ShardKey {
+    return utils.GetShardKey(utils.ConcatBytes(accountId, namespaceId))
 }
 ```
 
-A 4-byte truncated hash gives a keyspace of `[0x00000000, 0xffffffff]` that shards are ranges of. The only hard
-requirement is **stability**: `shardFunc(x)` must return the same bytes today and five years from now, or messages
-will be routed to the wrong shard. Pin it with a golden test — a hardcoded list of inputs and expected outputs
+A `cluster.ShardKey` is a uint32 — a point in the keyspace `[0x00000000, 0xffffffff]` that shards are ranges of —
+and `utils.GetShardKey` derives one as a truncated hash of the entity id. The only hard requirement is
+**stability**: `shardFunc(x)` must return the same key today and five years from now, or messages will be routed
+to the wrong shard. Pin it with a golden test — a hardcoded list of inputs and expected outputs
 (see [Testing](/docs/testing.md)).
 
 ## Step 2: Define the API and generate the boilerplate
@@ -63,10 +67,10 @@ This produces `api.go` (the `*CoreApi` interface you implement, plus request/res
 [RPC Code Generation](/docs/rpc-code-generation.md) for the full reference. Two things are left for you to write by
 hand:
 
-* `ShardKey() []byte` on every sharded `*Request` payload — one line, calling your sharding package:
+* `ShardKey() cluster.ShardKey` on every sharded `*Request` payload — one line, calling your sharding package:
 
   ```go
-  func (r *CreateNamespaceRequest) ShardKey() []byte {
+  func (r *CreateNamespaceRequest) ShardKey() cluster.ShardKey {
       return sharding.ByAccount(r.NamespaceId.AccountId)
   }
   ```
@@ -297,8 +301,8 @@ applicationDescriptors := monstera.ApplicationCoreDescriptors{
         CoreType: monstera.CoreTypePersistedExclusive,
         CoreFactoryFunc: func(shard *cluster.Shard, replica *cluster.Replica) monstera.ApplicationCore {
             return coreapis.NewGrackleNamespacesCoreAdapter(
-                replica.NodeId, shard.Id, replica.Id, shard.LowerBound, shard.UpperBound,
-                namespaces.NewCore(dataStore, utils.GetTruncatedHash([]byte(shard.Id), 4), shard.LowerBound, shard.UpperBound))
+                replica.NodeId, shard.Id, replica.Id, shard.LowerKey(), shard.UpperKey(),
+                namespaces.NewCore(dataStore, utils.GetTruncatedHash([]byte(shard.Id), 4), shard.LowerKey().Bytes(), shard.UpperKey().Bytes()))
         },
     },
 }

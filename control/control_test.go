@@ -27,7 +27,7 @@ func baseConfig(t *testing.T) *cluster.Config {
 	}
 	a, err := c.CreateApplication("Core", "Core", 3)
 	require.NoError(t, err)
-	s, err := c.CreateShard(a.Name, []byte{0x00, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, "")
+	s, err := c.CreateShard(a.Name, 0x00000000, 0xffffffff, "")
 	require.NoError(t, err)
 	for _, id := range []string{"node_1", "node_2", "node_3"} {
 		_, err := c.CreateReplica(a.Name, s.Id, id)
@@ -178,7 +178,7 @@ func moveBaseConfig(t *testing.T) *cluster.Config {
 	}
 	a, err := c.CreateApplication("Core", "Core", 3)
 	require.NoError(t, err)
-	s, err := c.CreateShard(a.Name, []byte{0x00, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, "")
+	s, err := c.CreateShard(a.Name, 0x00000000, 0xffffffff, "")
 	require.NoError(t, err)
 	for _, id := range []string{"node_1", "node_2", "node_3"} {
 		_, err := c.CreateReplica(a.Name, s.Id, id)

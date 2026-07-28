@@ -261,9 +261,13 @@ var splitShardCmd = &cobra.Command{
 			log.Fatalf("loading cluster config: %v", err)
 		}
 
-		splitAt, err := hex.DecodeString(splitShardCmdCfg.splitAt)
+		splitAtBytes, err := hex.DecodeString(splitShardCmdCfg.splitAt)
 		if err != nil {
 			log.Fatalf("parsing --split-at: %v", err)
+		}
+		splitAt, err := cluster.ShardKeyFromBytes(splitAtBytes)
+		if err != nil {
+			log.Fatalf("parsing --split-at: %v (expected 8 hex characters, e.g. 80000000)", err)
 		}
 
 		seqPath := splitShardCmdCfg.sequencePath

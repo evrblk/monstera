@@ -7,17 +7,26 @@ option go_package = "github.com/evrblk/monstera/internal/replication/replication
 message MonsteraCommand {
   bytes payload = 1;
   CommandType type = 2;
-  // Shard key of the update, stamped by the leader at propose time only while
-  // this shard is SPLITTING; used to route seeded entries to the child that
-  // owns the key. Empty at all other times (it costs nothing outside a
-  // split), and empty during a split for unsharded updates, which are seeded
-  // to every child.
-  bytes shard_key = 3;
-  // True iff the proposing leader was in splitting mode. Distinguishes a
-  // key-less unsharded update proposed by a splitting-aware leader (seeded to
-  // every child) from an update proposed by a leader that had not applied the
-  // splitting config yet (unroutable: the seeder restarts from a fresh base).
-  bool stamped = 4;
+  // Routing of this update for split seeding, stamped by the leader at
+  // propose time only while this shard is SPLITTING. UNSTAMPED (the zero
+  // value) at all other times: it costs nothing outside a split.
+  CommandRouting routing = 3;
+  // The update's shard key; meaningful only when routing == SHARDED.
+  fixed32 shard_key = 4;
+}
+
+// CommandRouting tells the split seeder how to route an update entry to the
+// children of a splitting shard.
+enum CommandRouting {
+  // Proposed by a leader that was not in splitting mode — either the shard is
+  // not splitting (the common case), or the leader had not applied the
+  // splitting config yet. In the latter case the entry is unroutable and the
+  // seeder restarts the affected children from a fresh base.
+  COMMAND_ROUTING_UNSTAMPED = 0;
+  // A sharded update: shard_key routes the entry to the child that owns it.
+  COMMAND_ROUTING_SHARDED = 1;
+  // A shard-wide (unsharded) update: seeded to every child in full.
+  COMMAND_ROUTING_SHARD_WIDE = 2;
 }
 
 enum CommandType {

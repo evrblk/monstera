@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/binary"
 	"log"
 	"math/rand/v2"
 
@@ -129,14 +128,10 @@ var addApplicationCmd = &cobra.Command{
 			nodes[i] = config.Nodes[i].Id
 		}
 
-		shardSize := cluster.KeyspacePerApplication / addApplicationCmdCfg.shardsCount
+		shardSize := int64(cluster.KeyspacePerApplication) / int64(addApplicationCmdCfg.shardsCount)
 		for i := 0; i < addApplicationCmdCfg.shardsCount; i++ {
-			lower := uint32(i * shardSize)
-			upper := uint32((i+1)*shardSize - 1)
-			lowerBound := make([]byte, 4)
-			upperBound := make([]byte, 4)
-			binary.BigEndian.PutUint32(lowerBound, lower)
-			binary.BigEndian.PutUint32(upperBound, upper)
+			lowerBound := cluster.ShardKey(int64(i) * shardSize)
+			upperBound := cluster.ShardKey(int64(i+1)*shardSize - 1)
 
 			shard, err := config.CreateShard(addApplicationCmdCfg.applicationName, lowerBound, upperBound, "")
 			if err != nil {

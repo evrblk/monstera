@@ -1,5 +1,11 @@
 package types
 
+import (
+	"encoding/binary"
+
+	"github.com/evrblk/monstera/cluster"
+)
+
 type Read1Request struct {
 	Field string
 }
@@ -13,8 +19,8 @@ func (r *Read1Request) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-func (r *Read1Request) ShardKey() []byte {
-	return []byte(r.Field)[:4]
+func (r *Read1Request) ShardKey() cluster.ShardKey {
+	return cluster.ShardKey(binary.BigEndian.Uint32([]byte(r.Field)[:4]))
 }
 
 type Read1Response struct {
@@ -69,8 +75,8 @@ func (r *Read3Request) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-func (r *Read3Request) ShardKey() []byte {
-	return []byte(r.Field)[:4]
+func (r *Read3Request) ShardKey() cluster.ShardKey {
+	return cluster.ShardKey(binary.BigEndian.Uint32([]byte(r.Field)[:4]))
 }
 
 type Read3Response struct {
@@ -99,8 +105,8 @@ func (r *Update1Request) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-func (r *Update1Request) ShardKey() []byte {
-	return []byte(r.Field)[:4]
+func (r *Update1Request) ShardKey() cluster.ShardKey {
+	return cluster.ShardKey(binary.BigEndian.Uint32([]byte(r.Field)[:4]))
 }
 
 type Update1Response struct {

@@ -27,7 +27,7 @@ func SingleShardConfig(t *testing.T, addrs []string, replicas int) *cluster.Conf
 	}
 	a, err := c.CreateApplication("Core", "Core", int32(replicas))
 	require.NoError(t, err)
-	s, err := c.CreateShard(a.Name, []byte{0x00, 0x00, 0x00, 0x00}, []byte{0xff, 0xff, 0xff, 0xff}, "")
+	s, err := c.CreateShard(a.Name, 0x00000000, 0xffffffff, "")
 	require.NoError(t, err)
 	for _, id := range ids[:replicas] {
 		_, err := c.CreateReplica(a.Name, s.Id, id)

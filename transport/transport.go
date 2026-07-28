@@ -106,11 +106,14 @@ type ClusterConfigConsumer interface {
 // ReadRequest carries the parameters for a read operation routed to a specific node.
 // The receiving node resolves the target replica itself: by ShardKey against its
 // own cluster config for sharded reads (correct even if the sender's config is a
-// different version), or by ShardId for direct-shard reads (empty ShardKey).
+// different version), or by ShardId for direct-shard reads (HasShardKey false).
 type ReadRequest struct {
 	ApplicationName string
 	ShardId         string
-	ShardKey        []byte
+	// ShardKey routes the request to its owning shard; meaningful only when
+	// HasShardKey is true (direct-shard requests are addressed by ShardId alone).
+	ShardKey    cluster.ShardKey
+	HasShardKey bool
 	// Payload is the opaque, application-defined read request body.
 	Payload []byte
 	// AllowReadFromFollowers permits the receiving node to serve the read without
@@ -128,12 +131,15 @@ type ReadResponse struct {
 
 // UpdateRequest carries the parameters for a write operation routed to a specific node.
 // The receiving node resolves the target replica itself: by ShardKey against its own
-// cluster config for sharded updates, or by ShardId for direct-shard updates (empty
-// ShardKey).
+// cluster config for sharded updates, or by ShardId for direct-shard updates
+// (HasShardKey false).
 type UpdateRequest struct {
 	ApplicationName string
 	ShardId         string
-	ShardKey        []byte
+	// ShardKey routes the request to its owning shard; meaningful only when
+	// HasShardKey is true (direct-shard requests are addressed by ShardId alone).
+	ShardKey    cluster.ShardKey
+	HasShardKey bool
 	// Payload is the opaque, application-defined write request body.
 	Payload []byte
 	// Hops tracks how many times the request has been forwarded; used to detect

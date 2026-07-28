@@ -164,6 +164,51 @@ $ monstera config add-application \
   --shards-count=32
 ```
 
+## Applying a config to a running cluster
+
+The commands above only build a config **file** on disk. Getting it onto the actual processes is a
+separate step done with the `monstera cluster` command group, over each node's admin plane (gRPC).
+
+A freshly started node with an empty data directory and no seed config comes up `UNPROVISIONED`: it
+serves only admin RPCs and awaits a config. **Bootstrapping** hands it its id and the initial config
+and transitions it to `READY`:
+
+```shell
+# Provision every node listed in the config, dialing each at its advertised gRPC address.
+$ monstera cluster bootstrap-nodes --config=./cluster_config.json
+
+# Or provision a single node (e.g. one that was replaced).
+$ monstera cluster bootstrap-node --config=./cluster_config.json --node-id=node-01
+```
+
+Once the cluster is running, **do not hand-edit and re-push the config file**. Topology changes are
+made through *control sequences*, which plan a small, safe, incremental diff (see the transition
+rules above) and roll the new version out to every node one step at a time, waiting for each step to
+converge before the next — this is the controlled rollout the [Config Rollout](#config-rollout)
+section describes. Each sequence is pinned to a base config (`--config`) and checkpoints its progress
+so it can be resumed if interrupted:
+
+```shell
+# Add a new node to a running cluster.
+$ monstera cluster add-node --config=./cluster_config.json \
+  --node-id=node-04 --node-address=ip-10-0-10-90.us-west-2.compute.internal:7000
+
+# Move a shard's replica from one node to another (add, bake, remove).
+$ monstera cluster move-shard --config=./cluster_config.json \
+  --shard-id=MyFirstApplication_00000000_0fffffff --from-node=node-01 --to-node=node-04
+
+# Split an active shard into two children at a key (see Shard Splitting below).
+$ monstera cluster split-shard --config=./cluster_config.json \
+  --shard-id=MyFirstApplication_00000000_0fffffff --split-at=08000000
+```
+
+To see which version a node is actually running (e.g. to confirm a rollout finished), download its
+live config:
+
+```shell
+$ monstera cluster get-config --node-address=ip-10-0-10-14.us-west-2.compute.internal:7000
+```
+
 ## Shard Splitting
 
 Shards can be split into 2 or more pieces under load with no downtime. Intermediate state during the split and the history

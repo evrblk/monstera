@@ -54,10 +54,23 @@ $ go tool github.com/evrblk/monstera/cmd/monstera
 
 * Code generation:
   * `monstera code generate` Generates stubs, core interfaces and adapters from `monstera.yaml` file.
-* Working with cluster configs:
+* Working with cluster configs (offline: edit a config file on disk):
   * `monstera config init` Creates a new cluster config.
-  * `monstera config add-node` Adds node to the cluster config.
-  * `monstera config add-application` Adds application to the cluster config.
+  * `monstera config add-node` Adds a node to the cluster config.
+  * `monstera config add-application` Adds an application to the cluster config.
+* Operating a running cluster (online: over the admin plane):
+  * `monstera cluster bootstrap-node` Provisions a single unprovisioned node with its id and the
+    initial cluster config, transitioning it to READY.
+  * `monstera cluster bootstrap-nodes` Provisions every node listed in a cluster config, dialing each
+    at its advertised gRPC address.
+  * `monstera cluster add-node` Adds a node to a running cluster (rolls the new config out to all nodes, 
+    then bootstraps the newcomer).
+  * `monstera cluster move-shard` Moves a shard replica from one node to another (add new replica, bake 
+    until caught up, then remove the old one).
+  * `monstera cluster split-shard` Splits an active shard into two children at a given key
+    (seed children, flip, bake).
+  * `monstera cluster get-config` Downloads the cluster config a node is currently running and prints
+    it (or writes it to a file).
 
 ## Status
 

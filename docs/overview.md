@@ -82,7 +82,7 @@ downtime even under load and can sustain partial loss of nodes (1 or more, depen
 A Monstera cluster consists of several stateful nodes (minimum 3, no maximum limit). A client is an application that 
 interacts with Monstera application cores. Typically, clients are stateless applications: web servers or background 
 workers. A single cluster can handle multiple application cores (colored differently on the diagram above), which 
-ensures better resource utilization. The mapping of replicas to nodes is pushed to each client, there is no single 
+ensures better resource utilization. The mapping of replicas to nodes is pushed to each node, there is no single 
 service that is responsible for managing the mapping. That minimizes the number of network calls and points of failure. 
 
 Read more about [cluster config files](/docs/cluster-config.md).

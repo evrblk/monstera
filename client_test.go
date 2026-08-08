@@ -1,6 +1,7 @@
 package monstera
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -8,6 +9,50 @@ import (
 	"github.com/evrblk/monstera/cluster"
 	"github.com/evrblk/monstera/transport"
 )
+
+// TestNewMonsteraClientDefaultsNonPositiveConfig checks that a hand-built
+// ClientConfig is usable without filling in every knob. Left at zero,
+// RefreshIntervalJitter panics rand.Int64N in the background refresh goroutine
+// and MaxRetriesOnSingleReplica makes every request skip its retry loop and
+// return ErrAllReplicasFailed.
+func TestNewMonsteraClientDefaultsNonPositiveConfig(t *testing.T) {
+	c := NewMonsteraClient(NewStaticClusterConfigProvider(nil), nil, ClientConfig{})
+	require.Equal(t, DefaultClientConfig(), c.config)
+
+	// Negative values are defaulted too, not just the zero value.
+	c = NewMonsteraClient(NewStaticClusterConfigProvider(nil), nil, ClientConfig{
+		MaxRetriesOnSingleReplica: -1,
+		RefreshIntervalJitter:     -1,
+	})
+	require.Equal(t, DefaultClientConfig(), c.config)
+}
+
+// TestClientConfigWithDefaultsKeepsExplicitValues makes sure defaulting only
+// fills gaps and never overrides what the caller asked for.
+func TestClientConfigWithDefaultsKeepsExplicitValues(t *testing.T) {
+	cfg := ClientConfig{
+		MaxRetriesOnSingleReplica: 1,
+		ListReplicaStatesTimeout:  2,
+		RefreshIntervalBase:       3,
+		RefreshIntervalJitter:     4,
+		ReadRetryDelay:            5,
+		UpdateRetryDelay:          6,
+	}
+	require.Equal(t, cfg, cfg.withDefaults())
+}
+
+// TestClientRefreshLoopSurvivesZeroJitter drives the loop that used to panic.
+// With no cluster config the body is skipped and the loop goes straight to the
+// jitter computation, then exits on the cancelled context.
+func TestClientRefreshLoopSurvivesZeroJitter(t *testing.T) {
+	c := NewMonsteraClient(NewStaticClusterConfigProvider(nil), nil, ClientConfig{})
+	c.refresherDone = make(chan struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	require.NotPanics(t, func() { c.refreshLoop(ctx) })
+}
 
 // TestClient_pruneReplicaStates verifies that leadership state for replicas no
 // longer present in the current config (retired by splits/moves) is dropped,

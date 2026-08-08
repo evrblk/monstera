@@ -116,6 +116,14 @@ func (s NodeState) String() string {
 	}
 }
 
+const (
+	defaultMaxHops                     = 5
+	defaultMaxReadTimeout              = 10 * time.Second
+	defaultMaxUpdateTimeout            = 30 * time.Second
+	defaultMembershipReconcileInterval = 1 * time.Second
+)
+
+// NodeConfig holds tunable parameters for Node behavior.
 type NodeConfig struct {
 	// MaxHops bounds how many times a read/update may be forwarded between nodes
 	// while chasing the current leader before giving up with errLeaderUnknown.
@@ -142,13 +150,31 @@ type NodeConfig struct {
 }
 
 var DefaultMonsteraNodeConfig = NodeConfig{
-	MaxHops:          5,
-	MaxReadTimeout:   10 * time.Second,
-	MaxUpdateTimeout: 30 * time.Second,
+	MaxHops:          defaultMaxHops,
+	MaxReadTimeout:   defaultMaxReadTimeout,
+	MaxUpdateTimeout: defaultMaxUpdateTimeout,
 
 	UseInMemoryRaftStore: false,
 
-	MembershipReconcileInterval: 1 * time.Second,
+	MembershipReconcileInterval: defaultMembershipReconcileInterval,
+}
+
+// withDefaults returns the config with every non-positive field replaced by its
+// default.
+func (c NodeConfig) withDefaults() NodeConfig {
+	if c.MaxHops <= 0 {
+		c.MaxHops = defaultMaxHops
+	}
+	if c.MaxReadTimeout <= 0 {
+		c.MaxReadTimeout = defaultMaxReadTimeout
+	}
+	if c.MaxUpdateTimeout <= 0 {
+		c.MaxUpdateTimeout = defaultMaxUpdateTimeout
+	}
+	if c.MembershipReconcileInterval <= 0 {
+		c.MembershipReconcileInterval = defaultMembershipReconcileInterval
+	}
+	return c
 }
 
 // Stop shuts the node down: it stops serving, closes the transport and every
@@ -1485,7 +1511,12 @@ func isUnavailableError(err error) bool {
 // assigns its identity and installs the initial config. It opens the shared Raft
 // store (durable on disk, or in-memory when NodeConfig.UseInMemoryRaftStore is set).
 // Call Start to load replicas and begin serving.
+//
+// Non-positive nodeConfig fields are replaced by their defaults, so a hand-built
+// NodeConfig never has to set every knob.
 func NewNode(baseDir string, coreDescriptors ApplicationCoreDescriptors, nodeConfig NodeConfig, trans transport.DataPlane) (*Node, error) {
+	nodeConfig = nodeConfig.withDefaults()
+
 	for name, d := range coreDescriptors {
 		switch d.CoreType {
 		case CoreTypeInMemory, CoreTypePersistedShared, CoreTypePersistedExclusive:

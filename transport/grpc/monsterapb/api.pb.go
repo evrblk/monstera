@@ -1344,8 +1344,13 @@ type RaftMessageResponse struct {
 	MessageType         int32                  `protobuf:"varint,1,opt,name=message_type,json=messageType,proto3" json:"message_type,omitempty"`
 	Message             []byte                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	ResponseToMessageId int64                  `protobuf:"varint,3,opt,name=response_to_message_id,json=responseToMessageId,proto3" json:"response_to_message_id,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// error is set when the server failed to handle this specific message (e.g.
+	// the target replica is not ready or not found). It is a per-message failure
+	// correlated by response_to_message_id and does not affect the shared stream;
+	// an empty error means success.
+	Error         string `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RaftMessageResponse) Reset() {
@@ -1397,6 +1402,13 @@ func (x *RaftMessageResponse) GetResponseToMessageId() int64 {
 		return x.ResponseToMessageId
 	}
 	return 0
+}
+
+func (x *RaftMessageResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
 }
 
 var File_transport_grpc_monsterapb_api_proto protoreflect.FileDescriptor
@@ -1488,11 +1500,12 @@ const file_transport_grpc_monsterapb_api_proto_rawDesc = "" +
 	"\fmessage_type\x18\x02 \x01(\x05R\vmessageType\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\fR\amessage\x12\x1d\n" +
 	"\n" +
-	"message_id\x18\x04 \x01(\x03R\tmessageId\"\x87\x01\n" +
+	"message_id\x18\x04 \x01(\x03R\tmessageId\"\x9d\x01\n" +
 	"\x13RaftMessageResponse\x12!\n" +
 	"\fmessage_type\x18\x01 \x01(\x05R\vmessageType\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\fR\amessage\x123\n" +
-	"\x16response_to_message_id\x18\x03 \x01(\x03R\x13responseToMessageId*\x9e\x01\n" +
+	"\x16response_to_message_id\x18\x03 \x01(\x03R\x13responseToMessageId\x12\x14\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error*\x9e\x01\n" +
 	"\tRaftState\x12\x16\n" +
 	"\x12RAFT_STATE_INVALID\x10\x00\x12\x17\n" +
 	"\x13RAFT_STATE_FOLLOWER\x10\x01\x12\x18\n" +

@@ -21,6 +21,15 @@ var (
 	ErrAllReplicasFailed = errors.New("all replicas failed")
 )
 
+const (
+	defaultMaxRetriesOnSingleReplica = 10
+	defaultListReplicaStatesTimeout  = 500 * time.Millisecond
+	defaultRefreshIntervalBase       = 5000 * time.Millisecond
+	defaultRefreshIntervalJitter     = 1000 * time.Millisecond
+	defaultReadRetryDelay            = 100 * time.Millisecond
+	defaultUpdateRetryDelay          = 500 * time.Millisecond
+)
+
 // ClientConfig holds tunable parameters for Client behavior.
 type ClientConfig struct {
 	// MaxRetriesOnSingleReplica is the number of times to retry a request on the
@@ -29,27 +38,55 @@ type ClientConfig struct {
 	// ListReplicaStatesTimeout is the per-node timeout for each replica-state
 	// refresh RPC.
 	ListReplicaStatesTimeout time.Duration
-	// RefreshIntervalBase is the minimum wait between replica-state refresh rounds.
+	// RefreshIntervalBase is the minimum wait between replica-state refresh
+	// rounds.
 	RefreshIntervalBase time.Duration
 	// RefreshIntervalJitter is the upper bound of random jitter added to
-	// RefreshIntervalBase to spread refresh load across clients.
+	// RefreshIntervalBase to spread refresh load across clients. Non-positive
+	// means default.
 	RefreshIntervalJitter time.Duration
-	// ReadRetryDelay is how long to wait before retrying a read on the same replica.
+	// ReadRetryDelay is how long to wait before retrying a read on the same
+	// replica.
 	ReadRetryDelay time.Duration
-	// UpdateRetryDelay is how long to wait before retrying an update on the same replica.
+	// UpdateRetryDelay is how long to wait before retrying an update on the same
+	// replica.
 	UpdateRetryDelay time.Duration
 }
 
 // DefaultClientConfig returns a ClientConfig with sensible defaults.
 func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
-		MaxRetriesOnSingleReplica: 10,
-		ListReplicaStatesTimeout:  500 * time.Millisecond,
-		RefreshIntervalBase:       5000 * time.Millisecond,
-		RefreshIntervalJitter:     1000 * time.Millisecond,
-		ReadRetryDelay:            100 * time.Millisecond,
-		UpdateRetryDelay:          500 * time.Millisecond,
+		MaxRetriesOnSingleReplica: defaultMaxRetriesOnSingleReplica,
+		ListReplicaStatesTimeout:  defaultListReplicaStatesTimeout,
+		RefreshIntervalBase:       defaultRefreshIntervalBase,
+		RefreshIntervalJitter:     defaultRefreshIntervalJitter,
+		ReadRetryDelay:            defaultReadRetryDelay,
+		UpdateRetryDelay:          defaultUpdateRetryDelay,
 	}
+}
+
+// withDefaults returns the config with every non-positive field replaced by its
+// default.
+func (c ClientConfig) withDefaults() ClientConfig {
+	if c.MaxRetriesOnSingleReplica <= 0 {
+		c.MaxRetriesOnSingleReplica = defaultMaxRetriesOnSingleReplica
+	}
+	if c.ListReplicaStatesTimeout <= 0 {
+		c.ListReplicaStatesTimeout = defaultListReplicaStatesTimeout
+	}
+	if c.RefreshIntervalBase <= 0 {
+		c.RefreshIntervalBase = defaultRefreshIntervalBase
+	}
+	if c.RefreshIntervalJitter <= 0 {
+		c.RefreshIntervalJitter = defaultRefreshIntervalJitter
+	}
+	if c.ReadRetryDelay <= 0 {
+		c.ReadRetryDelay = defaultReadRetryDelay
+	}
+	if c.UpdateRetryDelay <= 0 {
+		c.UpdateRetryDelay = defaultUpdateRetryDelay
+	}
+	return c
 }
 
 // Client is a Monstera cluster client that routes reads and updates to the
@@ -70,15 +107,22 @@ type Client struct {
 
 	unwatch         func()
 	refresherCancel context.CancelFunc
+	// refresherDone is closed by refreshLoop when it returns. Stop waits on it
+	// before closing the transport so a refresh sweep in flight can never call
+	// into a closed transport.
+	refresherDone chan struct{}
 }
 
 // Stop unsubscribes from the config provider, stops it and the background
-// health-check goroutine, and closes the transport.
+// health-check goroutine, and closes the transport. It blocks until the
+// refresh loop has fully exited so the transport is not closed out from under
+// an in-flight ListReplicaStates call.
 func (c *Client) Stop() {
 	log.Printf("Stopping Monstera Client")
 
 	if c.refresherCancel != nil {
 		c.refresherCancel()
+		<-c.refresherDone
 	}
 	if c.unwatch != nil {
 		c.unwatch()
@@ -110,6 +154,7 @@ func (c *Client) Start(ctx context.Context) error {
 
 	refCtx, cancel := context.WithCancel(ctx)
 	c.refresherCancel = cancel
+	c.refresherDone = make(chan struct{})
 	go c.refreshLoop(refCtx)
 
 	return nil
@@ -146,6 +191,7 @@ func (c *Client) currentConfig() *cluster.Config {
 }
 
 func (c *Client) refreshLoop(ctx context.Context) {
+	defer close(c.refresherDone)
 	for {
 		if cfg := c.currentConfig(); cfg != nil {
 			for _, n := range cfg.ListNodes() {
@@ -408,11 +454,14 @@ func (c *Client) getLeader(replicas []*cluster.Replica) *cluster.Replica {
 // If the provider already has a config (e.g. a StaticClusterConfigProvider), it is
 // adopted eagerly here so the client is usable without Start; a
 // PollingClusterConfigProvider has no config until Start, so gateways must call Start.
+//
+// Non-positive config fields are replaced by their defaults, so a hand-built
+// ClientConfig never has to set every knob.
 func NewMonsteraClient(provider ClusterConfigProvider, trans transport.DataPlane, config ClientConfig) *Client {
 	c := &Client{
 		provider:      provider,
 		trans:         trans,
-		config:        config,
+		config:        config.withDefaults(),
 		replicaStates: make(map[string]*transport.ReplicaState),
 	}
 

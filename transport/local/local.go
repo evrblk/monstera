@@ -7,8 +7,27 @@ import (
 
 	"github.com/evrblk/monstera"
 	"github.com/evrblk/monstera/cluster"
+	"github.com/evrblk/monstera/internal/raft"
 	"github.com/evrblk/monstera/transport"
 )
+
+// localNode is the subset of *monstera.Node the local transport dispatches to.
+// Declaring the registry against an interface (instead of *monstera.Node) lets
+// tests register a fake node that injects slow, hanging, or failing calls.
+type localNode interface {
+	NodeId() string
+	Read(ctx context.Context, req *transport.ReadRequest) (*transport.ReadResponse, error)
+	Update(ctx context.Context, req *transport.UpdateRequest) (*transport.UpdateResponse, error)
+	RaftMessage(ctx context.Context, req *transport.RaftMessageRequest) (*transport.RaftMessageResponse, error)
+	TriggerSnapshot(replicaId string) error
+	LeadershipTransfer(replicaId string) error
+	SplitCutoff(ctx context.Context, shardId string) (uint64, error)
+	ReplicaStates() []*transport.ReplicaState
+	ListSnapshots(replicaId string) ([]raft.SnapshotMetadata, error)
+	UpdateClusterConfig(ctx context.Context, config *cluster.Config) error
+	GetClusterConfig() *cluster.Config
+	Bootstrap(ctx context.Context, nodeId string, config *cluster.Config) error
+}
 
 // LocalTransport is an in-memory transport that dispatches calls directly to registered Node instances.
 // It is intended for testing and local development. It implements both planes:
@@ -17,7 +36,7 @@ import (
 // registered by NodeId).
 type LocalTransport struct {
 	mu    sync.RWMutex
-	nodes map[string]*monstera.Node
+	nodes map[string]localNode
 }
 
 var _ transport.DataPlane = &LocalTransport{}
@@ -25,7 +44,7 @@ var _ transport.AdminPlane = &LocalTransport{}
 
 func NewLocalTransport() *LocalTransport {
 	return &LocalTransport{
-		nodes: make(map[string]*monstera.Node),
+		nodes: make(map[string]localNode),
 	}
 }
 
@@ -36,7 +55,7 @@ func (t *LocalTransport) Register(node *monstera.Node) {
 	t.nodes[node.NodeId()] = node
 }
 
-func (t *LocalTransport) getNode(nodeId string) (*monstera.Node, error) {
+func (t *LocalTransport) getNode(nodeId string) (localNode, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	node, ok := t.nodes[nodeId]

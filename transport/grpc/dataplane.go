@@ -2,16 +2,47 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 
 	"github.com/evrblk/monstera/cluster"
 	"github.com/evrblk/monstera/transport"
 	"github.com/evrblk/monstera/transport/grpc/monsterapb"
 )
+
+// DefaultClientKeepalive probes each pooled connection so a black-holed peer is
+// detected even when no application traffic flows: without it a persistent Raft
+// stream to a silently-dropped peer is only ever noticed via a Recv error, which
+// never arrives, so every send burns its full deadline and the dead stream is
+// never replaced — even after connectivity is restored. Time+Timeout (~13s)
+// stays well under the Raft transport's 30s per-call deadline. PermitWithoutStream
+// keeps probing during idle gaps between streams. Must stay >= the server's
+// EnforcementPolicy.MinTime (see defaultServerKeepaliveEnforcement) or the server
+// will GOAWAY the connection for pinging too aggressively.
+var DefaultClientKeepalive = keepalive.ClientParameters{
+	Time:                10 * time.Second,
+	Timeout:             3 * time.Second,
+	PermitWithoutStream: true,
+}
+
+type dataPlaneOptions struct {
+	keepalive keepalive.ClientParameters
+}
+
+// DataPlaneOption customizes a DataPlaneClient.
+type DataPlaneOption func(*dataPlaneOptions)
+
+// WithClientKeepalive overrides the gRPC client keepalive parameters (mainly for
+// tests that need faster black-hole detection).
+func WithClientKeepalive(kp keepalive.ClientParameters) DataPlaneOption {
+	return func(o *dataPlaneOptions) { o.keepalive = kp }
+}
 
 // DataPlaneClient is the gRPC-backed implementation of transport.DataPlane. It
 // addresses nodes by nodeId, resolving nodeId -> gRPC address from the cluster
@@ -29,19 +60,92 @@ type DataPlaneClient struct {
 
 	pool *GrpcClientPool[monsterapb.MonsteraApiClient]
 
+	// streamsMu guards only the streams map itself — inserting/looking up/removing
+	// per-node entries. It is never held across a stream dial (which can block for
+	// seconds on an unreachable node); dialing is serialized per node by the
+	// entry's own creation lock instead, so a black-holed peer cannot stall Raft
+	// traffic to healthy nodes. See streamEntry.
 	streamsMu sync.Mutex
-	streams   map[string]*raftMessageStream
+	streams   map[string]*streamEntry
+}
+
+// streamEntry owns the single multiplexed Raft stream to one node. Its creation
+// lock (a capacity-1 channel, so it can be acquired subject to the caller's
+// context) serializes dialing per node without touching the global streamsMu.
+type streamEntry struct {
+	// lock is a capacity-1 semaphore held by whichever goroutine is creating the
+	// stream. Acquired via select so a caller waiting for an in-flight dial can
+	// still honor its own deadline.
+	lock chan struct{}
+
+	// mu guards stream and removed. It is only ever held for map-like O(1) work,
+	// never across a dial.
+	mu      sync.Mutex
+	stream  *raftMessageStream
+	removed bool // set once the node leaves the config or the client closes
+}
+
+func newStreamEntry() *streamEntry {
+	return &streamEntry{lock: make(chan struct{}, 1)}
+}
+
+// live returns the current stream if it exists and is not dead, clearing it
+// otherwise so the next caller redials.
+func (e *streamEntry) live() *raftMessageStream {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.stream == nil {
+		return nil
+	}
+	select {
+	case <-e.stream.dead:
+		e.stream = nil
+		return nil
+	default:
+		return e.stream
+	}
+}
+
+// store publishes a freshly dialed stream. It returns false (and cancels s) if
+// the entry was removed while the dial was in flight, so the stream is never
+// orphaned.
+func (e *streamEntry) store(s *raftMessageStream) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.removed {
+		s.cancel()
+		return false
+	}
+	e.stream = s
+	return true
+}
+
+// close marks the entry removed and tears down any live stream. A dial that is
+// still in flight will see removed and cancel its result in store().
+func (e *streamEntry) close() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.removed = true
+	if e.stream != nil {
+		e.stream.cancel()
+		e.stream = nil
+	}
 }
 
 var _ transport.DataPlane = &DataPlaneClient{}
 var _ transport.ClusterConfigConsumer = &DataPlaneClient{}
 
-func NewDataPlaneClient() *DataPlaneClient {
+func NewDataPlaneClient(opts ...DataPlaneOption) *DataPlaneClient {
+	cfg := dataPlaneOptions{keepalive: DefaultClientKeepalive}
+	for _, o := range opts {
+		o(&cfg)
+	}
+
 	return &DataPlaneClient{
 		pool: NewGrpcClientPool[monsterapb.MonsteraApiClient](func(conn *grpc.ClientConn) monsterapb.MonsteraApiClient {
 			return monsterapb.NewMonsteraApiClient(conn)
-		}),
-		streams: make(map[string]*raftMessageStream),
+		}, grpc.WithKeepaliveParams(cfg.keepalive)),
+		streams: make(map[string]*streamEntry),
 	}
 }
 
@@ -75,13 +179,19 @@ func (t *DataPlaneClient) SetClusterConfig(config *cluster.Config) {
 
 	// Drop raft-message streams to nodes no longer in the config.
 	t.streamsMu.Lock()
-	for id, s := range t.streams {
+	var removed []*streamEntry
+	for id, e := range t.streams {
 		if !newIds[id] {
-			s.cancel()
+			removed = append(removed, e)
 			delete(t.streams, id)
 		}
 	}
 	t.streamsMu.Unlock()
+
+	// Tear the removed entries down outside streamsMu.
+	for _, e := range removed {
+		e.close()
+	}
 }
 
 func (t *DataPlaneClient) ListReplicaStates(ctx context.Context, nodeId string) ([]*transport.ReplicaState, error) {
@@ -152,7 +262,7 @@ func (t *DataPlaneClient) RaftMessage(ctx context.Context, nodeId string, req *t
 		return nil, fmt.Errorf("replicaId is required")
 	}
 
-	s, err := t.getOrCreateStream(nodeId)
+	s, err := t.getOrCreateStream(ctx, nodeId)
 	if err != nil {
 		return nil, err
 	}
@@ -174,10 +284,16 @@ func (t *DataPlaneClient) RaftMessage(ctx context.Context, nodeId string, req *t
 
 func (t *DataPlaneClient) Close() error {
 	t.streamsMu.Lock()
-	for _, s := range t.streams {
-		s.cancel()
+	entries := make([]*streamEntry, 0, len(t.streams))
+	for _, e := range t.streams {
+		entries = append(entries, e)
 	}
+	t.streams = make(map[string]*streamEntry)
 	t.streamsMu.Unlock()
+
+	for _, e := range entries {
+		e.close()
+	}
 
 	t.pool.Close()
 
@@ -205,19 +321,35 @@ func (t *DataPlaneClient) getConnection(nodeId string) (monsterapb.MonsteraApiCl
 	return conn, nil
 }
 
-func (t *DataPlaneClient) getOrCreateStream(nodeId string) (*raftMessageStream, error) {
+func (t *DataPlaneClient) getOrCreateStream(ctx context.Context, nodeId string) (*raftMessageStream, error) {
+	// Look up (or create) the per-node entry under the global lock. This is O(1)
+	// and never blocks on I/O.
 	t.streamsMu.Lock()
-	defer t.streamsMu.Unlock()
+	e, ok := t.streams[nodeId]
+	if !ok {
+		e = newStreamEntry()
+		t.streams[nodeId] = e
+	}
+	t.streamsMu.Unlock()
 
-	s, ok := t.streams[nodeId]
-	if ok {
-		// Check if still alive.
-		select {
-		case <-s.dead:
-			// Stream is dead; fall through to create a new one.
-		default:
-			return s, nil
-		}
+	// Fast path: a live stream already exists.
+	if s := e.live(); s != nil {
+		return s, nil
+	}
+
+	// Acquire the per-node creation lock, subject to the caller's context so a
+	// slow or black-holed dial to this node can never block the caller past its
+	// own deadline — and, crucially, never blocks callers for other nodes.
+	select {
+	case e.lock <- struct{}{}:
+		defer func() { <-e.lock }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	// Re-check: another goroutine may have created the stream while we waited.
+	if s := e.live(); s != nil {
+		return s, nil
 	}
 
 	conn, err := t.getConnection(nodeId)
@@ -225,11 +357,16 @@ func (t *DataPlaneClient) getOrCreateStream(nodeId string) (*raftMessageStream, 
 		return nil, err
 	}
 
-	s, err = newRaftMessageStream(conn)
+	// Dial outside streamsMu; bound establishment by the caller's context.
+	s, err := newRaftMessageStream(ctx, conn)
 	if err != nil {
 		return nil, err
 	}
-	t.streams[nodeId] = s
+	if !e.store(s) {
+		// The node left the config (or the client closed) while we were dialing;
+		// store() already cancelled the stream.
+		return nil, fmt.Errorf("stream to node %s was removed", nodeId)
+	}
 	return s, nil
 }
 
@@ -242,26 +379,55 @@ type raftMessageStream struct {
 
 	pendingMu sync.Mutex
 	pending   map[int64]chan *monsterapb.RaftMessageResponse
+	// closed is set by recvLoop once the stream has died. send checks it under
+	// pendingMu before registering into pending, so a send that races stream
+	// death returns deadErr instead of writing to a torn-down map.
+	closed bool
 
 	dead    chan struct{}
 	deadErr error
 }
 
-func newRaftMessageStream(conn monsterapb.MonsteraApiClient) (*raftMessageStream, error) {
-	ctx, cancel := context.WithCancel(context.Background())
-	stream, err := conn.RaftMessage(ctx)
-	if err != nil {
+// newRaftMessageStream opens a persistent multiplexed Raft stream. The stream
+// outlives any single RaftMessage call, so its lifetime is governed by a
+// Background-derived context (cancelled via the returned stream's cancel), not
+// by dialCtx. dialCtx bounds only establishment: creating a client stream to an
+// unreachable peer can block for seconds while gRPC connects, and the caller
+// must not be pinned to that beyond its own deadline.
+func newRaftMessageStream(dialCtx context.Context, conn monsterapb.MonsteraApiClient) (*raftMessageStream, error) {
+	streamCtx, cancel := context.WithCancel(context.Background())
+
+	type result struct {
+		stream grpc.BidiStreamingClient[monsterapb.RaftMessageRequest, monsterapb.RaftMessageResponse]
+		err    error
+	}
+	// Buffered so the goroutine never leaks if we abandon on dialCtx.Done.
+	ch := make(chan result, 1)
+	go func() {
+		stream, err := conn.RaftMessage(streamCtx)
+		ch <- result{stream: stream, err: err}
+	}()
+
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			cancel()
+			return nil, r.err
+		}
+		s := &raftMessageStream{
+			stream:  r.stream,
+			cancel:  cancel,
+			pending: make(map[int64]chan *monsterapb.RaftMessageResponse),
+			dead:    make(chan struct{}),
+		}
+		go s.recvLoop()
+		return s, nil
+	case <-dialCtx.Done():
+		// Abandon the establishment: cancelling streamCtx unblocks the goroutine's
+		// conn.RaftMessage, which then discards its result into the buffered channel.
 		cancel()
-		return nil, err
+		return nil, dialCtx.Err()
 	}
-	s := &raftMessageStream{
-		stream:  stream,
-		cancel:  cancel,
-		pending: make(map[int64]chan *monsterapb.RaftMessageResponse),
-		dead:    make(chan struct{}),
-	}
-	go s.recvLoop()
-	return s, nil
 }
 
 func (s *raftMessageStream) recvLoop() {
@@ -271,10 +437,11 @@ func (s *raftMessageStream) recvLoop() {
 			s.deadErr = err
 			close(s.dead)
 			s.pendingMu.Lock()
-			for _, ch := range s.pending {
+			s.closed = true
+			for id, ch := range s.pending {
 				close(ch)
+				delete(s.pending, id)
 			}
-			s.pending = nil
 			s.pendingMu.Unlock()
 			return
 		}
@@ -297,6 +464,10 @@ func (s *raftMessageStream) send(ctx context.Context, req *monsterapb.RaftMessag
 
 	ch := make(chan *monsterapb.RaftMessageResponse, 1)
 	s.pendingMu.Lock()
+	if s.closed {
+		s.pendingMu.Unlock()
+		return nil, s.deadErr
+	}
 	s.pending[msgID] = ch
 	s.pendingMu.Unlock()
 
@@ -315,6 +486,11 @@ func (s *raftMessageStream) send(ctx context.Context, req *monsterapb.RaftMessag
 	case resp, ok := <-ch:
 		if !ok {
 			return nil, s.deadErr
+		}
+		// A non-empty Error is a per-message failure envelope: the server could
+		// not handle this specific message but the shared stream is healthy.
+		if resp.Error != "" {
+			return nil, errors.New(resp.Error)
 		}
 		return resp, nil
 	case <-ctx.Done():

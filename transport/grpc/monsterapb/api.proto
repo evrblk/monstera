@@ -162,4 +162,9 @@ message RaftMessageResponse {
   int32 message_type = 1;
   bytes message = 2;
   int64 response_to_message_id = 3;
+  // error is set when the server failed to handle this specific message (e.g.
+  // the target replica is not ready or not found). It is a per-message failure
+  // correlated by response_to_message_id and does not affect the shared stream;
+  // an empty error means success.
+  string error = 4;
 }

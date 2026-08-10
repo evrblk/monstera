@@ -81,11 +81,17 @@ message InstallSnapshotInitRequest {
   int64 size = 9;
 }
 
-message InstallSnapshotInitResponse {}
+message InstallSnapshotInitResponse {
+  // session_id identifies this install session on the follower. The sender must
+  // stamp every following chunk with it so the follower can reject stray chunks
+  // from a superseded session (e.g. a deposed leader's stream).
+  uint64 session_id = 1;
+}
 
 // All further InstallSnapshotRequest messages with data only.
 message InstallSnapshotChunkRequest {
   bytes data = 1;
+  uint64 session_id = 2;
 }
 
 message InstallSnapshotChunkResponse {

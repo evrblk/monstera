@@ -21,6 +21,10 @@ type fakeNode struct {
 	raftMessageFn func(ctx context.Context, req *transport.RaftMessageRequest) (*transport.RaftMessageResponse, error)
 	readFn        func(ctx context.Context, req *transport.ReadRequest) (*transport.ReadResponse, error)
 	updateFn      func(ctx context.Context, req *transport.UpdateRequest) (*transport.UpdateResponse, error)
+
+	// config is returned by GetClusterConfig and captured by UpdateClusterConfig,
+	// so tests can observe exactly what the transport handed the node.
+	config *cluster.Config
 }
 
 var _ localNode = (*fakeNode)(nil)
@@ -55,8 +59,11 @@ func (f *fakeNode) ReplicaStates() []*transport.ReplicaState                    
 func (f *fakeNode) ListSnapshots(replicaId string) ([]raft.SnapshotMetadata, error) {
 	return nil, nil
 }
-func (f *fakeNode) UpdateClusterConfig(ctx context.Context, config *cluster.Config) error { return nil }
-func (f *fakeNode) GetClusterConfig() *cluster.Config                                     { return nil }
+func (f *fakeNode) UpdateClusterConfig(ctx context.Context, config *cluster.Config) error {
+	f.config = config
+	return nil
+}
+func (f *fakeNode) GetClusterConfig() *cluster.Config { return f.config }
 func (f *fakeNode) Bootstrap(ctx context.Context, nodeId string, config *cluster.Config) error {
 	return nil
 }
@@ -238,5 +245,125 @@ func TestLocalClose(t *testing.T) {
 	tr := NewLocalTransport()
 	if err := tr.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
+	}
+}
+
+// TestLocalPayloadIsolation verifies the local transport copies payload/message
+// bytes in both directions, matching the gRPC transport (which serializes). A
+// caller mutating its buffer after a call must not affect what the node saw, and
+// a caller mutating the returned buffer must not affect the node's own buffer.
+func TestLocalPayloadIsolation(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("update request payload copied", func(t *testing.T) {
+		var got []byte
+		tr := NewLocalTransport()
+		register(tr, &fakeNode{
+			id: "n",
+			updateFn: func(ctx context.Context, req *transport.UpdateRequest) (*transport.UpdateResponse, error) {
+				got = req.Payload // node retains a reference to what it received
+				return &transport.UpdateResponse{Payload: []byte("resp")}, nil
+			},
+		})
+
+		p := []byte("hello")
+		if _, err := tr.Update(ctx, "n", &transport.UpdateRequest{Payload: p}); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		p[0] = 'X' // mutate the caller's buffer after the call
+
+		if string(got) != "hello" {
+			t.Fatalf("node saw caller's later mutation: got %q, want %q", got, "hello")
+		}
+	})
+
+	t.Run("update response payload copied", func(t *testing.T) {
+		nodeBuf := []byte("world")
+		tr := NewLocalTransport()
+		register(tr, &fakeNode{
+			id: "n",
+			updateFn: func(ctx context.Context, req *transport.UpdateRequest) (*transport.UpdateResponse, error) {
+				return &transport.UpdateResponse{Payload: nodeBuf}, nil // node retains this buffer
+			},
+		})
+
+		resp, err := tr.Update(ctx, "n", &transport.UpdateRequest{Payload: []byte("x")})
+		if err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		resp.Payload[0] = 'X' // mutate the returned buffer
+
+		if string(nodeBuf) != "world" {
+			t.Fatalf("caller mutation leaked into node buffer: got %q, want %q", nodeBuf, "world")
+		}
+	})
+
+	t.Run("raft message copied both ways", func(t *testing.T) {
+		var got []byte
+		nodeBuf := []byte("resp")
+		tr := NewLocalTransport()
+		register(tr, &fakeNode{
+			id: "n",
+			raftMessageFn: func(ctx context.Context, req *transport.RaftMessageRequest) (*transport.RaftMessageResponse, error) {
+				got = req.Message
+				return &transport.RaftMessageResponse{Message: nodeBuf}, nil
+			},
+		})
+
+		p := []byte("req")
+		resp, err := tr.RaftMessage(ctx, "n", &transport.RaftMessageRequest{ReplicaId: "r", Message: p})
+		if err != nil {
+			t.Fatalf("RaftMessage: %v", err)
+		}
+		p[0] = 'X'
+		resp.Message[0] = 'X'
+
+		if string(got) != "req" {
+			t.Fatalf("node saw caller's later mutation: got %q", got)
+		}
+		if string(nodeBuf) != "resp" {
+			t.Fatalf("caller mutation leaked into node buffer: got %q", nodeBuf)
+		}
+	})
+}
+
+// TestLocalConfigIsolation verifies the local transport clones the inbound config
+// (UpdateClusterConfig) so the node cannot be mutated through the caller's
+// pointer. The outbound path (GetClusterConfig) is a straight pass-through:
+// cloning there is Node.GetClusterConfig's responsibility, not the transport's.
+func TestLocalConfigIsolation(t *testing.T) {
+	ctx := context.Background()
+
+	f := &fakeNode{id: "n"}
+	tr := NewLocalTransport()
+	register(tr, f)
+
+	cfg := &cluster.Config{
+		Version: 1,
+		Nodes:   []*cluster.Node{{Id: "n", GrpcAddress: "addr"}},
+	}
+	if err := tr.UpdateClusterConfig(ctx, "n", cfg); err != nil {
+		t.Fatalf("UpdateClusterConfig: %v", err)
+	}
+	if f.config == nil {
+		t.Fatal("node did not receive a config")
+	}
+	if f.config == cfg {
+		t.Fatal("node aliased the caller's config pointer")
+	}
+
+	// Mutating the caller's config after the call must not reach the node.
+	cfg.Version = 999
+	if f.config.Version != 1 {
+		t.Fatalf("caller mutation leaked into node config: version %d", f.config.Version)
+	}
+
+	// GetClusterConfig returns whatever the node returned, unchanged.
+	got, err := tr.GetClusterConfig(ctx, "n")
+	if err != nil {
+		t.Fatalf("GetClusterConfig: %v", err)
+	}
+	if got != f.config {
+		t.Fatal("GetClusterConfig should pass the node's config through as-is")
 	}
 }

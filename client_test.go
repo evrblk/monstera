@@ -37,6 +37,8 @@ func TestClientConfigWithDefaultsKeepsExplicitValues(t *testing.T) {
 		RefreshIntervalJitter:     4,
 		ReadRetryDelay:            5,
 		UpdateRetryDelay:          6,
+		MaxReadPayloadBytes:       7,
+		MaxUpdatePayloadBytes:     8,
 	}
 	require.Equal(t, cfg, cfg.withDefaults())
 }
@@ -79,6 +81,108 @@ func TestClient_pruneReplicaStates(t *testing.T) {
 	require.NotContains(t, c.replicaStates, "rpl_stale_1")
 	require.NotContains(t, c.replicaStates, "rpl_stale_2")
 	require.Len(t, c.replicaStates, 2)
+}
+
+// recordingDataPlane is a no-op transport.DataPlane that counts Read/Update
+// calls, so a test can assert whether a request reached the transport.
+type recordingDataPlane struct {
+	reads   int
+	updates int
+}
+
+func (r *recordingDataPlane) Read(ctx context.Context, nodeId string, req *transport.ReadRequest) (*transport.ReadResponse, error) {
+	r.reads++
+	return &transport.ReadResponse{Payload: []byte("ok")}, nil
+}
+
+func (r *recordingDataPlane) Update(ctx context.Context, nodeId string, req *transport.UpdateRequest) (*transport.UpdateResponse, error) {
+	r.updates++
+	return &transport.UpdateResponse{Payload: []byte("ok")}, nil
+}
+
+func (r *recordingDataPlane) ListReplicaStates(ctx context.Context, nodeId string) ([]*transport.ReplicaState, error) {
+	return nil, nil
+}
+
+func (r *recordingDataPlane) RaftMessage(ctx context.Context, nodeId string, req *transport.RaftMessageRequest) (*transport.RaftMessageResponse, error) {
+	return nil, nil
+}
+
+func (r *recordingDataPlane) Close() error { return nil }
+
+// TestClientPayloadSizeLimit checks that oversized Read/Update payloads are
+// rejected on the client with ErrPayloadTooLarge before any node is contacted,
+// while within-limit and unlimited requests reach the transport.
+func TestClientPayloadSizeLimit(t *testing.T) {
+	cfg := CreateEmptyClientTestConfig(t)
+
+	newClient := func(rc ClientConfig) (*Client, *recordingDataPlane) {
+		rc.MaxRetriesOnSingleReplica = 1 // so a passing request actually calls the transport
+		fake := &recordingDataPlane{}
+		c := &Client{
+			config:        rc,
+			trans:         fake,
+			replicaStates: make(map[string]*transport.ReplicaState),
+		}
+		c.onConfig(cfg)
+		return c, fake
+	}
+
+	ctx := context.Background()
+
+	t.Run("update over limit rejected before transport", func(t *testing.T) {
+		c, fake := newClient(ClientConfig{MaxUpdatePayloadBytes: 10})
+		_, err := c.Update(ctx, "app", 0, make([]byte, 11))
+		require.ErrorIs(t, err, ErrPayloadTooLarge)
+		require.Zero(t, fake.updates, "transport must not be reached")
+	})
+
+	t.Run("update at limit reaches transport", func(t *testing.T) {
+		c, fake := newClient(ClientConfig{MaxUpdatePayloadBytes: 10})
+		_, err := c.Update(ctx, "app", 0, make([]byte, 10))
+		require.NoError(t, err)
+		require.Positive(t, fake.updates)
+	})
+
+	t.Run("read over limit rejected before transport", func(t *testing.T) {
+		c, fake := newClient(ClientConfig{MaxReadPayloadBytes: 8})
+		_, err := c.Read(ctx, "app", 0, true, make([]byte, 9))
+		require.ErrorIs(t, err, ErrPayloadTooLarge)
+		require.Zero(t, fake.reads, "transport must not be reached")
+	})
+
+	t.Run("zero limit falls back to 1 MiB default", func(t *testing.T) {
+		c, fake := newClient(ClientConfig{}) // size limits unset -> default 1 MiB
+
+		_, err := c.Update(ctx, "app", 0, make([]byte, (1<<20)+1))
+		require.ErrorIs(t, err, ErrPayloadTooLarge)
+		require.Zero(t, fake.updates)
+
+		_, err = c.Update(ctx, "app", 0, make([]byte, 1<<20))
+		require.NoError(t, err)
+		require.Positive(t, fake.updates)
+
+		_, err = c.Read(ctx, "app", 0, true, make([]byte, (1<<20)+1))
+		require.ErrorIs(t, err, ErrPayloadTooLarge)
+		require.Zero(t, fake.reads)
+
+		_, err = c.Read(ctx, "app", 0, true, make([]byte, 1<<20))
+		require.NoError(t, err)
+		require.Positive(t, fake.reads)
+	})
+
+	t.Run("enforced on shard-id variants too", func(t *testing.T) {
+		c, fake := newClient(ClientConfig{MaxReadPayloadBytes: 4, MaxUpdatePayloadBytes: 4})
+		shard, err := c.currentRouter().FindShardByShardKey("app", 0)
+		require.NoError(t, err)
+
+		_, err = c.UpdateShard(ctx, "app", shard.Id, make([]byte, 5))
+		require.ErrorIs(t, err, ErrPayloadTooLarge)
+		_, err = c.ReadShard(ctx, "app", shard.Id, true, make([]byte, 5))
+		require.ErrorIs(t, err, ErrPayloadTooLarge)
+		require.Zero(t, fake.updates)
+		require.Zero(t, fake.reads)
+	})
 }
 
 // CreateEmptyClientTestConfig builds a minimal valid 3-node, single-shard config

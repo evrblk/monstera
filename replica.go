@@ -243,7 +243,7 @@ func (r *replica) GetReplicaId() string {
 // node id doubles as this replica's Raft transport address and labels its
 // metrics.
 func newReplica(baseDir string, applicationName string, shardId string, replicaId string,
-	nodeId string, core ApplicationCore, trans transport.DataPlane, raftStore *store.BadgerStore, restoreSnapshotOnStart bool, updateTimeout time.Duration) *replica {
+	nodeId string, core ApplicationCore, trans transport.DataPlane, raftStore *store.BadgerStore, restoreSnapshotOnStart bool, updateTimeout time.Duration, snapshotSessionTimeout time.Duration) *replica {
 	commandCodec := &replication.ProtoCommandCodec{}
 
 	// The cutoff marker must be readable and writable before the Raft instance
@@ -277,7 +277,7 @@ func newReplica(baseDir string, applicationName string, shardId string, replicaI
 		logger:          log.New(os.Stderr, fmt.Sprintf("[%s]", replicaId), log.LstdFlags),
 	}
 
-	rep.raft = raft.NewRaft(baseDir, nodeId, applicationName, shardId, replicaId, adapter, trans, raftStore, restoreSnapshotOnStart, updateTimeout)
+	rep.raft = raft.NewRaft(baseDir, nodeId, applicationName, shardId, replicaId, adapter, trans, raftStore, restoreSnapshotOnStart, updateTimeout, snapshotSessionTimeout)
 
 	return rep
 }

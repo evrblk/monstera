@@ -34,7 +34,7 @@ func TestSeederClonesRaftGroup(t *testing.T) {
 
 	// Source replica: single-voter group with a kv FSM.
 	srcCore := newKvAppCore()
-	src := NewRaft(baseDir, "node_1", "Core", "s1", "src", srcCore, &nopTransport{}, raftStore, true, 5*time.Second)
+	src := NewRaft(baseDir, "node_1", "Core", "s1", "src", srcCore, &nopTransport{}, raftStore, true, 5*time.Second, 30*time.Second)
 	t.Cleanup(func() { _ = src.Close() })
 	require.NoError(t, src.Bootstrap([]RaftServer{{ReplicaId: "src", NodeId: "node_1"}}))
 	require.Eventually(t, func() bool { return src.GetRaftState() == Leader },
@@ -86,7 +86,7 @@ func TestSeederClonesRaftGroup(t *testing.T) {
 
 	// Promote in place: a regular Raft over the seeded stores. No Bootstrap.
 	cloneCore := newKvAppCore()
-	clone := NewRaft(baseDir, "node_1", "Core", "s1", "clone", cloneCore, &nopTransport{}, raftStore, true, 5*time.Second)
+	clone := NewRaft(baseDir, "node_1", "Core", "s1", "clone", cloneCore, &nopTransport{}, raftStore, true, 5*time.Second, 30*time.Second)
 	require.Eventually(t, func() bool { return clone.GetRaftState() == Leader },
 		15*time.Second, 100*time.Millisecond, "seeded clone never became leader")
 
@@ -109,7 +109,7 @@ func TestSeederClonesRaftGroup(t *testing.T) {
 	// And survives a restart over the same durable state.
 	require.NoError(t, clone.Close())
 	cloneCore2 := newKvAppCore()
-	clone2 := NewRaft(baseDir, "node_1", "Core", "s1", "clone", cloneCore2, &nopTransport{}, raftStore, true, 5*time.Second)
+	clone2 := NewRaft(baseDir, "node_1", "Core", "s1", "clone", cloneCore2, &nopTransport{}, raftStore, true, 5*time.Second, 30*time.Second)
 	t.Cleanup(func() { _ = clone2.Close() })
 	require.Eventually(t, func() bool { return clone2.GetRaftState() == Leader },
 		15*time.Second, 100*time.Millisecond, "restarted clone never became leader")
@@ -136,7 +136,7 @@ func TestSeederMetadataOnlyBase(t *testing.T) {
 	core := newKvAppCore()
 	// restoreSnapshotOnStart=false: the persisted-core mode; the snapshot
 	// content (none) is never restored, only its metadata is read.
-	r := NewRaft(baseDir, "node_1", "Core", "s1", "child", core, &nopTransport{}, raftStore, false, 5*time.Second)
+	r := NewRaft(baseDir, "node_1", "Core", "s1", "child", core, &nopTransport{}, raftStore, false, 5*time.Second, 30*time.Second)
 	t.Cleanup(func() { _ = r.Close() })
 
 	require.Eventually(t, func() bool { return r.GetRaftState() == Leader },

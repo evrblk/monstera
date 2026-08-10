@@ -43,17 +43,48 @@ func (s RaftState) String() string {
 	}
 }
 
+// defaultSnapshotSessionTimeout is the fallback InstallSnapshot inactivity
+// deadline used when NewRaft is given a non-positive value. In production the
+// value comes from NodeConfig.SnapshotSessionTimeout; this only guards direct
+// callers (e.g. tests). See snapshotSession for what the deadline protects
+// against: hraft's snapshot install runs on the main Raft goroutine and blocks
+// it reading the pipe, so a leader that vanishes mid-transfer would otherwise
+// wedge the follower forever. The deadline is extended on every chunk, so it
+// never aborts a legitimately streaming (even very large) snapshot.
+const defaultSnapshotSessionTimeout = 30 * time.Second
+
+var (
+	errSnapshotSessionTimeout    = errors.New("install snapshot session timed out")
+	errSnapshotSessionSuperseded = errors.New("install snapshot session superseded by a new session")
+)
+
 type snapshotSessionResult struct {
 	resp *hraft.InstallSnapshotResponse
 	err  error
 }
 
+// snapshotSession tracks one in-flight InstallSnapshot transfer. All fields are
+// guarded by Raft.snapshotSessionMu except resultCh (a buffered hand-off from
+// the install goroutine) and pipeWriter (whose own methods are goroutine-safe).
 type snapshotSession struct {
+	// id distinguishes this session from earlier ones on the same follower; the
+	// sender echoes it on every chunk so stray chunks from a superseded session
+	// are rejected rather than written into this session's pipe.
+	id            uint64
 	pipeWriter    *io.PipeWriter
 	expectedSize  int64
 	bytesReceived int64
 	resultCh      chan snapshotSessionResult
 	startTime     time.Time
+
+	// closed is set once the session is finished or abandoned, so the deadline
+	// timer and racing chunk handlers stop touching it.
+	closed bool
+	// timer fires the inactivity deadline; deadline is the current absolute
+	// deadline, pushed forward on each chunk so a fired-but-superseded timer
+	// reschedules instead of abandoning a session that just made progress.
+	timer    *time.Timer
+	deadline time.Time
 }
 
 // Raft wraps the HashiCorp Raft implementation with a Badger store backend.
@@ -70,8 +101,14 @@ type Raft struct {
 	shardId         string
 	replicaId       string
 
-	snapshotSession   *snapshotSession
-	snapshotSessionMu sync.Mutex
+	// snapshotSessionMu guards snapshotSession, snapshotSessionSeq, and the mutable
+	// fields of the current session.
+	snapshotSessionMu  sync.Mutex
+	snapshotSession    *snapshotSession
+	snapshotSessionSeq uint64
+	// snapshotSessionTimeout is the per-session inactivity deadline (see
+	// defaultSnapshotSessionTimeout).
+	snapshotSessionTimeout time.Duration
 
 	// updateTimeout bounds how long r.hraft.Apply waits for a log entry to be
 	// committed and applied before returning an error.
@@ -510,17 +547,31 @@ func (r *Raft) RaftMessage(request *transport.RaftMessageRequest) (*transport.Ra
 	}
 }
 
-// handleInstallSnapshotInitMessage starts a new snapshot session.
+// handleInstallSnapshotInitMessage starts a new snapshot session. hraft's
+// InstallSnapshot handler runs on the main Raft goroutine and io.Copies the pipe
+// until EOF, so the goroutine is blocked for the whole transfer.
 func (r *Raft) handleInstallSnapshotInitMessage(msg *raftpb.InstallSnapshotInitRequest) (*transport.RaftMessageResponse, error) {
+	// A new Init means a (possibly new) leader is starting over. Release any
+	// session still in flight so the main Raft goroutine blocked on its pipe is
+	// unwedged before we start another one.
+	r.snapshotSessionMu.Lock()
+	prev := r.snapshotSession
+	r.snapshotSessionMu.Unlock()
+	if prev != nil {
+		r.abandonSnapshotSession(prev, errSnapshotSessionSuperseded)
+	}
+
 	pr, pw := io.Pipe()
+
+	r.snapshotSessionMu.Lock()
+	r.snapshotSessionSeq++
 	session := &snapshotSession{
+		id:           r.snapshotSessionSeq,
 		pipeWriter:   pw,
 		expectedSize: msg.Size,
 		resultCh:     make(chan snapshotSessionResult, 1),
 		startTime:    time.Now(),
 	}
-
-	r.snapshotSessionMu.Lock()
 	r.snapshotSession = session
 	r.snapshotSessionMu.Unlock()
 
@@ -531,48 +582,86 @@ func (r *Raft) handleInstallSnapshotInitMessage(msg *raftpb.InstallSnapshotInitR
 	}()
 
 	if msg.Size == 0 {
+		// Empty snapshot: no chunks follow, so complete immediately.
+		r.snapshotSessionMu.Lock()
+		session.closed = true
+		if r.snapshotSession == session {
+			r.snapshotSession = nil
+		}
+		r.snapshotSessionMu.Unlock()
 		pw.Close()
-		return r.finishSnapshotSession(session)
+		return r.finishSnapshotSession(session, 0)
 	}
 
-	return &transport.RaftMessageResponse{MessageType: InstallSnapshotInitResponse}, nil
+	// Arm the inactivity deadline. No chunk handler can run until the sender sees
+	// the Init response returned below, so touching the session here is race-free.
+	r.snapshotSessionMu.Lock()
+	session.deadline = time.Now().Add(r.snapshotSessionTimeout)
+	session.timer = time.AfterFunc(r.snapshotSessionTimeout, func() { r.snapshotDeadlineFired(session) })
+	r.snapshotSessionMu.Unlock()
+
+	respData, err := (&raftpb.InstallSnapshotInitResponse{SessionId: session.id}).MarshalVT()
+	if err != nil {
+		r.abandonSnapshotSession(session, err)
+		return nil, err
+	}
+	return &transport.RaftMessageResponse{MessageType: InstallSnapshotInitResponse, Message: respData}, nil
 }
 
-// handleInstallSnapshotChunkMessage writes data to the active session.
+// handleInstallSnapshotChunkMessage writes one chunk to the active session's
+// pipe. Chunks stamped with a stale session id (from a superseded stream) are
+// rejected rather than corrupting the current transfer.
 func (r *Raft) handleInstallSnapshotChunkMessage(msg *raftpb.InstallSnapshotChunkRequest) (*transport.RaftMessageResponse, error) {
 	r.snapshotSessionMu.Lock()
 	session := r.snapshotSession
+	if session == nil || session.closed || session.id != msg.SessionId {
+		r.snapshotSessionMu.Unlock()
+		return nil, fmt.Errorf("no active snapshot session for id %d", msg.SessionId)
+	}
+	pw := session.pipeWriter
 	r.snapshotSessionMu.Unlock()
 
-	if session == nil {
-		return nil, fmt.Errorf("no active snapshot session")
-	}
-
-	if _, err := session.pipeWriter.Write(msg.Data); err != nil {
-		session.pipeWriter.CloseWithError(err)
-		r.snapshotSessionMu.Lock()
-		r.snapshotSession = nil
-		r.snapshotSessionMu.Unlock()
-		<-session.resultCh
+	// Write outside the lock: it blocks until the main goroutine's io.Copy drains
+	// it, and abandonSnapshotSession needs the lock to release us via CloseWithError.
+	if _, err := pw.Write(msg.Data); err != nil {
+		// The pipe was closed (session abandoned, superseded, or the reader
+		// errored). Ensure teardown ran and report the failure.
+		r.abandonSnapshotSession(session, err)
 		return nil, err
 	}
-	session.bytesReceived += int64(len(msg.Data))
 
-	if session.bytesReceived >= session.expectedSize {
-		session.pipeWriter.Close()
-		return r.finishSnapshotSession(session)
-	}
-
-	return &transport.RaftMessageResponse{MessageType: InstallSnapshotChunkResponse}, nil
-}
-
-func (r *Raft) finishSnapshotSession(session *snapshotSession) (*transport.RaftMessageResponse, error) {
 	r.snapshotSessionMu.Lock()
-	r.snapshotSession = nil
+	if r.snapshotSession != session || session.closed {
+		// Abandoned/superseded while we were writing.
+		r.snapshotSessionMu.Unlock()
+		return nil, fmt.Errorf("install snapshot session %d is no longer active", msg.SessionId)
+	}
+	session.bytesReceived += int64(len(msg.Data))
+	session.deadline = time.Now().Add(r.snapshotSessionTimeout) // progress: extend deadline
+	bytesReceived := session.bytesReceived
+	complete := session.bytesReceived >= session.expectedSize
+	if complete {
+		session.closed = true
+		if session.timer != nil {
+			session.timer.Stop()
+		}
+		r.snapshotSession = nil
+	}
 	r.snapshotSessionMu.Unlock()
 
+	if !complete {
+		return &transport.RaftMessageResponse{MessageType: InstallSnapshotChunkResponse}, nil
+	}
+
+	pw.Close() // EOF: the main goroutine finishes io.Copy and applies the snapshot.
+	return r.finishSnapshotSession(session, bytesReceived)
+}
+
+// finishSnapshotSession waits for the install goroutine's result and builds the
+// final chunk response. The session must already be marked closed and cleared.
+func (r *Raft) finishSnapshotSession(session *snapshotSession, bytesReceived int64) (*transport.RaftMessageResponse, error) {
 	result := <-session.resultCh
-	RecordSnapshot(r.nodeId, r.applicationName, r.shardId, r.replicaId, "install", time.Since(session.startTime), session.bytesReceived, result.err)
+	RecordSnapshot(r.nodeId, r.applicationName, r.shardId, r.replicaId, "install", time.Since(session.startTime), bytesReceived, result.err)
 	if result.err != nil {
 		return nil, result.err
 	}
@@ -584,6 +673,51 @@ func (r *Raft) finishSnapshotSession(session *snapshotSession) (*transport.RaftM
 		MessageType: InstallSnapshotChunkResponse,
 		Message:     data,
 	}, nil
+}
+
+// abandonSnapshotSession tears down a session that will never complete (sender
+// vanished, superseded by a new Init, or a write error). It closes the pipe with
+// an error, which unblocks the main Raft goroutine's io.Copy so the node can
+// resume normal Raft processing. Idempotent and safe to call from any goroutine.
+func (r *Raft) abandonSnapshotSession(session *snapshotSession, cause error) {
+	r.snapshotSessionMu.Lock()
+	if session.closed {
+		r.snapshotSessionMu.Unlock()
+		return
+	}
+	session.closed = true
+	if session.timer != nil {
+		session.timer.Stop()
+	}
+	if r.snapshotSession == session {
+		r.snapshotSession = nil
+	}
+	bytesReceived := session.bytesReceived
+	r.snapshotSessionMu.Unlock()
+
+	// Unblock hraft's io.Copy on the main goroutine; its InstallSnapshot RPC then
+	// returns an error and the install goroutine drains into the buffered resultCh.
+	session.pipeWriter.CloseWithError(cause)
+	RecordSnapshot(r.nodeId, r.applicationName, r.shardId, r.replicaId, "install", time.Since(session.startTime), bytesReceived, cause)
+}
+
+// snapshotDeadlineFired is the inactivity-deadline callback. If a chunk pushed
+// the deadline forward after this timer was scheduled it reschedules; otherwise
+// the sender has gone quiet and the session is abandoned.
+func (r *Raft) snapshotDeadlineFired(session *snapshotSession) {
+	r.snapshotSessionMu.Lock()
+	if session.closed {
+		r.snapshotSessionMu.Unlock()
+		return
+	}
+	if remaining := time.Until(session.deadline); remaining > 0 {
+		session.timer.Reset(remaining)
+		r.snapshotSessionMu.Unlock()
+		return
+	}
+	r.snapshotSessionMu.Unlock()
+
+	r.abandonSnapshotSession(session, errSnapshotSessionTimeout)
 }
 
 func (r *Raft) appendEntries(request *raftpb.AppendEntriesRequest) (*raftpb.AppendEntriesResponse, error) {
@@ -679,7 +813,11 @@ func newFileSnapshotStore(baseDir string, replicaId string) *hraft.FileSnapshotS
 // NewRaft creates a Raft replica. nodeId is the id of the node hosting this
 // replica; it doubles as the Raft transport address (peers are addressed by
 // node id, see AddVoter) and labels this replica's metrics.
-func NewRaft(baseDir string, nodeId string, applicationName string, shardId string, replicaId string, core AppCore, trans transport.DataPlane, raftStore *store.BadgerStore, restoreSnapshotOnStart bool, updateTimeout time.Duration) *Raft {
+func NewRaft(baseDir string, nodeId string, applicationName string, shardId string, replicaId string, core AppCore, trans transport.DataPlane, raftStore *store.BadgerStore, restoreSnapshotOnStart bool, updateTimeout time.Duration, snapshotSessionTimeout time.Duration) *Raft {
+	if snapshotSessionTimeout <= 0 {
+		snapshotSessionTimeout = defaultSnapshotSessionTimeout
+	}
+
 	cfg := hraft.DefaultConfig()
 	cfg.LocalID = hraft.ServerID(replicaId)
 	cfg.Logger = hclog.New(&hclog.LoggerOptions{
@@ -699,20 +837,25 @@ func NewRaft(baseDir string, nodeId string, applicationName string, shardId stri
 
 	fsm := NewFSMAdapter(core)
 
+	// Time the cold start: hraft.NewRaft opens the stores, restores the latest
+	// snapshot into the FSM and scans the log before returning.
+	startupStart := time.Now()
 	r, err := hraft.NewRaft(cfg, fsm, hstore, hstore, hfss, transport)
 	if err != nil {
 		panic(err)
 	}
+	RecordReplicaStartup(nodeId, applicationName, shardId, replicaId, time.Since(startupStart))
 
 	return &Raft{
-		hraft:           r,
-		hstore:          hstore,
-		hfss:            hfss,
-		transport:       transport,
-		nodeId:          nodeId,
-		applicationName: applicationName,
-		shardId:         shardId,
-		replicaId:       replicaId,
-		updateTimeout:   updateTimeout,
+		hraft:                  r,
+		hstore:                 hstore,
+		hfss:                   hfss,
+		transport:              transport,
+		nodeId:                 nodeId,
+		applicationName:        applicationName,
+		shardId:                shardId,
+		replicaId:              replicaId,
+		updateTimeout:          updateTimeout,
+		snapshotSessionTimeout: snapshotSessionTimeout,
 	}
 }

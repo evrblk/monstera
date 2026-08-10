@@ -25,14 +25,17 @@ type HraftBadgerStore struct {
 	// keyPrefix is a unique prefix that allows isolation of multiple raft stores on the single shared Badger store
 	keyPrefix []byte
 
-	// mu protects fields below
+	// mu protects fields below.
+	//
+	// firstIndex/lastIndex are an in-memory cache of the log bounds. They are NOT
+	// persisted separately: the stored log entries are the single source of truth
+	// and the bounds are re-derived from them at startup (see deriveIndexBounds).
+	// This is what makes StoreLogs crash-safe despite Badger's WriteBatch splitting
+	// a large batch across several transactions — a partially-durable batch can
+	// never leave a persisted bound pointing past the entries that survived.
 	mu         sync.RWMutex
 	firstIndex uint64
 	lastIndex  uint64
-
-	// Precalculated keys for performance optimization
-	firstIndexFullKey []byte
-	lastIndexFullKey  []byte
 
 	codec LogCodec
 }
@@ -44,44 +47,59 @@ func NewHraftBadgerStore(badgerStore *store.BadgerStore, keyPrefix []byte, codec
 	txn := badgerStore.View()
 	defer txn.Discard()
 
-	firstIndex := uint64(0)
-	firstIndexFullKey := utils.ConcatBytes(keyPrefix, firstIndexKey)
-	val, err := txn.Get(firstIndexFullKey)
+	firstIndex, lastIndex, err := deriveIndexBounds(txn, keyPrefix)
 	if err != nil {
-		if !errors.Is(err, store.ErrNotFound) {
-			panic(err)
-		}
-	} else {
-		firstIndex = bytesToUint64(val)
-	}
-
-	lastIndex := uint64(0)
-	lastIndexFullKey := utils.ConcatBytes(keyPrefix, lastIndexKey)
-	val, err = txn.Get(lastIndexFullKey)
-	if err != nil {
-		if !errors.Is(err, store.ErrNotFound) {
-			panic(err)
-		}
-	} else {
-		lastIndex = bytesToUint64(val)
+		panic(err)
 	}
 
 	return &HraftBadgerStore{
-		store:             badgerStore,
-		keyPrefix:         keyPrefix,
-		firstIndex:        firstIndex,
-		lastIndex:         lastIndex,
-		firstIndexFullKey: firstIndexFullKey,
-		lastIndexFullKey:  lastIndexFullKey,
-		codec:             codec,
+		store:      badgerStore,
+		keyPrefix:  keyPrefix,
+		firstIndex: firstIndex,
+		lastIndex:  lastIndex,
+		codec:      codec,
 	}
+}
+
+// deriveIndexBounds returns the smallest and largest log index actually stored
+// under keyPrefix (0, 0 if there are none). Because log keys encode the index as
+// a big-endian uint64 suffix (utils.ConcatBytes), they sort in numeric order, so
+// the first and last keys in the log range give the bounds directly. The stored
+// entries are the sole source of truth for the bounds — nothing else is
+// persisted — so this can never disagree with what durably survived a crash.
+//
+// Note: older stores may still hold now-unused first/last-index keys (the 0x03
+// prefix); they sort above the log range and are simply ignored, so reopening
+// such a store also self-corrects any previously-skewed bound.
+func deriveIndexBounds(txn *store.Txn, keyPrefix []byte) (uint64, uint64, error) {
+	var firstIndex, lastIndex uint64
+
+	logPrefix := utils.ConcatBytes(keyPrefix, logStorePrefix)
+	if err := txn.EachPrefixKeys(logPrefix, func(key []byte) (bool, error) {
+		firstIndex = bytesToUint64(key[len(key)-8:])
+		return false, nil // the first key is the smallest index
+	}); err != nil {
+		return 0, 0, err
+	}
+
+	// Reverse-scan the log range; the first key visited is the largest index. The
+	// bounds keep every key in [lower, upper] within logPrefix, so the callback
+	// only ever sees a real log key.
+	lower := utils.ConcatBytes(keyPrefix, logStorePrefix, uint64(0))
+	upper := utils.ConcatBytes(keyPrefix, logStorePrefix, ^uint64(0))
+	if err := txn.EachRange(lower, upper, true, func(key []byte, _ []byte) (bool, error) {
+		lastIndex = bytesToUint64(key[len(key)-8:])
+		return false, nil
+	}); err != nil {
+		return 0, 0, err
+	}
+
+	return firstIndex, lastIndex, nil
 }
 
 var (
 	stableStorePrefix = []byte{0x01}
 	logStorePrefix    = []byte{0x02}
-	firstIndexKey     = []byte{0x03, 0x01}
-	lastIndexKey      = []byte{0x03, 0x02}
 )
 
 // StableStore methods
@@ -186,37 +204,33 @@ func (h *HraftBadgerStore) StoreLog(log *hraft.Log) error {
 // snapshot to remove all previous logs instead of relying on a "gap" to signal the discontinuity between logs before the
 // snapshot and logs after.
 func (h *HraftBadgerStore) StoreLogs(logs []*hraft.Log) error {
+	if len(logs) == 0 {
+		return nil
+	}
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// Compute the new index bounds locally and only commit them to the in-memory
-	// cache after the batch is durably flushed, so a Flush failure does not leave
-	// the cache claiming indexes that were never persisted.
+	// Only the log entries are persisted; the index bounds are derived from them
+	// at startup. So the batch need not be atomic with any metadata: if Badger's
+	// WriteBatch splits it and a crash leaves only a prefix durable, the next
+	// startup simply derives the bounds from whatever survived — no bound can
+	// point past a missing entry. The in-memory cache is updated only after a
+	// successful Flush so a Flush failure cannot desync it from stored state.
+	indexes := make([]uint64, len(logs))
+	for i, l := range logs {
+		indexes[i] = l.Index
+	}
 	newFirstIndex := h.firstIndex
+	if h.firstIndex == 0 {
+		newFirstIndex = slices.Min(indexes)
+	}
 	newLastIndex := h.lastIndex
+	if highestIndex := slices.Max(indexes); h.lastIndex < highestIndex {
+		newLastIndex = highestIndex
+	}
 
 	err := h.store.BatchUpdate(func(batch *store.Batch) error {
-		indexes := make([]uint64, len(logs))
-		for i, l := range logs {
-			indexes[i] = l.Index
-		}
-
-		if h.firstIndex == 0 {
-			lowestIndex := slices.Min(indexes)
-			if err := h.putFirstIndex(lowestIndex, batch); err != nil {
-				return err
-			}
-			newFirstIndex = lowestIndex
-		}
-
-		highestIndex := slices.Max(indexes)
-		if h.lastIndex < highestIndex {
-			if err := h.putLastIndex(highestIndex, batch); err != nil {
-				return err
-			}
-			newLastIndex = highestIndex
-		}
-
 		for _, l := range logs {
 			logBytes, err := h.codec.Encode(l)
 			if err != nil {
@@ -224,8 +238,7 @@ func (h *HraftBadgerStore) StoreLogs(logs []*hraft.Log) error {
 			}
 
 			fullKey := utils.ConcatBytes(h.keyPrefix, logStorePrefix, l.Index)
-			err = batch.Set(fullKey, logBytes)
-			if err != nil {
+			if err := batch.Set(fullKey, logBytes); err != nil {
 				return err
 			}
 		}
@@ -247,35 +260,7 @@ func (h *HraftBadgerStore) DeleteRange(min uint64, max uint64) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// Compute the new index bounds locally and only commit them to the in-memory
-	// cache after the batch is durably flushed (see StoreLogs).
-	newFirstIndex := h.firstIndex
-	newLastIndex := h.lastIndex
-
 	err := h.store.BatchUpdate(func(batch *store.Batch) error {
-		if min <= h.firstIndex {
-			if err := h.putFirstIndex(max+1, batch); err != nil {
-				return err
-			}
-			newFirstIndex = max + 1
-		}
-		if max >= h.lastIndex {
-			if err := h.putLastIndex(min-1, batch); err != nil {
-				return err
-			}
-			newLastIndex = min - 1
-		}
-		if newFirstIndex > newLastIndex {
-			if err := h.putFirstIndex(0, batch); err != nil {
-				return err
-			}
-			newFirstIndex = 0
-			if err := h.putLastIndex(0, batch); err != nil {
-				return err
-			}
-			newLastIndex = 0
-		}
-
 		for i := min; i <= max; i++ {
 			fullKey := utils.ConcatBytes(h.keyPrefix, logStorePrefix, i)
 			err := batch.Delete(fullKey)
@@ -290,23 +275,26 @@ func (h *HraftBadgerStore) DeleteRange(min uint64, max uint64) error {
 		return err
 	}
 
+	// Update the in-memory bounds after a successful flush. hraft only deletes a
+	// contiguous range at the front (compaction) or back (truncation) of the log,
+	// so shrinking the matching bound keeps the cache equal to what a fresh
+	// deriveIndexBounds over the surviving entries would return.
+	newFirstIndex := h.firstIndex
+	newLastIndex := h.lastIndex
+	if min <= newFirstIndex {
+		newFirstIndex = max + 1
+	}
+	if max >= newLastIndex {
+		newLastIndex = min - 1
+	}
+	if newFirstIndex > newLastIndex {
+		newFirstIndex = 0
+		newLastIndex = 0
+	}
 	h.firstIndex = newFirstIndex
 	h.lastIndex = newLastIndex
 
 	return nil
-}
-
-// putFirstIndex writes the first index into the batch. The in-memory cache
-// (h.firstIndex) must be updated by the caller only after the batch is flushed
-// successfully, so a Flush failure cannot desync the cache from stored state.
-func (h *HraftBadgerStore) putFirstIndex(value uint64, batch *store.Batch) error {
-	return batch.Set(h.firstIndexFullKey, uint64ToBytes(value))
-}
-
-// putLastIndex writes the last index into the batch. See putFirstIndex for the
-// cache-update contract.
-func (h *HraftBadgerStore) putLastIndex(value uint64, batch *store.Batch) error {
-	return batch.Set(h.lastIndexFullKey, uint64ToBytes(value))
 }
 
 func uint64ToBytes(i uint64) []byte {

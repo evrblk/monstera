@@ -17,6 +17,7 @@ func Collectors() []prometheus.Collector {
 		snapshotDuration,
 		snapshotBytes,
 		snapshotsTotal,
+		replicaStartupDuration,
 	}
 }
 
@@ -64,7 +65,26 @@ var (
 		Name: "monstera_raft_snapshots_total",
 		Help: "Number of Raft snapshot operations by op and result",
 	}, []string{"node", "application", "shard", "replica", "op", "result"})
+
+	// replicaStartupDuration measures how long it takes to bring a replica up:
+	// the wall-clock of hraft.NewRaft, which opens the stores, restores the latest
+	// snapshot into the FSM and scans the log. Note that committed log entries past
+	// the snapshot are NOT replayed here — hraft applies those afterwards as the
+	// leader advances the commit index — so this is the cold-start cost, dominated
+	// by snapshot restore (separately observable via the "restore" snapshot op).
+	replicaStartupDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:                            "monstera_raft_replica_startup_duration_seconds",
+		Help:                            "Wall-clock time to construct a Raft replica (store open, snapshot restore, log scan)",
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: time.Hour,
+	}, []string{"node", "application", "shard", "replica"})
 )
+
+// RecordReplicaStartup records the wall-clock duration of bringing a replica up.
+func RecordReplicaStartup(nodeId string, applicationName string, shardId string, replicaId string, duration time.Duration) {
+	replicaStartupDuration.WithLabelValues(nodeId, applicationName, shardId, replicaId).Observe(duration.Seconds())
+}
 
 // RecordSnapshot records metrics for a single Raft snapshot operation. op is one
 // of "persist", "restore" or "install". On error only the error count is

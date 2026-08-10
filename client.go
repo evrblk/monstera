@@ -19,6 +19,11 @@ import (
 var (
 	ErrNoClusterConfig   = errors.New("monstera client has no cluster config yet")
 	ErrAllReplicasFailed = errors.New("all replicas failed")
+	// ErrPayloadTooLarge is returned by Read/Update (and their *Shard variants)
+	// when the payload exceeds the client's configured limit. It is checked on the
+	// client before any node is contacted, so an oversized request never reaches a
+	// Monstera node.
+	ErrPayloadTooLarge = errors.New("payload exceeds maximum size")
 )
 
 const (
@@ -28,6 +33,8 @@ const (
 	defaultRefreshIntervalJitter     = 1000 * time.Millisecond
 	defaultReadRetryDelay            = 100 * time.Millisecond
 	defaultUpdateRetryDelay          = 500 * time.Millisecond
+	defaultMaxReadPayloadBytes       = 1 << 20 // 1 MiB
+	defaultMaxUpdatePayloadBytes     = 1 << 20 // 1 MiB
 )
 
 // ClientConfig holds tunable parameters for Client behavior.
@@ -51,6 +58,16 @@ type ClientConfig struct {
 	// UpdateRetryDelay is how long to wait before retrying an update on the same
 	// replica.
 	UpdateRetryDelay time.Duration
+
+	// MaxReadPayloadBytes is the maximum size in bytes of a Read payload. A Read
+	// (or ReadShard) with a larger payload fails locally with ErrPayloadTooLarge
+	// before any node is contacted. Zero or negative means the default (1 MiB).
+	MaxReadPayloadBytes int
+	// MaxUpdatePayloadBytes is the maximum size in bytes of an Update payload. An
+	// Update (or UpdateShard) with a larger payload fails locally with
+	// ErrPayloadTooLarge before any node is contacted. Zero or negative means the
+	// default (1 MiB).
+	MaxUpdatePayloadBytes int
 }
 
 // DefaultClientConfig returns a ClientConfig with sensible defaults.
@@ -62,6 +79,8 @@ func DefaultClientConfig() ClientConfig {
 		RefreshIntervalJitter:     defaultRefreshIntervalJitter,
 		ReadRetryDelay:            defaultReadRetryDelay,
 		UpdateRetryDelay:          defaultUpdateRetryDelay,
+		MaxReadPayloadBytes:       defaultMaxReadPayloadBytes,
+		MaxUpdatePayloadBytes:     defaultMaxUpdatePayloadBytes,
 	}
 }
 
@@ -85,6 +104,12 @@ func (c ClientConfig) withDefaults() ClientConfig {
 	}
 	if c.UpdateRetryDelay <= 0 {
 		c.UpdateRetryDelay = defaultUpdateRetryDelay
+	}
+	if c.MaxReadPayloadBytes <= 0 {
+		c.MaxReadPayloadBytes = defaultMaxReadPayloadBytes
+	}
+	if c.MaxUpdatePayloadBytes <= 0 {
+		c.MaxUpdatePayloadBytes = defaultMaxUpdatePayloadBytes
 	}
 	return c
 }
@@ -246,8 +271,39 @@ func (c *Client) pruneReplicaStates() {
 	}
 }
 
+// checkReadPayload enforces MaxReadPayloadBytes, falling back to the default
+// limit when it is non-positive (so the limit holds even for a directly
+// constructed Client whose config was not normalized via withDefaults).
+func (c *Client) checkReadPayload(payload []byte) error {
+	limit := c.config.MaxReadPayloadBytes
+	if limit <= 0 {
+		limit = defaultMaxReadPayloadBytes
+	}
+	if len(payload) > limit {
+		return fmt.Errorf("%w: read payload is %d bytes, limit is %d", ErrPayloadTooLarge, len(payload), limit)
+	}
+	return nil
+}
+
+// checkUpdatePayload enforces MaxUpdatePayloadBytes, falling back to the default
+// limit when it is non-positive (see checkReadPayload).
+func (c *Client) checkUpdatePayload(payload []byte) error {
+	limit := c.config.MaxUpdatePayloadBytes
+	if limit <= 0 {
+		limit = defaultMaxUpdatePayloadBytes
+	}
+	if len(payload) > limit {
+		return fmt.Errorf("%w: update payload is %d bytes, limit is %d", ErrPayloadTooLarge, len(payload), limit)
+	}
+	return nil
+}
+
 // Read routes a read request to the shard responsible for shardKey.
 func (c *Client) Read(ctx context.Context, applicationName string, shardKey cluster.ShardKey, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
+	if err := c.checkReadPayload(payload); err != nil {
+		return nil, err
+	}
+
 	router := c.currentRouter()
 	if router == nil {
 		return nil, ErrNoClusterConfig
@@ -263,6 +319,10 @@ func (c *Client) Read(ctx context.Context, applicationName string, shardKey clus
 // ReadShard sends a read request directly to the specified shard by ID,
 // bypassing shard-key routing.
 func (c *Client) ReadShard(ctx context.Context, applicationName string, shardId string, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
+	if err := c.checkReadPayload(payload); err != nil {
+		return nil, err
+	}
+
 	router := c.currentRouter()
 	if router == nil {
 		return nil, ErrNoClusterConfig
@@ -324,6 +384,10 @@ func (c *Client) readShard(ctx context.Context, applicationName string, shard *c
 
 // Update routes a write request to the shard responsible for shardKey.
 func (c *Client) Update(ctx context.Context, applicationName string, shardKey cluster.ShardKey, payload []byte) ([]byte, error) {
+	if err := c.checkUpdatePayload(payload); err != nil {
+		return nil, err
+	}
+
 	router := c.currentRouter()
 	if router == nil {
 		return nil, ErrNoClusterConfig
@@ -339,6 +403,10 @@ func (c *Client) Update(ctx context.Context, applicationName string, shardKey cl
 // UpdateShard sends a write request directly to the specified shard by ID,
 // bypassing shard-key routing.
 func (c *Client) UpdateShard(ctx context.Context, applicationName string, shardId string, payload []byte) ([]byte, error) {
+	if err := c.checkUpdatePayload(payload); err != nil {
+		return nil, err
+	}
+
 	router := c.currentRouter()
 	if router == nil {
 		return nil, ErrNoClusterConfig

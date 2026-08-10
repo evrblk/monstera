@@ -733,7 +733,11 @@ func (x *InstallSnapshotInitRequest) GetSize() int64 {
 }
 
 type InstallSnapshotInitResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// session_id identifies this install session on the follower. The sender must
+	// stamp every following chunk with it so the follower can reject stray chunks
+	// from a superseded session (e.g. a deposed leader's stream).
+	SessionId     uint64 `protobuf:"varint,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -768,10 +772,18 @@ func (*InstallSnapshotInitResponse) Descriptor() ([]byte, []int) {
 	return file_internal_raft_raftpb_raft_proto_rawDescGZIP(), []int{9}
 }
 
+func (x *InstallSnapshotInitResponse) GetSessionId() uint64 {
+	if x != nil {
+		return x.SessionId
+	}
+	return 0
+}
+
 // All further InstallSnapshotRequest messages with data only.
 type InstallSnapshotChunkRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Data          []byte                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	SessionId     uint64                 `protobuf:"varint,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -811,6 +823,13 @@ func (x *InstallSnapshotChunkRequest) GetData() []byte {
 		return x.Data
 	}
 	return nil
+}
+
+func (x *InstallSnapshotChunkRequest) GetSessionId() uint64 {
+	if x != nil {
+		return x.SessionId
+	}
+	return 0
 }
 
 type InstallSnapshotChunkResponse struct {
@@ -944,10 +963,14 @@ const file_internal_raft_raftpb_raft_proto_rawDesc = "" +
 	"\x05peers\x18\x06 \x01(\fR\x05peers\x12$\n" +
 	"\rconfiguration\x18\a \x01(\fR\rconfiguration\x12/\n" +
 	"\x13configuration_index\x18\b \x01(\x04R\x12configurationIndex\x12\x12\n" +
-	"\x04size\x18\t \x01(\x03R\x04size\"\x1d\n" +
-	"\x1bInstallSnapshotInitResponse\"1\n" +
+	"\x04size\x18\t \x01(\x03R\x04size\"<\n" +
+	"\x1bInstallSnapshotInitResponse\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\x04R\tsessionId\"P\n" +
 	"\x1bInstallSnapshotChunkRequest\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data\"\x8c\x01\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\x04R\tsessionId\"\x8c\x01\n" +
 	"\x1cInstallSnapshotChunkResponse\x12>\n" +
 	"\n" +
 	"rpc_header\x18\x01 \x01(\v2\x1f.evrblk.monstera.raft.RPCHeaderR\trpcHeader\x12\x12\n" +

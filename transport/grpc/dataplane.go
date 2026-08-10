@@ -32,7 +32,8 @@ var DefaultClientKeepalive = keepalive.ClientParameters{
 }
 
 type dataPlaneOptions struct {
-	keepalive keepalive.ClientParameters
+	keepalive       keepalive.ClientParameters
+	maxMessageBytes int
 }
 
 // DataPlaneOption customizes a DataPlaneClient.
@@ -42,6 +43,12 @@ type DataPlaneOption func(*dataPlaneOptions)
 // tests that need faster black-hole detection).
 func WithClientKeepalive(kp keepalive.ClientParameters) DataPlaneOption {
 	return func(o *dataPlaneOptions) { o.keepalive = kp }
+}
+
+// WithClientMaxMessageBytes overrides the gRPC max message size (send and
+// receive) for pooled connections. Non-positive means DefaultMaxMessageBytes.
+func WithClientMaxMessageBytes(n int) DataPlaneOption {
+	return func(o *dataPlaneOptions) { o.maxMessageBytes = n }
 }
 
 // DataPlaneClient is the gRPC-backed implementation of transport.DataPlane. It
@@ -136,15 +143,27 @@ var _ transport.DataPlane = &DataPlaneClient{}
 var _ transport.ClusterConfigConsumer = &DataPlaneClient{}
 
 func NewDataPlaneClient(opts ...DataPlaneOption) *DataPlaneClient {
-	cfg := dataPlaneOptions{keepalive: DefaultClientKeepalive}
+	cfg := dataPlaneOptions{
+		keepalive:       DefaultClientKeepalive,
+		maxMessageBytes: DefaultMaxMessageBytes,
+	}
 	for _, o := range opts {
 		o(&cfg)
+	}
+	if cfg.maxMessageBytes <= 0 {
+		cfg.maxMessageBytes = DefaultMaxMessageBytes
 	}
 
 	return &DataPlaneClient{
 		pool: NewGrpcClientPool[monsterapb.MonsteraApiClient](func(conn *grpc.ClientConn) monsterapb.MonsteraApiClient {
 			return monsterapb.NewMonsteraApiClient(conn)
-		}, grpc.WithKeepaliveParams(cfg.keepalive)),
+		},
+			grpc.WithKeepaliveParams(cfg.keepalive),
+			grpc.WithDefaultCallOptions(
+				grpc.MaxCallRecvMsgSize(cfg.maxMessageBytes),
+				grpc.MaxCallSendMsgSize(cfg.maxMessageBytes),
+			),
+		),
 		streams: make(map[string]*streamEntry),
 	}
 }

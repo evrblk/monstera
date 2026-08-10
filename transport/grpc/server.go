@@ -20,6 +20,13 @@ import (
 	"github.com/evrblk/monstera/transport/grpc/monsterapb"
 )
 
+// DefaultMaxMessageBytes is the default gRPC max message size (send and receive)
+// applied to both the data-plane client and server. gRPC's own default receive
+// cap is 4 MiB, which is too small for Raft AppendEntries batches carrying large
+// commands; 16 MiB gives some headroom. It bounds a single gRPC message, not the
+// application payload (that is capped separately on the Monstera client).
+const DefaultMaxMessageBytes = 16 * 1024 * 1024
+
 // defaultServerKeepaliveEnforcement bounds how aggressively clients may ping.
 // MinTime must be <= the client's keepalive Time (DefaultClientKeepalive) or the
 // server GOAWAYs the connection. PermitWithoutStream matches the client so probes
@@ -38,20 +45,42 @@ var defaultServerKeepalive = keepalive.ServerParameters{
 }
 
 // serverOptions returns the gRPC server options shared by the production server
-// and tests, so both exercise the same keepalive configuration.
-func serverOptions() []grpc.ServerOption {
+// and tests, so both exercise the same keepalive and message-size configuration.
+func serverOptions(maxMessageBytes int) []grpc.ServerOption {
 	return []grpc.ServerOption{
 		grpc.KeepaliveEnforcementPolicy(defaultServerKeepaliveEnforcement),
 		grpc.KeepaliveParams(defaultServerKeepalive),
+		grpc.MaxRecvMsgSize(maxMessageBytes),
+		grpc.MaxSendMsgSize(maxMessageBytes),
 	}
+}
+
+type grpcServerOptions struct {
+	maxMessageBytes int
+}
+
+// GrpcServerOption customizes a GrpcServer.
+type GrpcServerOption func(*grpcServerOptions)
+
+// WithServerMaxMessageBytes overrides the gRPC max message size (send and
+// receive) the server accepts. Non-positive means DefaultMaxMessageBytes.
+func WithServerMaxMessageBytes(n int) GrpcServerOption {
+	return func(o *grpcServerOptions) { o.maxMessageBytes = n }
 }
 
 type GrpcServer struct {
 	logger *log.Logger
 
-	handler *handler
-	lis     net.Listener
+	handler         *handler
+	maxMessageBytes int
+
+	// mu guards srv and stopped. Serve usually runs in its own goroutine while
+	// Stop/Kill are called from another (shutdown or failure injection), so the
+	// two must not race on these fields — and Stop/Kill must win even if they run
+	// before Serve has created the server (otherwise the server is unstoppable).
+	mu      sync.Mutex
 	srv     *grpc.Server
+	stopped bool
 }
 
 func (s *GrpcServer) Serve(address string) error {
@@ -61,19 +90,38 @@ func (s *GrpcServer) Serve(address string) error {
 	if err != nil {
 		return err
 	}
-	s.lis = lis
+	// Always release the listener. grpc.Server.Serve closes it itself on
+	// GracefulStop/Stop, but not on the early-stop path below; a double close is
+	// harmless.
+	defer lis.Close()
 
-	s.srv = grpc.NewServer(serverOptions()...)
-	monsterapb.RegisterMonsteraApiServer(s.srv, s.handler)
+	srv := grpc.NewServer(serverOptions(s.maxMessageBytes)...)
+	monsterapb.RegisterMonsteraApiServer(srv, s.handler)
 
-	return s.srv.Serve(lis)
+	s.mu.Lock()
+	if s.stopped {
+		// Stop or Kill was called before we started serving; do not leave a live
+		// server or listener behind.
+		s.mu.Unlock()
+		srv.Stop()
+		return nil
+	}
+	s.srv = srv
+	s.mu.Unlock()
+
+	return srv.Serve(lis)
 }
 
 func (s *GrpcServer) Stop() {
 	s.logger.Printf("Stopping gRPC server")
 
-	if s.srv != nil {
-		s.srv.GracefulStop()
+	s.mu.Lock()
+	s.stopped = true
+	srv := s.srv
+	s.mu.Unlock()
+
+	if srv != nil {
+		srv.GracefulStop()
 	}
 }
 
@@ -85,20 +133,34 @@ func (s *GrpcServer) Stop() {
 func (s *GrpcServer) Kill() {
 	s.logger.Printf("Killing gRPC server")
 
-	if s.srv != nil {
-		s.srv.Stop()
+	s.mu.Lock()
+	s.stopped = true
+	srv := s.srv
+	s.mu.Unlock()
+
+	if srv != nil {
+		srv.Stop()
 	}
 }
 
-func NewGrpcServer(node *monstera.Node) *GrpcServer {
+func NewGrpcServer(node *monstera.Node, opts ...GrpcServerOption) *GrpcServer {
 	logger := log.New(os.Stdout, fmt.Sprintf("[%s] ", node.NodeId()), log.LstdFlags)
+
+	cfg := grpcServerOptions{maxMessageBytes: DefaultMaxMessageBytes}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	if cfg.maxMessageBytes <= 0 {
+		cfg.maxMessageBytes = DefaultMaxMessageBytes
+	}
 
 	return &GrpcServer{
 		handler: &handler{
 			monsteraNode: node,
 			logger:       logger,
 		},
-		logger: logger,
+		maxMessageBytes: cfg.maxMessageBytes,
+		logger:          logger,
 	}
 }
 

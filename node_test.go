@@ -4,7 +4,29 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/evrblk/monstera/cluster"
 )
+
+// TestNodeGetClusterConfigReturnsClone verifies GetClusterConfig hands back an
+// independent deep copy, so a caller cannot mutate the node's live config
+// through the returned pointer (and nil stays nil when unprovisioned).
+func TestNodeGetClusterConfigReturnsClone(t *testing.T) {
+	cfg := &cluster.Config{
+		Version: 1,
+		Nodes:   []*cluster.Node{{Id: "n", GrpcAddress: "addr"}},
+	}
+	n := &Node{clusterConfig: cfg}
+
+	got := n.GetClusterConfig()
+	require.NotSame(t, cfg, got, "must not return the live config pointer")
+	require.EqualValues(t, 1, got.Version)
+
+	got.Version = 99
+	require.EqualValues(t, 1, n.clusterConfig.Version, "mutation of the returned config must not reach the node")
+
+	require.Nil(t, (&Node{}).GetClusterConfig(), "unprovisioned node returns nil")
+}
 
 // TestNewNodeDefaultsNonPositiveConfig checks that a hand-built NodeConfig is
 // usable without filling in every knob. Left at zero, MembershipReconcileInterval
@@ -30,6 +52,8 @@ func TestNodeConfigWithDefaultsKeepsExplicitValues(t *testing.T) {
 		MaxUpdateTimeout:            3,
 		UseInMemoryRaftStore:        true,
 		MembershipReconcileInterval: 4,
+		MetricsSampleInterval:       5,
+		SnapshotSessionTimeout:      6,
 	}
 	require.Equal(t, cfg, cfg.withDefaults())
 

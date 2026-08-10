@@ -14,6 +14,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/evrblk/monstera/cluster"
 	"github.com/evrblk/monstera/internal/raft"
@@ -75,6 +76,11 @@ type Node struct {
 	reconcilerCancel context.CancelFunc
 	reconcilerDone   chan struct{}
 
+	// metricsSamplerCancel stops the background per-replica metrics sampler;
+	// metricsSamplerDone is closed when that loop has exited.
+	metricsSamplerCancel context.CancelFunc
+	metricsSamplerDone   chan struct{}
+
 	// splittersMu guards splitters: the running shard-split seeding pipelines,
 	// keyed by parent replica id. Splitters are stopped before every replica
 	// reconcile and (re)started from the applied config after it; they resume
@@ -121,6 +127,8 @@ const (
 	defaultMaxReadTimeout              = 10 * time.Second
 	defaultMaxUpdateTimeout            = 30 * time.Second
 	defaultMembershipReconcileInterval = 1 * time.Second
+	defaultMetricsSampleInterval       = 5 * time.Second
+	defaultSnapshotSessionTimeout      = 30 * time.Second
 )
 
 // NodeConfig holds tunable parameters for Node behavior.
@@ -147,6 +155,17 @@ type NodeConfig struct {
 	// removing voters as needed). The reconcile is idempotent and cheap when there
 	// is nothing to do.
 	MembershipReconcileInterval time.Duration
+
+	// MetricsSampleInterval is how often the node samples per-replica gauge metrics
+	// that reflect live Raft state (e.g. monstera_raft_replica_commit_lag).
+	MetricsSampleInterval time.Duration
+
+	// SnapshotSessionTimeout is the per-replica inactivity deadline for receiving
+	// an InstallSnapshot: if no new chunk arrives within this window the follower
+	// abandons the transfer and frees the main Raft goroutine blocked on it (see
+	// the InstallSnapshot session handling in internal/raft). It is reset on every
+	// chunk, so it never aborts a snapshot that is actively streaming.
+	SnapshotSessionTimeout time.Duration
 }
 
 var DefaultMonsteraNodeConfig = NodeConfig{
@@ -157,6 +176,8 @@ var DefaultMonsteraNodeConfig = NodeConfig{
 	UseInMemoryRaftStore: false,
 
 	MembershipReconcileInterval: defaultMembershipReconcileInterval,
+	MetricsSampleInterval:       defaultMetricsSampleInterval,
+	SnapshotSessionTimeout:      defaultSnapshotSessionTimeout,
 }
 
 // withDefaults returns the config with every non-positive field replaced by its
@@ -173,6 +194,12 @@ func (c NodeConfig) withDefaults() NodeConfig {
 	}
 	if c.MembershipReconcileInterval <= 0 {
 		c.MembershipReconcileInterval = defaultMembershipReconcileInterval
+	}
+	if c.MetricsSampleInterval <= 0 {
+		c.MetricsSampleInterval = defaultMetricsSampleInterval
+	}
+	if c.SnapshotSessionTimeout <= 0 {
+		c.SnapshotSessionTimeout = defaultSnapshotSessionTimeout
 	}
 	return c
 }
@@ -194,11 +221,15 @@ func (n *Node) Stop() {
 	n.nodeState = NodeStateStopped
 	n.setReadyMetric(false)
 
-	// Stop the background reconcile loop before tearing down replicas so it never
+	// Stop the background loops before tearing down replicas so neither ever
 	// touches a replica that is being closed.
 	if n.reconcilerCancel != nil {
 		n.reconcilerCancel()
 		<-n.reconcilerDone
+	}
+	if n.metricsSamplerCancel != nil {
+		n.metricsSamplerCancel()
+		<-n.metricsSamplerDone
 	}
 
 	// Stop split seeding pipelines before closing the parent replicas they read.
@@ -269,6 +300,7 @@ func (n *Node) Start() {
 	// Continuously converge Raft membership to the config for shards this node
 	// leads (also picks up config changes and leadership handoffs over time).
 	n.startReconciler()
+	n.startMetricsSampler()
 
 	// Start split seeding pipelines for any splitting shards in the applied
 	// config (a node restart mid-split resumes from durable progress).
@@ -376,6 +408,7 @@ func (n *Node) Bootstrap(ctx context.Context, nodeId string, config *cluster.Con
 	n.logger.Printf("Node bootstrapped at config version %d; ready", config.Version)
 
 	n.startReconciler()
+	n.startMetricsSampler()
 
 	return nil
 }
@@ -886,15 +919,19 @@ func (n *Node) NodeId() string {
 	return n.nodeId
 }
 
-// GetClusterConfig returns the cluster config this node is currently running
-// with. Callers must treat it as read-only (it is the live pointer, swapped
-// wholesale by UpdateClusterConfig). Useful for inspecting the applied config
-// version on each node.
+// GetClusterConfig returns an independent deep copy of the cluster config this
+// node is currently running with, so callers may freely retain, serialize or
+// mutate it without racing the node's wholesale config swaps. Returns nil if the
+// node has no config yet (unprovisioned). Useful for inspecting the applied
+// config version on each node.
 func (n *Node) GetClusterConfig() *cluster.Config {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	return n.clusterConfig
+	if n.clusterConfig == nil {
+		return nil
+	}
+	return proto.Clone(n.clusterConfig).(*cluster.Config)
 }
 
 // setClusterConfigLocked swaps in a new cluster config together with the routing
@@ -1122,7 +1159,7 @@ func (n *Node) reconcileReplicasLocked() error {
 			n.logger.Printf("Promoting seeded replica %s (shard %s)", id, p.shard.Id)
 		}
 		applicationCore := coreDescriptor.CoreFactoryFunc(p.shard, p.replica)
-		rep := newReplica(n.baseDir, p.app.Name, p.shard.Id, id, n.nodeId, applicationCore, n.trans, n.raftStore, coreDescriptor.CoreType.RestoreSnapshotOnStart(), n.nodeConfig.MaxUpdateTimeout)
+		rep := newReplica(n.baseDir, p.app.Name, p.shard.Id, id, n.nodeId, applicationCore, n.trans, n.raftStore, coreDescriptor.CoreType.RestoreSnapshotOnStart(), n.nodeConfig.MaxUpdateTimeout, n.nodeConfig.SnapshotSessionTimeout)
 		n.replicas[id] = rep
 		n.logger.Printf("Created replica %s (shard %s)", id, p.shard.Id)
 	}
@@ -1317,7 +1354,7 @@ func (n *Node) promoteSeededChildren(childReplicaIds []string) error {
 		delete(n.dormant, id)
 
 		core := descriptor.CoreFactoryFunc(shard, replicaEntry)
-		rep := newReplica(n.baseDir, d.applicationName, d.shardId, id, n.nodeId, core, n.trans, n.raftStore, descriptor.CoreType.RestoreSnapshotOnStart(), n.nodeConfig.MaxUpdateTimeout)
+		rep := newReplica(n.baseDir, d.applicationName, d.shardId, id, n.nodeId, core, n.trans, n.raftStore, descriptor.CoreType.RestoreSnapshotOnStart(), n.nodeConfig.MaxUpdateTimeout, n.nodeConfig.SnapshotSessionTimeout)
 		n.replicas[id] = rep
 		n.logger.Printf("Promoted seeded replica %s (shard %s)", id, d.shardId)
 	}
@@ -1372,6 +1409,99 @@ func (n *Node) startReconciler() {
 			}
 		}
 	}()
+}
+
+// lagLabels identifies a replica in the per-replica lag metric. The node id is
+// constant for a given node, so it is not part of the key.
+type lagLabels struct {
+	application string
+	shard       string
+	replica     string
+}
+
+// startMetricsSampler launches the background loop that periodically publishes
+// per-replica gauge metrics derived from live Raft state (commit lag). Stop
+// cancels it.
+func (n *Node) startMetricsSampler() {
+	ctx, cancel := context.WithCancel(context.Background())
+	n.metricsSamplerCancel = cancel
+	n.metricsSamplerDone = make(chan struct{})
+
+	go func() {
+		defer close(n.metricsSamplerDone)
+
+		ticker := time.NewTicker(n.nodeConfig.MetricsSampleInterval)
+		defer ticker.Stop()
+
+		// Replicas we published a series for last tick, so we can drop the series
+		// for replicas this node no longer hosts (splits, moves, removals).
+		published := map[lagLabels]struct{}{}
+		for {
+			select {
+			case <-ctx.Done():
+				// Clear this node's series on shutdown.
+				for l := range published {
+					replicaCommitLag.DeleteLabelValues(n.nodeId, l.application, l.shard, l.replica)
+				}
+				return
+			case <-ticker.C:
+				published = n.sampleReplicaLag(published)
+			}
+		}
+	}()
+}
+
+// replicaLagSample is one replica's published lag together with its labels.
+type replicaLagSample struct {
+	labels lagLabels
+	lag    uint64
+}
+
+// sampleReplicaLag reads the commit lag of every serving replica this node
+// hosts, publishes it, and drops the series for any replica present in prev but
+// gone now. It returns the set of replicas published this tick.
+func (n *Node) sampleReplicaLag(prev map[lagLabels]struct{}) map[lagLabels]struct{} {
+	n.mu.RLock()
+	replicas := make([]*replica, 0, len(n.replicas))
+	for _, r := range n.replicas {
+		replicas = append(replicas, r)
+	}
+	n.mu.RUnlock()
+
+	samples := make([]replicaLagSample, 0, len(replicas))
+	for _, r := range replicas {
+		stats := r.GetRaftStats()
+		// AppliedIndex never exceeds CommitIndex in Raft, but guard against a
+		// transient/observed inversion so the gauge never goes negative.
+		var lag uint64
+		if stats.CommitIndex > stats.AppliedIndex {
+			lag = stats.CommitIndex - stats.AppliedIndex
+		}
+		samples = append(samples, replicaLagSample{
+			labels: lagLabels{application: r.applicationName, shard: r.shardId, replica: r.replicaId},
+			lag:    lag,
+		})
+	}
+
+	return publishReplicaLag(n.nodeId, samples, prev)
+}
+
+// publishReplicaLag sets the lag gauge for each sample and deletes the series
+// for any replica in prev that is not in samples (so a replica this node no
+// longer hosts stops reporting). It returns the set published this tick.
+func publishReplicaLag(nodeId string, samples []replicaLagSample, prev map[lagLabels]struct{}) map[lagLabels]struct{} {
+	current := make(map[lagLabels]struct{}, len(samples))
+	for _, s := range samples {
+		replicaCommitLag.WithLabelValues(nodeId, s.labels.application, s.labels.shard, s.labels.replica).Set(float64(s.lag))
+		current[s.labels] = struct{}{}
+	}
+
+	for l := range prev {
+		if _, ok := current[l]; !ok {
+			replicaCommitLag.DeleteLabelValues(nodeId, l.application, l.shard, l.replica)
+		}
+	}
+	return current
 }
 
 // reconcileRaftMembership brings each shard this node currently LEADS into

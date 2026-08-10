@@ -24,7 +24,7 @@ func TestMembershipWrappers(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(raftStore.Close)
 
-	r := NewRaft(t.TempDir(), "node_1", "Core", "s1", "r1", nopAppCore{}, &nopTransport{}, raftStore, false, 5*time.Second)
+	r := NewRaft(t.TempDir(), "node_1", "Core", "s1", "r1", nopAppCore{}, &nopTransport{}, raftStore, false, 5*time.Second, 30*time.Second)
 	t.Cleanup(func() { _ = r.Close() })
 
 	require.NoError(t, r.Bootstrap([]RaftServer{{ReplicaId: "r1", NodeId: "node_1"}}))

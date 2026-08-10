@@ -78,7 +78,7 @@ func startTestServer(t *testing.T, n node) (address string, srv *grpc.Server) {
 		t.Fatalf("net.Listen: %v", err)
 	}
 
-	srv = grpc.NewServer(serverOptions()...)
+	srv = grpc.NewServer(serverOptions(DefaultMaxMessageBytes)...)
 	monsterapb.RegisterMonsteraApiServer(srv, &handler{
 		monsteraNode: n,
 		logger:       log.New(io.Discard, "", 0),
@@ -416,6 +416,70 @@ func TestRaftMessageLargePayload(t *testing.T) {
 	}
 	if !bytes.Equal(resp.Message, payload) {
 		t.Fatalf("large payload not echoed intact: got %d bytes, want %d", len(resp.Message), len(payload))
+	}
+}
+
+// TestRaftMessageDefaultMaxMessageBytes proves the default limit is raised above
+// gRPC's native 4 MiB cap: a ~5 MiB message (which the 4 MiB default would
+// reject) round-trips through the default server and client.
+func TestRaftMessageDefaultMaxMessageBytes(t *testing.T) {
+	addr, _ := startTestServer(t, &fakeNode{}) // DefaultMaxMessageBytes (16 MiB)
+	c := newTestClient(t, "node-1", addr)      // DefaultMaxMessageBytes (16 MiB)
+
+	payload := bytes.Repeat([]byte("x"), 5*1024*1024)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	resp, err := c.RaftMessage(ctx, "node-1", &transport.RaftMessageRequest{
+		ReplicaId: "r", MessageType: 1, Message: payload,
+	})
+	if err != nil {
+		t.Fatalf("5 MiB message failed under the default 16 MiB limit: %v", err)
+	}
+	if !bytes.Equal(resp.Message, payload) {
+		t.Fatalf("payload not echoed intact: got %d bytes, want %d", len(resp.Message), len(payload))
+	}
+}
+
+// TestRaftMessageConfiguredMaxMessageBytes verifies a configured message-size
+// limit is enforced: a message under the limit succeeds, one over it fails.
+func TestRaftMessageConfiguredMaxMessageBytes(t *testing.T) {
+	const limit = 1 << 20 // 1 MiB
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	srv := grpc.NewServer(serverOptions(limit)...)
+	monsterapb.RegisterMonsteraApiServer(srv, &handler{
+		monsteraNode: &fakeNode{},
+		logger:       log.New(io.Discard, "", 0),
+	})
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.Stop)
+
+	c := NewDataPlaneClient(WithClientMaxMessageBytes(limit))
+	c.SetClusterConfig(&cluster.Config{
+		Version: 1,
+		Nodes:   []*cluster.Node{{Id: "node-1", GrpcAddress: lis.Addr().String()}},
+	})
+	t.Cleanup(func() { _ = c.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Comfortably under the limit: succeeds.
+	if _, err := c.RaftMessage(ctx, "node-1", &transport.RaftMessageRequest{
+		ReplicaId: "r", MessageType: 1, Message: bytes.Repeat([]byte("x"), 512*1024),
+	}); err != nil {
+		t.Fatalf("message under the limit failed: %v", err)
+	}
+
+	// Over the limit: rejected.
+	if _, err := c.RaftMessage(ctx, "node-1", &transport.RaftMessageRequest{
+		ReplicaId: "r", MessageType: 1, Message: bytes.Repeat([]byte("x"), 2*1024*1024),
+	}); err == nil {
+		t.Fatal("expected a message over the configured limit to be rejected")
 	}
 }
 
@@ -907,6 +971,63 @@ func TestStreamKeepaliveDetectsBlackhole(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("stream never recovered after connectivity restored: %v", err)
+		}
+	}
+}
+
+func newTestGrpcServer() *GrpcServer {
+	return &GrpcServer{
+		handler:         &handler{monsteraNode: &fakeNode{}, logger: log.New(io.Discard, "", 0)},
+		maxMessageBytes: DefaultMaxMessageBytes,
+		logger:          log.New(io.Discard, "", 0),
+	}
+}
+
+// TestGrpcServerStopBeforeServe verifies that Stop/Kill called before Serve is
+// not lost: Serve must not leave a running server (or listener) behind — it
+// returns promptly instead of blocking forever in Accept.
+func TestGrpcServerStopBeforeServe(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		stop func(*GrpcServer)
+	}{
+		{"Stop", (*GrpcServer).Stop},
+		{"Kill", (*GrpcServer).Kill},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTestGrpcServer()
+			tc.stop(s)
+
+			done := make(chan error, 1)
+			go func() { done <- s.Serve("127.0.0.1:0") }()
+
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatalf("Serve after %s returned error: %v", tc.name, err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("Serve did not return after %s-before-Serve; server leaked", tc.name)
+			}
+		})
+	}
+}
+
+// TestGrpcServerConcurrentServeStop races Serve against Stop. Run with -race to
+// catch unsynchronized access to srv/stopped; every iteration's Serve must
+// return once stopped.
+func TestGrpcServerConcurrentServeStop(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		s := newTestGrpcServer()
+
+		done := make(chan error, 1)
+		go func() { done <- s.Serve("127.0.0.1:0") }()
+		s.Stop()
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("Serve did not return after concurrent Stop")
 		}
 	}
 }

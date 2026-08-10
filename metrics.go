@@ -89,6 +89,17 @@ var (
 		Name: "monstera_config_version_number",
 		Help: "Version number of the cluster config the node currently has applied",
 	}, []string{"node"})
+
+	// replicaCommitLag is the number of committed log entries not yet applied to
+	// the application core on a replica (commit index minus applied index). It is
+	// the general application lag: elevated on a follower catching up after a
+	// restart or a slow FSM, and near zero on a healthy replica. The node samples
+	// it periodically for every serving replica it hosts (MetricsSampleInterval)
+	// and drops a replica's series once it stops hosting it.
+	replicaCommitLag = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "monstera_raft_replica_commit_lag",
+		Help: "Committed log entries not yet applied to the core on a replica (commit index minus applied index)",
+	}, []string{"node", "application", "shard", "replica"})
 )
 
 // RegisterMetrics registers all Prometheus metrics emitted by the Monstera
@@ -108,6 +119,7 @@ func RegisterMetrics(registerer prometheus.Registerer) {
 		replicaCommandBytes,
 		nodeReady,
 		configVersion,
+		replicaCommitLag,
 	}
 	collectors = append(collectors, raft.Collectors()...)
 

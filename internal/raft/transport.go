@@ -159,6 +159,15 @@ func (r *RaftTransport) InstallSnapshot(id hraft.ServerID, target hraft.ServerAd
 		return err
 	}
 
+	// The follower assigns the session an id and returns it in the Init response;
+	// every chunk must carry it so the follower can reject chunks from a
+	// superseded session (e.g. after leadership changed).
+	initResp := &raftpb.InstallSnapshotInitResponse{}
+	if err := initResp.UnmarshalVT(lastRet.Message); err != nil {
+		return err
+	}
+	sessionID := initResp.SessionId
+
 	var buf [16384]byte
 	for {
 		n, err := data.Read(buf[:])
@@ -168,7 +177,7 @@ func (r *RaftTransport) InstallSnapshot(id hraft.ServerID, target hraft.ServerAd
 		if err != nil {
 			return err
 		}
-		chunkData, err := (&raftpb.InstallSnapshotChunkRequest{Data: buf[:n]}).MarshalVT()
+		chunkData, err := (&raftpb.InstallSnapshotChunkRequest{Data: buf[:n], SessionId: sessionID}).MarshalVT()
 		if err != nil {
 			return err
 		}

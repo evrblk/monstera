@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/evrblk/monstera/store"
+	"github.com/evrblk/monstera/utils"
 )
 
 // gobLogCodec is a test-only LogCodec that uses encoding/gob.
@@ -600,6 +601,126 @@ func TestHraftBadgerStoreNewWithEmptyStore(t *testing.T) {
 	err = hraftStore.GetLog(1, new(hraft.Log))
 	require.Error(t, err)
 	require.ErrorIs(t, err, hraft.ErrLogNotFound)
+}
+
+// TestHraftBadgerStoreDerivesBoundsOnReopen verifies that reopening a store
+// re-derives the index bounds from the actual log entries, including when the
+// log does not start at index 1.
+func TestHraftBadgerStoreDerivesBoundsOnReopen(t *testing.T) {
+	badgerStore, err := store.NewBadgerInMemoryStore()
+	require.NoError(t, err)
+
+	codec := &gobLogCodec{}
+	keyPrefix := []byte("test")
+
+	store1 := NewHraftBadgerStore(badgerStore, keyPrefix, codec)
+	require.NoError(t, store1.StoreLogs([]*hraft.Log{
+		testRaftLog(5, "log5"),
+		testRaftLog(6, "log6"),
+		testRaftLog(7, "log7"),
+		testRaftLog(8, "log8"),
+		testRaftLog(9, "log9"),
+	}))
+
+	store2 := NewHraftBadgerStore(badgerStore, keyPrefix, codec)
+
+	first, err := store2.FirstIndex()
+	require.NoError(t, err)
+	require.Equal(t, uint64(5), first)
+
+	last, err := store2.LastIndex()
+	require.NoError(t, err)
+	require.Equal(t, uint64(9), last)
+}
+
+// TestHraftBadgerStoreIgnoresStaleLegacyIndexKey is the regression test for M11.
+// Earlier versions persisted the last index in its own key, which a split
+// WriteBatch could leave pointing past the durable entries. The store no longer
+// reads that key: it derives the bounds from the entries themselves. Seeding a
+// bogus legacy last-index key (0x03,0x02) far ahead of the entries must not
+// affect the derived bounds — proving a skewed counter can no longer make the
+// node come up with lastIndex ahead of a missing entry.
+func TestHraftBadgerStoreIgnoresStaleLegacyIndexKey(t *testing.T) {
+	badgerStore, err := store.NewBadgerInMemoryStore()
+	require.NoError(t, err)
+
+	codec := &gobLogCodec{}
+	keyPrefix := []byte("test")
+
+	store1 := NewHraftBadgerStore(badgerStore, keyPrefix, codec)
+	require.NoError(t, store1.StoreLogs([]*hraft.Log{
+		testRaftLog(1, "log1"),
+		testRaftLog(2, "log2"),
+		testRaftLog(3, "log3"),
+	}))
+
+	// Simulate a store damaged by the old code: a durable last-index counter far
+	// ahead of the entries that actually survived.
+	legacyLastIndexKey := utils.ConcatBytes(keyPrefix, []byte{0x03, 0x02})
+	txn := badgerStore.Update()
+	require.NoError(t, txn.Set(legacyLastIndexKey, uint64ToBytes(9999)))
+	require.NoError(t, txn.Commit())
+
+	store2 := NewHraftBadgerStore(badgerStore, keyPrefix, codec)
+
+	last, err := store2.LastIndex()
+	require.NoError(t, err)
+	require.Equal(t, uint64(3), last, "bounds must come from entries, not the stale counter")
+
+	// And the highest index actually resolves — the panic-on-startup path is gone.
+	require.NoError(t, store2.GetLog(last, new(hraft.Log)))
+}
+
+// TestHraftBadgerStoreDerivesBoundsAfterDeleteRangeReopen verifies the derived
+// bounds track front- and back-truncation across a reopen.
+func TestHraftBadgerStoreDerivesBoundsAfterDeleteRangeReopen(t *testing.T) {
+	codec := &gobLogCodec{}
+	keyPrefix := []byte("test")
+
+	storeAll := func() (*store.BadgerStore, *HraftBadgerStore) {
+		bs, err := store.NewBadgerInMemoryStore()
+		require.NoError(t, err)
+		h := NewHraftBadgerStore(bs, keyPrefix, codec)
+		logs := make([]*hraft.Log, 0, 10)
+		for i := 1; i <= 10; i++ {
+			logs = append(logs, testRaftLog(uint64(i), fmt.Sprintf("log%d", i)))
+		}
+		require.NoError(t, h.StoreLogs(logs))
+		return bs, h
+	}
+
+	reopenBounds := func(bs *store.BadgerStore) (uint64, uint64) {
+		h := NewHraftBadgerStore(bs, keyPrefix, codec)
+		first, err := h.FirstIndex()
+		require.NoError(t, err)
+		last, err := h.LastIndex()
+		require.NoError(t, err)
+		return first, last
+	}
+
+	t.Run("front truncation", func(t *testing.T) {
+		bs, h := storeAll()
+		require.NoError(t, h.DeleteRange(1, 4))
+		first, last := reopenBounds(bs)
+		require.Equal(t, uint64(5), first)
+		require.Equal(t, uint64(10), last)
+	})
+
+	t.Run("back truncation", func(t *testing.T) {
+		bs, h := storeAll()
+		require.NoError(t, h.DeleteRange(8, 10))
+		first, last := reopenBounds(bs)
+		require.Equal(t, uint64(1), first)
+		require.Equal(t, uint64(7), last)
+	})
+
+	t.Run("entire log", func(t *testing.T) {
+		bs, h := storeAll()
+		require.NoError(t, h.DeleteRange(1, 10))
+		first, last := reopenBounds(bs)
+		require.Equal(t, uint64(0), first)
+		require.Equal(t, uint64(0), last)
+	})
 }
 
 // Benchmarks

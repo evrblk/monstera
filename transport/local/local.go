@@ -65,12 +65,54 @@ func (t *LocalTransport) getNode(nodeId string) (localNode, error) {
 	return node, nil
 }
 
+// The local transport dispatches calls in-process, so without copying it would
+// alias the caller's payload slices and config pointers straight into node state
+// (and hand node-owned buffers straight back to callers) — whereas the gRPC
+// transport always serializes, giving each side a fresh, independent copy.
+// Sharing them means a mutation after a call corrupts node state under one
+// transport but not the other, so tests on the local transport would not
+// reproduce production behavior. These helpers reproduce gRPC's copy semantics.
+
+// cloneBytes returns an independent copy of b (nil stays nil).
+func cloneBytes(b []byte) []byte {
+	if b == nil {
+		return nil
+	}
+	out := make([]byte, len(b))
+	copy(out, b)
+	return out
+}
+
+// cloneConfig deep-copies a cluster config via a proto marshal/unmarshal round
+// trip — the same transformation the gRPC transport applies on the wire.
+func cloneConfig(c *cluster.Config) (*cluster.Config, error) {
+	if c == nil {
+		return nil, nil
+	}
+	data, err := c.MarshalVT()
+	if err != nil {
+		return nil, fmt.Errorf("cloning config: %w", err)
+	}
+	clone := &cluster.Config{}
+	if err := clone.UnmarshalVT(data); err != nil {
+		return nil, fmt.Errorf("cloning config: %w", err)
+	}
+	return clone, nil
+}
+
 func (t *LocalTransport) Read(ctx context.Context, nodeId string, req *transport.ReadRequest) (*transport.ReadResponse, error) {
 	node, err := t.getNode(nodeId)
 	if err != nil {
 		return nil, err
 	}
-	return node.Read(ctx, req)
+
+	reqCopy := *req
+	reqCopy.Payload = cloneBytes(req.Payload)
+	resp, err := node.Read(ctx, &reqCopy)
+	if err != nil {
+		return nil, err
+	}
+	return &transport.ReadResponse{Payload: cloneBytes(resp.Payload)}, nil
 }
 
 func (t *LocalTransport) Update(ctx context.Context, nodeId string, req *transport.UpdateRequest) (*transport.UpdateResponse, error) {
@@ -78,7 +120,14 @@ func (t *LocalTransport) Update(ctx context.Context, nodeId string, req *transpo
 	if err != nil {
 		return nil, err
 	}
-	return node.Update(ctx, req)
+
+	reqCopy := *req
+	reqCopy.Payload = cloneBytes(req.Payload)
+	resp, err := node.Update(ctx, &reqCopy)
+	if err != nil {
+		return nil, err
+	}
+	return &transport.UpdateResponse{Payload: cloneBytes(resp.Payload)}, nil
 }
 
 func (t *LocalTransport) ListReplicaStates(ctx context.Context, nodeId string) ([]*transport.ReplicaState, error) {
@@ -98,6 +147,8 @@ func (t *LocalTransport) GetClusterConfig(ctx context.Context, address string) (
 	if config == nil {
 		return nil, fmt.Errorf("node %s is not provisioned: no cluster config", address)
 	}
+	// Node.GetClusterConfig already returns an independent deep copy, so unlike
+	// the inbound config paths there is nothing to clone here.
 	return config, nil
 }
 
@@ -106,7 +157,13 @@ func (t *LocalTransport) UpdateClusterConfig(ctx context.Context, address string
 	if err != nil {
 		return err
 	}
-	return node.UpdateClusterConfig(ctx, config)
+	// Hand the node its own copy so the caller cannot later mutate what the node
+	// may retain.
+	clone, err := cloneConfig(config)
+	if err != nil {
+		return err
+	}
+	return node.UpdateClusterConfig(ctx, clone)
 }
 
 func (t *LocalTransport) Bootstrap(ctx context.Context, address string, nodeId string, config *cluster.Config) error {
@@ -114,7 +171,11 @@ func (t *LocalTransport) Bootstrap(ctx context.Context, address string, nodeId s
 	if err != nil {
 		return err
 	}
-	return node.Bootstrap(ctx, nodeId, config)
+	clone, err := cloneConfig(config)
+	if err != nil {
+		return err
+	}
+	return node.Bootstrap(ctx, nodeId, clone)
 }
 
 func (t *LocalTransport) TriggerSnapshot(ctx context.Context, address string, replicaId string) error {
@@ -178,7 +239,17 @@ func (t *LocalTransport) RaftMessage(ctx context.Context, nodeId string, req *tr
 	if err != nil {
 		return nil, err
 	}
-	return node.RaftMessage(ctx, req)
+
+	reqCopy := *req
+	reqCopy.Message = cloneBytes(req.Message)
+	resp, err := node.RaftMessage(ctx, &reqCopy)
+	if err != nil {
+		return nil, err
+	}
+	return &transport.RaftMessageResponse{
+		MessageType: resp.MessageType,
+		Message:     cloneBytes(resp.Message),
+	}, nil
 }
 
 func (t *LocalTransport) Close() error {

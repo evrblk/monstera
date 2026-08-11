@@ -79,4 +79,4 @@ branch. After it is tagged `v0.1` it will be more or less stable and follow semv
 
 ## License
 
-Monstera is released under the [MIT License](https://opensource.org/licenses/MIT).
+Monstera is released under [MIT License](https://opensource.org/licenses/MIT).

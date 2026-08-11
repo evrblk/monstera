@@ -1,0 +1,21 @@
+landing: overview.md
+
+sections:
+  - title: How it works
+    pages:
+      - overview.md
+      - cluster-config.md
+
+  - title: Design principles
+    pages:
+      - core-principles.md
+      - units-of-work.md
+
+  - title: Developing
+    pages:
+      - core-implementation.md
+      - rpc-code-generation.md
+      - snapshot-and-restore.md
+      - testing.md
+      - single-node-mode.md
+      - directory-layout.md

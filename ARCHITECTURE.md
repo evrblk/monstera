@@ -16,7 +16,7 @@ reads bypass Raft and hit the core directly (concurrent), optionally on follower
   resolve nodeId→address: `Read`, `Update`, `ListReplicaStates`, `RaftMessage`.
 - **Admin plane** (`transport.AdminPlane`) — control path, **raw-address-addressed**, config-free
   (breaks the config chicken-and-egg for provisioning): `Bootstrap`, `Get/UpdateClusterConfig`,
-  `ListReplicaStates`, `ListReplicaSnapshots`, `TriggerSnapshot`, `LeadershipTransfer`.
+  `ListReplicaStates`, `ListReplicaSnapshots`, `TriggerSnapshot`, `LeadershipTransfer`, `SplitCutoff`.
 - Both are served by one gRPC service (`MonsteraApi`) on one listener; the split is client-side.
 
 ## Request path (top → bottom)
@@ -90,9 +90,9 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
   `ReadResponse[T]`, `UpdateRequest[T]`, `Update/ReadUnshardedRequest[T]`.
 - `rpc/codegen/` — codegen from `monstera.yaml`.
 - `cmd/monstera` — CLI: `code generate` (codegen; the old top-level `generate` command is gone) and
-  `cluster {bootstrap-node, bootstrap-nodes, add-node, move-shard, get-config}` (`commands/cluster.go`,
-  drives the admin plane / `control` sequences; `add-node`/`move-shard` are plan+execute fused, resumable
-  via `--sequence` checkpoint file).
+  `cluster {bootstrap-node, bootstrap-nodes, add-node, move-shard, split-shard, get-config}`
+  (`commands/cluster.go`, drives the admin plane / `control` sequences; `add-node`/`move-shard`/`split-shard`
+  are plan+execute fused, resumable via `--sequence` checkpoint file).
 - `transport/transport.go` — `DataPlane` + `AdminPlane` interfaces (former single `Transport`),
   `ClusterConfigConsumer` (optional data-plane capability), and DTOs: `ReadRequest` carries
   ApplicationName, ShardId, ShardKey+HasShardKey (`cluster.ShardKey`; on the wire an
@@ -153,8 +153,11 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
   (`deterministicReplicaId = sha256(baseHash|shardId|toNodeId)`), so resume is reproducible.
 - `PlanAddNode` = 1 step. `PlanMoveShard` = 3 steps: add replica on target (gates: leader elected +
   caught up, MaxLag=0) → `bake` (soak `WaitFor`, config unchanged) → remove old replica (pre-action:
-  transfer leadership off it). RF is preserved via a transient extra voter. `PlanSplitShard` errors
-  (unimplemented; `StepSendCommand`/`ControlCommand` are placeholders for it).
+  transfer leadership off it). RF is preserved via a transient extra voter. `PlanSplitShard` = 4 steps:
+  declare (config +1: parent active→splitting with ≥2 activating children; gates `config_converged` +
+  `children_seeded{MaxLag}`) → cutoff (`send_command` `SplitCutoff`, no config change; gate: children
+  leaders elected) → flip (config +2: parent splitting→inactive, children activating→active) → `bake`.
+  `StepSendCommand`/`ControlCommand` carry the cutoff step.
 - `Executor.Run(ctx, seq)`: verify base; per step — drift check (every node at current or target
   version, live `ValidateTransition`), run pre-actions, push target config to every node via
   `AdminPlane.UpdateClusterConfig` (falls back to `Bootstrap` on "not provisioned" — how add-node

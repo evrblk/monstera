@@ -13,7 +13,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
+
+	"github.com/evrblk/monstera/internal/fsutil"
 )
 
 // Sequence kinds.
@@ -166,28 +167,14 @@ func LoadSequence(path string) (*Sequence, error) {
 	return &seq, nil
 }
 
-// SaveSequence writes a sequence to a JSON file atomically (temp file in the same
-// directory, then rename), so a crash mid-write never corrupts the checkpoint.
+// SaveSequence writes a sequence checkpoint to a JSON file atomically and
+// durably (see fsutil.WriteFileAtomic): a crash or power loss mid-write never
+// leaves a torn, zero-length, or partially-written checkpoint for the CLI resume
+// path to choke on.
 func SaveSequence(path string, seq *Sequence) error {
 	data, err := json.MarshalIndent(seq, "", "  ")
 	if err != nil {
 		return err
 	}
-
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, path)
+	return fsutil.WriteFileAtomic(path, data, 0644)
 }

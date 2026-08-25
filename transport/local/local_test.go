@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/evrblk/monstera/cluster"
-	"github.com/evrblk/monstera/internal/raft"
 	"github.com/evrblk/monstera/transport"
 )
 
@@ -56,7 +55,7 @@ func (f *fakeNode) TriggerSnapshot(replicaId string) error                      
 func (f *fakeNode) LeadershipTransfer(replicaId string) error                       { return nil }
 func (f *fakeNode) SplitCutoff(ctx context.Context, shardId string) (uint64, error) { return 0, nil }
 func (f *fakeNode) ReplicaStates() []*transport.ReplicaState                        { return nil }
-func (f *fakeNode) ListSnapshots(replicaId string) ([]raft.SnapshotMetadata, error) {
+func (f *fakeNode) ListSnapshots(replicaId string) ([]*transport.RaftSnapshot, error) {
 	return nil, nil
 }
 func (f *fakeNode) UpdateClusterConfig(ctx context.Context, config *cluster.Config) error {

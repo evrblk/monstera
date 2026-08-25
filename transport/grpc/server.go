@@ -15,7 +15,6 @@ import (
 
 	"github.com/evrblk/monstera"
 	"github.com/evrblk/monstera/cluster"
-	"github.com/evrblk/monstera/internal/raft"
 	"github.com/evrblk/monstera/transport"
 	"github.com/evrblk/monstera/transport/grpc/monsterapb"
 )
@@ -173,7 +172,7 @@ type node interface {
 	LeadershipTransfer(replicaId string) error
 	SplitCutoff(ctx context.Context, shardId string) (uint64, error)
 	ReplicaStates() []*transport.ReplicaState
-	ListSnapshots(replicaId string) ([]raft.SnapshotMetadata, error)
+	ListSnapshots(replicaId string) ([]*transport.RaftSnapshot, error)
 	UpdateClusterConfig(ctx context.Context, config *cluster.Config) error
 	GetClusterConfig() *cluster.Config
 	Bootstrap(ctx context.Context, nodeId string, config *cluster.Config) error

@@ -24,6 +24,12 @@ import (
 
 var (
 	errNodeNotReady = errors.New("node is not in READY state")
+	// errNodeNotProvisioned is returned by control-plane calls when the node has
+	// no identity/config yet (UNPROVISIONED) — distinct from the generic
+	// errNodeNotReady, which any non-READY state returns. The control executor
+	// keys on this to decide a node needs Bootstrap rather than an update; keep the
+	// two messages distinguishable.
+	errNodeNotProvisioned = errors.New("node is not provisioned")
 	// errLeaderUnknown is returned when the leader for a shard cannot be resolved
 	// (no leader elected yet, or the forwarding hop budget was exhausted). The
 	// Monstera client treats it as retryable by matching on this message string,
@@ -87,6 +93,12 @@ type Node struct {
 	// from durable progress, so the churn is cheap.
 	splittersMu sync.Mutex
 	splitters   map[string]*splitter
+
+	// persistConfig writes a cluster config durably before it is acknowledged.
+	// It is a field (rather than a direct cluster.WriteConfigToFile call) so tests
+	// can inject a persist failure to exercise the config-apply error paths.
+	// Defaults to writing to the node's config path (see NewNode).
+	persistConfig func(config *cluster.Config) error
 
 	logger *log.Logger
 }
@@ -373,7 +385,7 @@ func (n *Node) Bootstrap(ctx context.Context, nodeId string, config *cluster.Con
 
 	// Persist the config, then the identity (identity is the commit marker: a
 	// crash between the two leaves the node unprovisioned and re-bootstrappable).
-	if err := cluster.WriteConfigToFile(config, clusterConfigPath(n.baseDir)); err != nil {
+	if err := n.persistConfig(config); err != nil {
 		return fmt.Errorf("persisting cluster config: %w", err)
 	}
 	if err := writeNodeIdentity(n.baseDir, nodeId); err != nil {
@@ -409,6 +421,11 @@ func (n *Node) Bootstrap(ctx context.Context, nodeId string, config *cluster.Con
 
 	n.startReconciler()
 	n.startMetricsSampler()
+
+	// Start split seeding for any splitting shards already present in the bootstrap
+	// config (mirrors Start; without this, bootstrapping into a mid-split config
+	// would leave seeding dormant).
+	n.startSplitters()
 
 	return nil
 }
@@ -761,7 +778,7 @@ func (n *Node) TriggerSnapshot(replicaId string) error {
 // ListSnapshots returns the snapshots stored for the replica with the given id.
 // It reads the replica's snapshot store from disk, so it is meant for on-demand
 // admin/ops use rather than frequent polling.
-func (n *Node) ListSnapshots(replicaId string) ([]raft.SnapshotMetadata, error) {
+func (n *Node) ListSnapshots(replicaId string) ([]*transport.RaftSnapshot, error) {
 	if n.NodeState() != NodeStateReady {
 		return nil, errNodeNotReady
 	}
@@ -771,7 +788,23 @@ func (n *Node) ListSnapshots(replicaId string) ([]raft.SnapshotMetadata, error) 
 		return nil, err
 	}
 
-	return r.ListSnapshots()
+	metas, err := r.ListSnapshots()
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert the internal/raft metadata to the exportable transport type so
+	// external callers can name the return type.
+	snapshots := make([]*transport.RaftSnapshot, len(metas))
+	for i, m := range metas {
+		snapshots[i] = &transport.RaftSnapshot{
+			Id:    m.Id,
+			Index: m.Index,
+			Term:  m.Term,
+			Size:  m.Size,
+		}
+	}
+	return snapshots, nil
 }
 
 // LeadershipTransfer asks the replica with the given id to hand off Raft
@@ -950,7 +983,14 @@ func (n *Node) setClusterConfigLocked(cfg *cluster.Config) {
 // transport's view of the cluster so it can dial added nodes and drop
 // connections to removed ones.
 func (n *Node) UpdateClusterConfig(ctx context.Context, newConfig *cluster.Config) error {
-	if n.NodeState() != NodeStateReady {
+	// Distinguish "never provisioned" (caller should Bootstrap) from a node that
+	// is provisioned but simply not READY yet (still booting — caller should
+	// wait/retry, not Bootstrap).
+	switch n.NodeState() {
+	case NodeStateReady:
+	case NodeStateUnprovisioned:
+		return errNodeNotProvisioned
+	default:
 		return errNodeNotReady
 	}
 
@@ -975,9 +1015,15 @@ func (n *Node) UpdateClusterConfig(ctx context.Context, newConfig *cluster.Confi
 		}
 	}
 
-	// Stop all split seeding pipelines before touching the replica maps; they
-	// are restarted from the new config (and resume from durable progress).
+	// Stop all split seeding pipelines before touching the replica maps.
 	n.stopSplitters()
+
+	// Restart seeding on EVERY exit path below: a failure after this point (config
+	// persist, replica reconcile, shard bootstrap) must not leave this node's
+	// in-flight splits silently halted until the next successful apply or restart.
+	// startSplitters re-derives its work from the live config and resumes from
+	// durable progress, so it is correct whether we bail before or after the swap.
+	defer n.startSplitters()
 
 	n.mu.Lock()
 
@@ -987,14 +1033,13 @@ func (n *Node) UpdateClusterConfig(ctx context.Context, newConfig *cluster.Confi
 	// can't race past each other.
 	if err := cluster.ValidateTransition(n.clusterConfig, newConfig); err != nil {
 		n.mu.Unlock()
-		n.startSplitters()
 		return fmt.Errorf("invalid cluster config transition: %w", err)
 	}
 
 	// Persist the new config durably before acknowledging the swap, so a restart
 	// resumes at the applied version rather than a stale seed. The write is atomic
 	// (temp + fsync + rename), so a crash never leaves a torn config.
-	if err := cluster.WriteConfigToFile(newConfig, clusterConfigPath(n.baseDir)); err != nil {
+	if err := n.persistConfig(newConfig); err != nil {
 		n.mu.Unlock()
 		return fmt.Errorf("persisting cluster config: %w", err)
 	}
@@ -1012,8 +1057,6 @@ func (n *Node) UpdateClusterConfig(ctx context.Context, newConfig *cluster.Confi
 		return err
 	}
 	n.mu.Unlock()
-
-	n.startSplitters()
 
 	// Refresh the transport's view of the cluster so it can dial newly added nodes
 	// (and drop connections to removed ones) before membership changes trigger
@@ -1705,6 +1748,12 @@ func NewNode(baseDir string, coreDescriptors ApplicationCoreDescriptors, nodeCon
 		raftStore:       raftStore,
 		nodeConfig:      nodeConfig,
 		logger:          log.New(os.Stderr, fmt.Sprintf("[%s] ", persistedId), log.LstdFlags),
+	}
+
+	// Default config persistence: atomic write to the node's config path. Tests
+	// override this to simulate a persist failure.
+	node.persistConfig = func(config *cluster.Config) error {
+		return cluster.WriteConfigToFile(config, clusterConfigPath(baseDir))
 	}
 
 	// A provisioned node exists but is not serving yet; publish 0 so the gauge has

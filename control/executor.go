@@ -189,15 +189,20 @@ func (e *Executor) pushConfig(ctx context.Context, node *cluster.Node, target *c
 		return nil
 	}
 
-	cctx, cancel := context.WithTimeout(ctx, e.opts.RPCTimeout)
-	defer cancel()
-
-	err := e.admin.UpdateClusterConfig(cctx, node.GrpcAddress, target)
-	if err != nil && isNotProvisioned(err) {
-		e.opts.Logf("node %s (%s) is not provisioned; bootstrapping it", node.Id, node.GrpcAddress)
-		return e.admin.Bootstrap(cctx, node.GrpcAddress, node.Id, target)
+	uctx, ucancel := context.WithTimeout(ctx, e.opts.RPCTimeout)
+	err := e.admin.UpdateClusterConfig(uctx, node.GrpcAddress, target)
+	ucancel()
+	if err == nil || !isNotProvisioned(err) {
+		return err
 	}
-	return err
+
+	// The node is genuinely UNPROVISIONED (e.g. add-node's fresh node): bootstrap
+	// it instead of pushing an update. Use a fresh timeout — uctx is already spent
+	// by the update attempt.
+	e.opts.Logf("node %s (%s) is not provisioned; bootstrapping it", node.Id, node.GrpcAddress)
+	bctx, bcancel := context.WithTimeout(ctx, e.opts.RPCTimeout)
+	defer bcancel()
+	return e.admin.Bootstrap(bctx, node.GrpcAddress, node.Id, target)
 }
 
 // executeSendCommand delivers the step's ControlCommand through the target
@@ -381,5 +386,9 @@ func isNotProvisioned(err error) bool {
 	if st, ok := status.FromError(err); ok {
 		msg = st.Message()
 	}
-	return strings.Contains(msg, "not in READY state") || strings.Contains(msg, "not provisioned")
+	// Match ONLY the genuine "unprovisioned" signal. Do not match the generic
+	// "not in READY state", which any non-READY state returns (e.g. a provisioned
+	// node still booting) — bootstrapping such a node would fail with a misleading
+	// error.
+	return strings.Contains(msg, "not provisioned")
 }

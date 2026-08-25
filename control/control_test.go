@@ -45,23 +45,35 @@ func testOpts() Options {
 
 type fakeNode struct {
 	provisioned bool
-	cfg         *cluster.Config
-	states      []*transport.ReplicaState
+	// notReady models a provisioned node that has not reached READY yet (still
+	// booting): its UpdateClusterConfig returns the generic not-READY error.
+	notReady bool
+	cfg      *cluster.Config
+	states   []*transport.ReplicaState
 }
 
 type fakeAdmin struct {
-	mu    sync.Mutex
-	nodes map[string]*fakeNode // keyed by address
+	mu             sync.Mutex
+	nodes          map[string]*fakeNode // keyed by address
+	bootstrapCalls map[string]int       // Bootstrap invocations per address, for assertions
 }
 
 var _ transport.AdminPlane = (*fakeAdmin)(nil)
 
-func newFakeAdmin() *fakeAdmin { return &fakeAdmin{nodes: map[string]*fakeNode{}} }
+func newFakeAdmin() *fakeAdmin {
+	return &fakeAdmin{nodes: map[string]*fakeNode{}, bootstrapCalls: map[string]int{}}
+}
 
 func (f *fakeAdmin) addProvisioned(addr string, cfg *cluster.Config) {
 	f.nodes[addr] = &fakeNode{provisioned: true, cfg: cfg}
 }
 func (f *fakeAdmin) addUnprovisioned(addr string) { f.nodes[addr] = &fakeNode{} }
+
+// addBooting adds a provisioned node that is not READY yet: config pushes to it
+// fail with the generic not-READY error (it must not be treated as unprovisioned).
+func (f *fakeAdmin) addBooting(addr string, cfg *cluster.Config) {
+	f.nodes[addr] = &fakeNode{provisioned: true, notReady: true, cfg: cfg}
+}
 
 func (f *fakeAdmin) GetClusterConfig(ctx context.Context, address string) (*cluster.Config, error) {
 	f.mu.Lock()
@@ -84,6 +96,11 @@ func (f *fakeAdmin) UpdateClusterConfig(ctx context.Context, address string, con
 		return fmt.Errorf("unreachable: %s", address)
 	}
 	if !n.provisioned {
+		return fmt.Errorf("node is not provisioned")
+	}
+	if n.notReady {
+		// Provisioned but still booting: a real node returns the generic
+		// not-READY error here, which must NOT be treated as "unprovisioned".
 		return fmt.Errorf("node is not in READY state")
 	}
 	if config.Version <= n.cfg.Version {
@@ -96,6 +113,7 @@ func (f *fakeAdmin) UpdateClusterConfig(ctx context.Context, address string, con
 func (f *fakeAdmin) Bootstrap(ctx context.Context, address, nodeId string, config *cluster.Config) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.bootstrapCalls[address]++
 	n, ok := f.nodes[address]
 	if !ok {
 		return fmt.Errorf("unreachable: %s", address)
@@ -396,6 +414,35 @@ func TestExecutorAddNodeAlreadyBootstrapped(t *testing.T) {
 	for _, addr := range []string{"node_1", "node_2", "node_3", "node_4:9004"} {
 		require.Equal(t, base.Version+1, fa.version(addr), "node %s", addr)
 	}
+}
+
+// TestExecutorBootingNodeNotBootstrapped is the regression test for the
+// isNotProvisioned over-match: a provisioned node that is merely not READY yet
+// (still booting) returns the generic not-READY error on a config push, and the
+// executor must surface that error rather than mistaking it for "unprovisioned"
+// and calling Bootstrap.
+func TestExecutorBootingNodeNotBootstrapped(t *testing.T) {
+	base := baseConfig(t)
+	seq, err := PlanAddNode(base, "node_4", "node_4:9004")
+	require.NoError(t, err)
+
+	fa := newFakeAdmin()
+	for _, n := range base.Nodes {
+		fa.addProvisioned(n.GrpcAddress, proto.Clone(base).(*cluster.Config))
+	}
+	fa.addUnprovisioned("node_4:9004")
+	// node_1 is provisioned but still booting: its update push fails not-READY.
+	fa.addBooting("node_1", proto.Clone(base).(*cluster.Config))
+
+	exec := NewExecutor(fa, base, filepath.Join(t.TempDir(), "seq.json"), testOpts())
+	err = exec.Run(context.Background(), seq)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not in READY state")
+	// The booting node must NOT have been bootstrapped; the not-READY error must
+	// surface instead. (node_4, genuinely unprovisioned, may legitimately be
+	// bootstrapped depending on push order — we only assert about node_1.)
+	require.Zero(t, fa.bootstrapCalls["node_1"], "booting node must not be bootstrapped")
 }
 
 func TestExecutorDriftRejection(t *testing.T) {

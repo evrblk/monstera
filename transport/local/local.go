@@ -7,7 +7,6 @@ import (
 
 	"github.com/evrblk/monstera"
 	"github.com/evrblk/monstera/cluster"
-	"github.com/evrblk/monstera/internal/raft"
 	"github.com/evrblk/monstera/transport"
 )
 
@@ -23,7 +22,7 @@ type localNode interface {
 	LeadershipTransfer(replicaId string) error
 	SplitCutoff(ctx context.Context, shardId string) (uint64, error)
 	ReplicaStates() []*transport.ReplicaState
-	ListSnapshots(replicaId string) ([]raft.SnapshotMetadata, error)
+	ListSnapshots(replicaId string) ([]*transport.RaftSnapshot, error)
 	UpdateClusterConfig(ctx context.Context, config *cluster.Config) error
 	GetClusterConfig() *cluster.Config
 	Bootstrap(ctx context.Context, nodeId string, config *cluster.Config) error
@@ -209,21 +208,9 @@ func (t *LocalTransport) ListReplicaSnapshots(ctx context.Context, address strin
 		return nil, err
 	}
 
-	metas, err := node.ListSnapshots(replicaId)
-	if err != nil {
-		return nil, err
-	}
-
-	snapshots := make([]*transport.RaftSnapshot, len(metas))
-	for i, m := range metas {
-		snapshots[i] = &transport.RaftSnapshot{
-			Id:    m.Id,
-			Index: m.Index,
-			Term:  m.Term,
-			Size:  m.Size,
-		}
-	}
-	return snapshots, nil
+	// Node.ListSnapshots already returns exportable transport DTOs, freshly built
+	// per call (no aliasing of node state), so pass them straight through.
+	return node.ListSnapshots(replicaId)
 }
 
 func (t *LocalTransport) RaftMessage(ctx context.Context, nodeId string, req *transport.RaftMessageRequest) (*transport.RaftMessageResponse, error) {

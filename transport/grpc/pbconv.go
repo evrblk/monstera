@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/evrblk/monstera/cluster"
-	"github.com/evrblk/monstera/internal/raft"
 	"github.com/evrblk/monstera/transport"
 	"github.com/evrblk/monstera/transport/grpc/monsterapb"
 )
@@ -142,7 +141,7 @@ func decodeRaftSnapshots(s []*monsterapb.RaftSnapshot) []*transport.RaftSnapshot
 	return ret
 }
 
-func encodeRaftSnapshots(s []raft.SnapshotMetadata) []*monsterapb.RaftSnapshot {
+func encodeRaftSnapshots(s []*transport.RaftSnapshot) []*monsterapb.RaftSnapshot {
 	ret := make([]*monsterapb.RaftSnapshot, len(s))
 	for i, s := range s {
 		ret[i] = &monsterapb.RaftSnapshot{

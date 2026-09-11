@@ -24,11 +24,12 @@ favorite programming language as you would do it on a whiteboard.
 
 Go to [documentation](/docs/overview.md) to learn more.
 
-## Example
+## Examples
 
-It might be easier to understand how it works from examples rather than from the documentation.
+It might be easier to understand how it works from examples rather than from the documentation:
 
-* [evrblk/grackle](https://github.com/evrblk/grackle) is a complete production-ready application built with Monstera.
+* [evrblk/grackle](https://github.com/evrblk/grackle)
+* [evrblk/moab](https://github.com/evrblk/moab)
 
 ## Installing
 

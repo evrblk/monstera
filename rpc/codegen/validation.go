@@ -37,7 +37,7 @@ func generateValidatingCore(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 	f.Var().Id("_").Qual(cfg.GoCode.OutputPackage, apiName).Op("=").Op("&").Id(validatingName).Values()
 	f.Line()
 
-	f.Func().Id("New"+validatingName).Params(
+	f.Func().Id("New" + validatingName).Params(
 		Id(coreVarName).Qual(cfg.GoCode.OutputPackage, apiName),
 	).Params(
 		Op("*").Id(validatingName),

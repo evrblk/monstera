@@ -63,9 +63,9 @@ go tool github.com/evrblk/monstera/cmd/monstera code generate
 ```
 
 This produces `api.go` (the `*CoreApi` interface you implement, plus request/response type aliases), `adapters.go`
-(binary blobs → method calls), and `stubs.go` (typed client, clustered and nonclustered). See
-[RPC Code Generation](/docs/rpc-code-generation.md) for the full reference. Two things are left for you to write by
-hand:
+(binary blobs → method calls), `stubs.go` (typed client, clustered and nonclustered), and `validation.go` (a
+`Validate`-checking wrapper around your core, see below). See [RPC Code Generation](/docs/rpc-code-generation.md)
+for the full reference. Three things are left for you to write by hand:
 
 * `ShardKey() cluster.ShardKey` on every sharded `*Request` payload — one line, calling your sharding package:
 
@@ -74,6 +74,14 @@ hand:
       return sharding.ByAccount(r.NamespaceId.AccountId)
   }
   ```
+
+* `Validate() error` on every `*Request` payload, sharded or not — the package won't compile without it, the same
+  way it won't compile without `ShardKey()` on a sharded one. Every generated `*CoreAdapter` constructor wraps the
+  core you pass it in a generated `*ValidatingCore` that calls `Validate()` before ever calling into your core, so
+  there is no path into a running core that skips it. Check whatever actually matters for that request — required
+  ids, bounds on values you dereference or feed into arithmetic — not cosmetic fields like a description's length.
+  See [Request validation](/docs/rpc-code-generation.md#request-validation) for the full reference, including how to
+  use the generated `*ValidatingCore` directly in your own core-level unit tests.
 
 * `MarshalBinary` / `UnmarshalBinary` on every payload type. These are one-line wrappers over the proto marshaller
   (Grackle generates them with a small `genmarshal` tool over `MarshalVT`/`UnmarshalVT`).
@@ -363,13 +371,17 @@ Beyond the domain logic, always cover:
 * **Benchmarks**: a shard's write throughput is single-threaded core performance; aim for microseconds in-memory,
   sub-millisecond on disk.
 
+Construct the core under test through the generated `*ValidatingCore` (`NewGrackleLocksValidatingCore(core)`)
+rather than the bare `*Core`, so every test request is checked by `Validate()` the same way production traffic is —
+with no change to how the tests themselves call the core.
+
 See [Testing](/docs/testing.md) for the full testing strategy, including integration and load testing.
 
 ## Checklist
 
 * Unit of work chosen deliberately; shard key functions pure, shared, and pinned by golden tests.
 * One proto `*Request`/`*Response` pair per method; `monstera.yaml` method numbers never reused; codegen output
-  compiles; `ShardKey()` and `MarshalBinary`/`UnmarshalBinary` implemented on payloads.
+  compiles; `ShardKey()`, `Validate()`, and `MarshalBinary`/`UnmarshalBinary` implemented on payloads.
 * `CoreType` declared; core constructed from shared store + shard prefix + bounds; state behind table types.
 * Updates: one transaction each, application errors in the response, Go errors only for fatal internals, `req.Now`
   for time, ids from the caller, invariants enforced transactionally.

@@ -17,12 +17,13 @@ var codeCmd = &cobra.Command{
 var codeGenerateCmd = &cobra.Command{
 	Use:   "generate",
 	Short: "Generates RPC stubs, core interfaces and adapters",
-	Long: `Generates RPC stubs, core interfaces and adapters from ./monstera.yaml.
+	Long: `Generates RPC stubs, core interfaces, adapters, and validating core
+wrappers from ./monstera.yaml.
 
 Run it from the directory containing monstera.yaml. It overwrites ./stubs.go,
-./api.go, and ./adapters.go in that directory. All three files are generated
-in memory first: if the manifest is invalid or generation fails, existing
-output files are left untouched.`,
+./api.go, ./adapters.go, and ./validation.go in that directory. All four
+files are generated in memory first: if the manifest is invalid or
+generation fails, existing output files are left untouched.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		monsteraYaml, err := codegen.LoadMonsteraYaml("./monstera.yaml")
 		if err != nil {
@@ -43,6 +44,10 @@ output files are left untouched.`,
 		if err != nil {
 			log.Fatalf("failed to generate adapters: %v", err)
 		}
+		validation, err := codegen.GenerateValidation(monsteraYaml)
+		if err != nil {
+			log.Fatalf("failed to generate validation: %v", err)
+		}
 
 		for _, file := range []struct {
 			path    string
@@ -51,6 +56,7 @@ output files are left untouched.`,
 			{"./stubs.go", stubs},
 			{"./api.go", apis},
 			{"./adapters.go", adapters},
+			{"./validation.go", validation},
 		} {
 			if err := os.WriteFile(file.path, []byte(file.content), 0644); err != nil {
 				log.Fatalf("failed to write %s: %v", file.path, err)

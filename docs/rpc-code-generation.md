@@ -11,11 +11,12 @@ directory where the YAML file is located):
 go tool github.com/evrblk/monstera/cmd/monstera code generate
 ```
 
-Codegen produces three files into the same directory:
+Codegen produces four files into the same directory:
 
 * `api.go` with interfaces for application cores and stubs, plus the request/response type aliases (see below).
 * `adapters.go` with adapters to application cores, that turn binary blobs into method calls on a core.
 * `stubs.go` with service stubs, that turn requests into binary blobs and route them to the correct application core.
+* `validation.go` with a `Validate`-checking wrapper for each application core (see [Request validation](#request-validation) below).
 
 The adapters record per-method Prometheus metrics, but the metrics are not auto-registered: call the generated
 `RegisterMetrics(prometheus.DefaultRegisterer)` once at startup (alongside `monstera.RegisterMetrics(...)` for the
@@ -109,6 +110,9 @@ This config will generate:
 * `GrackleLocksCoreApi`, `GrackleSemaphoresCoreApi`, etc. - interfaces for application cores (this is what you implement).
 * `GrackleLocksCoreAdapter`, `GrackleSemaphoresCoreAdapter`, etc. - adapters for the corresponding application cores, 
   constructed with `NewGrackleLocksCoreAdapter`, `NewGrackleSemaphoresCoreAdapter`, etc.
+* `GrackleLocksValidatingCore`, `GrackleSemaphoresValidatingCore`, etc. - a `Validate`-checking wrapper around each
+  `*CoreApi`, constructed with `NewGrackleLocksValidatingCore`, etc. See
+  [Request validation](#request-validation) below.
 * Request/response type aliases for every method (e.g. `GetLockRequest`, `GetLockResponse`) in the `output_package`. 
   These wrap your proto payloads (see below) and only improve code readability.
 
@@ -132,6 +136,8 @@ Currently, Monstera codegen relies on several conventions in order to make it wo
   reflection — you specify explicitly how to extract a shard key from each request, usually with one line of Go code
   (`utils.GetShardKey` derives one from arbitrary bytes). A `cluster.ShardKey` is a plain uint32: every value is a
   valid key, and the framework routes it to the shard whose range contains it.
+* Every `*Request`, sharded or not, must implement `Validate() error`. See
+  [Request validation](#request-validation) below.
 
 Packages `output_package` and `core_types_package` must be different, otherwise the generated 
 `*Request`/`*Response` type aliases would collide with the payload types (validated by `monstera code generate`).
@@ -210,4 +216,33 @@ What is left for you to implement:
 
 * The application cores themselves (`GrackleLocksCoreApi`, `GrackleSemaphoresCoreApi`, etc. interfaces).
 * `ShardKey() cluster.ShardKey` on every sharded `*Request` payload type.
+* `Validate() error` on every `*Request` payload type, sharded or not. See
+  [Request validation](#request-validation) below.
 * `MarshalBinary` / `UnmarshalBinary` on all request and response payload types.
+
+## Request validation
+
+A request that reaches an application core's `Update`/`Read` method gets applied to every replica identically — a
+malformed request isn't just rejected once, it's a bug replicated everywhere at once, deterministically. Rather than
+have every core method re-check its own inputs, every generated `*CoreAdapter` constructor
+(`NewGrackleLocksCoreAdapter`, etc.) wraps whatever core you pass it in a generated `*ValidatingCore`
+(`NewGrackleLocksValidatingCore`, etc.) before storing it. `*ValidatingCore` implements the same `*CoreApi` interface:
+for every method, it calls `Validate()` on the request payload first and, on error, returns an `ApplicationError`
+(`mrpc.NewError(mrpc.InvalidRequest, err.Error())`) without ever calling into your core. There is no way to construct
+the adapter with a core that skips this — the wrapping happens unconditionally, inside the constructor, not at each
+call site.
+
+This makes `Validate() error` a required method on every `*Request` payload type, the same way `ShardKey()` is
+required on sharded ones — codegen's `request`/`unshardedRequest` constraints require it, so the package fails to
+compile without it. Unlike `ShardKey()`, its implementation has no framework-provided helper; write whatever checks
+matter for that request (required fields, id shapes, bounds on values the core dereferences or feeds into
+arithmetic), or return `nil` if the payload genuinely has nothing to check.
+
+`*ValidatingCore` is also useful directly in core-level unit tests: wrap the core under test in it
+(`NewGrackleLocksValidatingCore(core)`) instead of constructing the adapter, and every test exercises `Validate()` the
+same way production traffic does, with no change to the test bodies themselves.
+
+The generated stub (`GrackleMonsteraStub`) also calls `Validate()` on the request, before ever marshaling or sending
+it — this is a separate, client-side check: it saves a wasted network/Raft round trip on an obviously-bad request,
+but it is not the safety guarantee. A caller that reaches the core adapter through some other path still can't skip
+validation, because the adapter's own core is always the wrapped one.

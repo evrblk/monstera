@@ -20,19 +20,23 @@ type response interface {
 
 // request is the payload of a sharded RPC. In addition to being binary
 // serializable, it exposes a ShardKey used to route the request to the owning
-// shard.
+// shard. A request has relevant validations.
 type request interface {
 	encoding.BinaryMarshaler
 	encoding.BinaryUnmarshaler
 
 	ShardKey() cluster.ShardKey
+	Validate() error
 }
 
 // unshardedRequest is the payload of an RPC that is not routed by shard (e.g. a
-// cluster-wide or fan-out operation), so it carries no ShardKey.
+// cluster-wide or fan-out operation), so it carries no ShardKey. A request has
+// relevant validations.
 type unshardedRequest interface {
 	encoding.BinaryMarshaler
 	encoding.BinaryUnmarshaler
+
+	Validate() error
 }
 
 // UpdateResponse is the result of a mutating (update) RPC. ApplicationError, when

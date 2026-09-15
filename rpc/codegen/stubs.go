@@ -79,6 +79,17 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 					Error(),
 				),
 			).BlockFunc(func(g *Group) {
+				g.If(
+					Err().Op(":=").Id("methodReq").Dot("Validate").Call(),
+					Err().Op("!=").Nil(),
+				).Block(
+					Return(Id("nil"), Qual(mrpcPkg, "NewError").Call(
+						Qual(mrpcPkg, "InvalidRequest"),
+						Err().Dot("Error").Call(),
+					)),
+				)
+				g.Line()
+
 				g.List(Id("methodReqBytes"), Err()).Op(":=").Id("methodReq").Dot("MarshalBinary").Call()
 				g.If(
 					Err().Op("!=").Nil(),
@@ -173,6 +184,17 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 					Error(),
 				),
 			).BlockFunc(func(g *Group) {
+				g.If(
+					Err().Op(":=").Id("methodReq").Dot("Validate").Call(),
+					Err().Op("!=").Nil(),
+				).Block(
+					Return(Id("nil"), Qual(mrpcPkg, "NewError").Call(
+						Qual(mrpcPkg, "InvalidRequest"),
+						Err().Dot("Error").Call(),
+					)),
+				)
+				g.Line()
+
 				g.List(Id("methodReqBytes"), Err()).Op(":=").Id("methodReq").Dot("MarshalBinary").Call()
 				g.If(
 					Err().Op("!=").Nil(),

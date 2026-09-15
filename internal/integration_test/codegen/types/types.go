@@ -23,6 +23,10 @@ func (r *Read1Request) ShardKey() cluster.ShardKey {
 	return cluster.ShardKey(binary.BigEndian.Uint32([]byte(r.Field)[:4]))
 }
 
+func (r *Read1Request) Validate() error {
+	return nil
+}
+
 type Read1Response struct {
 	Field string
 }
@@ -46,6 +50,10 @@ func (r *Read2Request) MarshalBinary() ([]byte, error) {
 
 func (r *Read2Request) UnmarshalBinary(data []byte) error {
 	r.Field = string(data)
+	return nil
+}
+
+func (r *Read2Request) Validate() error {
 	return nil
 }
 
@@ -79,6 +87,10 @@ func (r *Read3Request) ShardKey() cluster.ShardKey {
 	return cluster.ShardKey(binary.BigEndian.Uint32([]byte(r.Field)[:4]))
 }
 
+func (r *Read3Request) Validate() error {
+	return nil
+}
+
 type Read3Response struct {
 	Field string
 }
@@ -109,6 +121,10 @@ func (r *Update1Request) ShardKey() cluster.ShardKey {
 	return cluster.ShardKey(binary.BigEndian.Uint32([]byte(r.Field)[:4]))
 }
 
+func (r *Update1Request) Validate() error {
+	return nil
+}
+
 type Update1Response struct {
 	Field string
 }
@@ -132,6 +148,10 @@ func (r *Update2Request) MarshalBinary() ([]byte, error) {
 
 func (r *Update2Request) UnmarshalBinary(data []byte) error {
 	r.Field = string(data)
+	return nil
+}
+
+func (r *Update2Request) Validate() error {
 	return nil
 }
 

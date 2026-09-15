@@ -28,6 +28,10 @@ type MyStubMonsteraStub struct {
 var _ MyStubClientApi = &MyStubMonsteraStub{}
 
 func (s *MyStubMonsteraStub) Read1(ctx context.Context, methodReq *types.Read1Request) (*types.Read1Response, error) {
+	if err := methodReq.Validate(); err != nil {
+		return nil, mrpc.NewError(mrpc.InvalidRequest, err.Error())
+	}
+
 	methodReqBytes, err := methodReq.MarshalBinary()
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -63,6 +67,10 @@ func (s *MyStubMonsteraStub) Read1(ctx context.Context, methodReq *types.Read1Re
 }
 
 func (s *MyStubMonsteraStub) Read2(ctx context.Context, methodReq *types.Read2Request, shardId string) (*types.Read2Response, error) {
+	if err := methodReq.Validate(); err != nil {
+		return nil, mrpc.NewError(mrpc.InvalidRequest, err.Error())
+	}
+
 	methodReqBytes, err := methodReq.MarshalBinary()
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -98,6 +106,10 @@ func (s *MyStubMonsteraStub) Read2(ctx context.Context, methodReq *types.Read2Re
 }
 
 func (s *MyStubMonsteraStub) Read3(ctx context.Context, methodReq *types.Read3Request) (*types.Read3Response, error) {
+	if err := methodReq.Validate(); err != nil {
+		return nil, mrpc.NewError(mrpc.InvalidRequest, err.Error())
+	}
+
 	methodReqBytes, err := methodReq.MarshalBinary()
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -133,6 +145,10 @@ func (s *MyStubMonsteraStub) Read3(ctx context.Context, methodReq *types.Read3Re
 }
 
 func (s *MyStubMonsteraStub) Update1(ctx context.Context, methodReq *types.Update1Request) (*types.Update1Response, error) {
+	if err := methodReq.Validate(); err != nil {
+		return nil, mrpc.NewError(mrpc.InvalidRequest, err.Error())
+	}
+
 	methodReqBytes, err := methodReq.MarshalBinary()
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -168,6 +184,10 @@ func (s *MyStubMonsteraStub) Update1(ctx context.Context, methodReq *types.Updat
 }
 
 func (s *MyStubMonsteraStub) Update2(ctx context.Context, methodReq *types.Update2Request, shardId string) (*types.Update2Response, error) {
+	if err := methodReq.Validate(); err != nil {
+		return nil, mrpc.NewError(mrpc.InvalidRequest, err.Error())
+	}
+
 	methodReqBytes, err := methodReq.MarshalBinary()
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)

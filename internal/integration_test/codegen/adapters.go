@@ -51,7 +51,7 @@ var _ monstera.ApplicationCore = &MyCoreCoreAdapter{}
 
 func NewMyCoreCoreAdapter(nodeId string, shardId string, replicaId string, shardLowerBound cluster.ShardKey, shardUpperBound cluster.ShardKey, myCoreCore MyCoreCoreApi) *MyCoreCoreAdapter {
 	return &MyCoreCoreAdapter{
-		myCoreCore:      NewMyCoreValidatingCore(myCoreCore),
+		myCoreCore:      myCoreCore,
 		nodeId:          nodeId,
 		replicaId:       replicaId,
 		shardId:         shardId,

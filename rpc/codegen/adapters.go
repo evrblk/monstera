@@ -128,11 +128,7 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 			Id("replicaId"):       Id("replicaId"),
 			Id("shardLowerBound"): Id("shardLowerBound"),
 			Id("shardUpperBound"): Id("shardUpperBound"),
-			// Wrapping here, rather than requiring every caller of this
-			// constructor to remember to do it, is what makes validation
-			// impossible to bypass: there is no way to construct this
-			// adapter with a core that skips it.
-			Id(coreVarName): Qual(cfg.GoCode.OutputPackage, "New"+core.Name+"ValidatingCore").Call(Id(coreVarName)),
+			Id(coreVarName):       Id(coreVarName),
 		})),
 	)
 	f.Line()

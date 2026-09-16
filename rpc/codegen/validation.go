@@ -9,10 +9,7 @@ import (
 // GenerateValidation generates, for each core, a XxxValidatingCore that
 // implements XxxCoreApi by wrapping another XxxCoreApi: every Read/Update
 // method first calls Validate on the request payload, rejecting it with an
-// ApplicationError instead of delegating if it fails. Adapter constructors
-// wrap the core passed to them in one of these, so a request reaching
-// Core.<Method> is guaranteed to have already passed Validate — no call site
-// of the adapter constructor can opt out of it.
+// ApplicationError instead of delegating if it fails.
 func GenerateValidation(cfg *MonsteraYaml) (string, error) {
 	f := NewFilePath(cfg.GoCode.OutputPackage)
 	f.HeaderComment(generatedCodeComment)

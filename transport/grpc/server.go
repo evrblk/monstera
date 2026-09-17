@@ -224,7 +224,8 @@ func (h *handler) Update(ctx context.Context, req *monsterapb.UpdateRequest) (*m
 	}
 
 	return &monsterapb.UpdateResponse{
-		Payload: resp.Payload,
+		Payload:      resp.Payload,
+		RaftLogIndex: resp.RaftLogIndex,
 	}, nil
 }
 

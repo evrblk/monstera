@@ -151,6 +151,10 @@ type UpdateRequest struct {
 // UpdateResponse carries the opaque result of a write operation.
 type UpdateResponse struct {
 	Payload []byte
+	// RaftLogIndex is the Raft log index the update committed at. It is
+	// framework metadata, populated above the ApplicationCore layer, and
+	// travels alongside Payload rather than inside it.
+	RaftLogIndex uint64
 }
 
 type RaftState int32

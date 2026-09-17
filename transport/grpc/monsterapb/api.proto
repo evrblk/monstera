@@ -36,6 +36,7 @@ message UpdateRequest {
 
 message UpdateResponse {
   bytes payload = 1;
+  uint64 raft_log_index = 2;
 }
 
 message ReadRequest {

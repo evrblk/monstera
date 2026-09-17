@@ -72,7 +72,7 @@ func (r *replica) Read(request []byte) (response *ReadResponse, err error) {
 // update's shard key (hasShardKey is false for shard-wide, unsharded updates);
 // it is stamped into the replicated command's routing only while the shard is
 // splitting, so seeded entries can be routed to children by key.
-func (r *replica) Update(request []byte, shardKey cluster.ShardKey, hasShardKey bool) (updateResponse *UpdateResponse, err error) {
+func (r *replica) Update(request []byte, shardKey cluster.ShardKey, hasShardKey bool) (updateResponse *UpdateResponse, raftLogIndex uint64, err error) {
 	t1 := time.Now()
 	defer func() {
 		result := "ok"
@@ -98,25 +98,25 @@ func (r *replica) Update(request []byte, shardKey cluster.ShardKey, hasShardKey 
 
 	cmdBytes, err := r.commandCodec.Encode(cmd)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	replicaCommandBytes.WithLabelValues(r.nodeId, r.applicationName, r.shardId, r.replicaId).Observe(float64(len(cmdBytes)))
 
 	response, err := r.raft.Update(cmdBytes)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	switch resp := response.(type) {
-	case *UpdateResponse:
+	case *appliedUpdateResult:
 		// TODO emit events
-		return resp, nil
+		return resp.response, resp.index, nil
 	case *splitRejection:
 		// Committed after the shard froze: the write mutated nothing and the
 		// caller must re-route it to the children.
-		return nil, errShardFrozen
+		return nil, 0, errShardFrozen
 	default:
-		return nil, fmt.Errorf("invalid response type %T", response)
+		return nil, 0, fmt.Errorf("invalid response type %T", response)
 	}
 }
 
@@ -314,6 +314,16 @@ type cutoffResult struct {
 // children.
 type splitRejection struct{}
 
+// appliedUpdateResult is the FSM apply result of a COMMAND_TYPE_UPDATE
+// command: the ApplicationCore's response paired with the Raft log index it
+// committed at. index is framework/Raft metadata that ApplicationCore never
+// sees — it is attached here, one layer above the core, and surfaced to
+// callers only via monstera.Client's response.
+type appliedUpdateResult struct {
+	response *UpdateResponse
+	index    uint64
+}
+
 var _ raft.AppCore = (*appCoreAdapter)(nil)
 
 func (a *appCoreAdapter) Read(request []byte) *ReadResponse {
@@ -360,7 +370,7 @@ func (a *appCoreAdapter) Apply(index uint64, request []byte) any {
 		}
 		fsmApplyDuration.WithLabelValues(a.nodeId, a.applicationName, a.shardId, a.replicaId).Observe(time.Since(t1).Seconds())
 		commitsTotal.WithLabelValues(a.nodeId, a.applicationName, a.shardId, a.replicaId).Inc()
-		return resp
+		return &appliedUpdateResult{response: resp, index: index}
 	case replicationpb.CommandType_COMMAND_TYPE_NOOP:
 		// Index-contiguity filler in seeded child logs: applied without
 		// touching the core.

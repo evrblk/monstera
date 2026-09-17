@@ -25,18 +25,22 @@ func (s *PlaygroundApiMonsteraStub) Read(ctx context.Context, key uint64) (strin
 	shardKey := utils.GetShardKey(utils.ConcatBytes(key))
 	request := createKeyBytes(key)
 
-	responseBytes, err := s.monsteraClient.Read(ctx, "Core", shardKey, false, request)
-
-	return string(responseBytes), err
+	resp, err := s.monsteraClient.Read(ctx, "Core", shardKey, false, request)
+	if err != nil {
+		return "", err
+	}
+	return string(resp.Data), nil
 }
 
 func (s *PlaygroundApiMonsteraStub) Update(ctx context.Context, key uint64, value string) (string, error) {
 	shardKey := utils.GetShardKey(utils.ConcatBytes(key))
 	request := createRequestBytes(key, value)
 
-	responseBytes, err := s.monsteraClient.Update(ctx, "Core", shardKey, request)
-
-	return string(responseBytes), err
+	resp, err := s.monsteraClient.Update(ctx, "Core", shardKey, request)
+	if err != nil {
+		return "", err
+	}
+	return string(resp.Data), nil
 }
 
 // createRequestBytes encodes an update payload: 8-byte big-endian key + value.

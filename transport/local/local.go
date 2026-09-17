@@ -126,7 +126,7 @@ func (t *LocalTransport) Update(ctx context.Context, nodeId string, req *transpo
 	if err != nil {
 		return nil, err
 	}
-	return &transport.UpdateResponse{Payload: cloneBytes(resp.Payload)}, nil
+	return &transport.UpdateResponse{Payload: cloneBytes(resp.Payload), RaftLogIndex: resp.RaftLogIndex}, nil
 }
 
 func (t *LocalTransport) ListReplicaStates(ctx context.Context, nodeId string) ([]*transport.ReplicaState, error) {

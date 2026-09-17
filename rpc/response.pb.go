@@ -232,12 +232,7 @@ type Response struct {
 	Data []byte `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
 	// error is the application error, set when the RPC failed at the domain level
 	// (nil/INVALID/OK code means success).
-	Error *Error `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
-	// raft_log_index is the Raft log index that the corresponding update
-	// committed at (0 for reads, or for updates on unsharded/non-Raft paths). It
-	// is opaque to monstera and only surfaced to callers that opt in via
-	// rpc.WithResponseMeta.
-	RaftLogIndex  uint64 `protobuf:"varint,3,opt,name=raft_log_index,json=raftLogIndex,proto3" json:"raft_log_index,omitempty"`
+	Error         *Error `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -284,13 +279,6 @@ func (x *Response) GetError() *Error {
 		return x.Error
 	}
 	return nil
-}
-
-func (x *Response) GetRaftLogIndex() uint64 {
-	if x != nil {
-		return x.RaftLogIndex
-	}
-	return 0
 }
 
 // Request is the envelope sent to an application core for an RPC.
@@ -391,11 +379,10 @@ const file_rpc_response_proto_rawDesc = "" +
 	"\acontext\x18\x03 \x03(\v2%.com.evrblk.monstera.rpc.ErrorContextR\acontext\"6\n" +
 	"\fErrorContext\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"z\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"T\n" +
 	"\bResponse\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x124\n" +
-	"\x05error\x18\x02 \x01(\v2\x1e.com.evrblk.monstera.rpc.ErrorR\x05error\x12$\n" +
-	"\x0eraft_log_index\x18\x03 \x01(\x04R\fraftLogIndex\"\x81\x01\n" +
+	"\x05error\x18\x02 \x01(\v2\x1e.com.evrblk.monstera.rpc.ErrorR\x05error\"\x81\x01\n" +
 	"\aRequest\x12#\n" +
 	"\rmethod_number\x18\x01 \x01(\x05R\fmethodNumber\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\x12\x10\n" +

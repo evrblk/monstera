@@ -116,6 +116,11 @@ func (m *UpdateResponse) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if m.RaftLogIndex != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.RaftLogIndex))
+		i--
+		dAtA[i] = 0x10
+	}
 	if len(m.Payload) > 0 {
 		i -= len(m.Payload)
 		copy(dAtA[i:], m.Payload)
@@ -1269,6 +1274,9 @@ func (m *UpdateResponse) SizeVT() (n int) {
 	if l > 0 {
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	}
+	if m.RaftLogIndex != 0 {
+		n += 1 + protohelpers.SizeOfVarint(uint64(m.RaftLogIndex))
+	}
 	n += len(m.unknownFields)
 	return n
 }
@@ -1926,6 +1934,25 @@ func (m *UpdateResponse) UnmarshalVT(dAtA []byte) error {
 				m.Payload = []byte{}
 			}
 			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field RaftLogIndex", wireType)
+			}
+			m.RaftLogIndex = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.RaftLogIndex |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])

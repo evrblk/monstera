@@ -51,13 +51,13 @@ func (s *MyStubMonsteraStub) Read1(ctx context.Context, methodReq *types.Read1Re
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	rpcRespBytes, err := s.monsteraClient.Read(ctx, "MyCore", methodReq.ShardKey(), false, rpcReqBytes)
+	clientResp, err := s.monsteraClient.Read(ctx, "MyCore", methodReq.ShardKey(), false, rpcReqBytes)
 	if err != nil {
 		return nil, err
 	}
 
 	rpcResp := &mrpc.Response{}
-	err = rpcResp.UnmarshalVT(rpcRespBytes)
+	err = rpcResp.UnmarshalVT(clientResp.Data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
@@ -68,10 +68,7 @@ func (s *MyStubMonsteraStub) Read1(ctx context.Context, methodReq *types.Read1Re
 	}
 
 	if settings.ResponseMeta != nil {
-		*settings.ResponseMeta = mrpc.ResponseMeta{
-			Now:          now,
-			RaftLogIndex: rpcResp.RaftLogIndex,
-		}
+		*settings.ResponseMeta = mrpc.ResponseMeta{Now: now}
 	}
 
 	return methodResp, nilifyIfEmpty(rpcResp.Error)
@@ -101,13 +98,13 @@ func (s *MyStubMonsteraStub) Read2(ctx context.Context, methodReq *types.Read2Re
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	rpcRespBytes, err := s.monsteraClient.ReadShard(ctx, "MyCore", shardId, false, rpcReqBytes)
+	clientResp, err := s.monsteraClient.ReadShard(ctx, "MyCore", shardId, false, rpcReqBytes)
 	if err != nil {
 		return nil, err
 	}
 
 	rpcResp := &mrpc.Response{}
-	err = rpcResp.UnmarshalVT(rpcRespBytes)
+	err = rpcResp.UnmarshalVT(clientResp.Data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
@@ -118,10 +115,7 @@ func (s *MyStubMonsteraStub) Read2(ctx context.Context, methodReq *types.Read2Re
 	}
 
 	if settings.ResponseMeta != nil {
-		*settings.ResponseMeta = mrpc.ResponseMeta{
-			Now:          now,
-			RaftLogIndex: rpcResp.RaftLogIndex,
-		}
+		*settings.ResponseMeta = mrpc.ResponseMeta{Now: now}
 	}
 
 	return methodResp, nilifyIfEmpty(rpcResp.Error)
@@ -151,13 +145,13 @@ func (s *MyStubMonsteraStub) Read3(ctx context.Context, methodReq *types.Read3Re
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	rpcRespBytes, err := s.monsteraClient.Read(ctx, "MyCore", methodReq.ShardKey(), true, rpcReqBytes)
+	clientResp, err := s.monsteraClient.Read(ctx, "MyCore", methodReq.ShardKey(), true, rpcReqBytes)
 	if err != nil {
 		return nil, err
 	}
 
 	rpcResp := &mrpc.Response{}
-	err = rpcResp.UnmarshalVT(rpcRespBytes)
+	err = rpcResp.UnmarshalVT(clientResp.Data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
@@ -168,10 +162,7 @@ func (s *MyStubMonsteraStub) Read3(ctx context.Context, methodReq *types.Read3Re
 	}
 
 	if settings.ResponseMeta != nil {
-		*settings.ResponseMeta = mrpc.ResponseMeta{
-			Now:          now,
-			RaftLogIndex: rpcResp.RaftLogIndex,
-		}
+		*settings.ResponseMeta = mrpc.ResponseMeta{Now: now}
 	}
 
 	return methodResp, nilifyIfEmpty(rpcResp.Error)
@@ -201,13 +192,13 @@ func (s *MyStubMonsteraStub) Update1(ctx context.Context, methodReq *types.Updat
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	rpcRespBytes, err := s.monsteraClient.Update(ctx, "MyCore", methodReq.ShardKey(), rpcReqBytes)
+	clientResp, err := s.monsteraClient.Update(ctx, "MyCore", methodReq.ShardKey(), rpcReqBytes)
 	if err != nil {
 		return nil, err
 	}
 
 	rpcResp := &mrpc.Response{}
-	err = rpcResp.UnmarshalVT(rpcRespBytes)
+	err = rpcResp.UnmarshalVT(clientResp.Data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
@@ -220,7 +211,7 @@ func (s *MyStubMonsteraStub) Update1(ctx context.Context, methodReq *types.Updat
 	if settings.ResponseMeta != nil {
 		*settings.ResponseMeta = mrpc.ResponseMeta{
 			Now:          now,
-			RaftLogIndex: rpcResp.RaftLogIndex,
+			RaftLogIndex: clientResp.RaftLogIndex,
 		}
 	}
 
@@ -251,13 +242,13 @@ func (s *MyStubMonsteraStub) Update2(ctx context.Context, methodReq *types.Updat
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	rpcRespBytes, err := s.monsteraClient.UpdateShard(ctx, "MyCore", shardId, rpcReqBytes)
+	clientResp, err := s.monsteraClient.UpdateShard(ctx, "MyCore", shardId, rpcReqBytes)
 	if err != nil {
 		return nil, err
 	}
 
 	rpcResp := &mrpc.Response{}
-	err = rpcResp.UnmarshalVT(rpcRespBytes)
+	err = rpcResp.UnmarshalVT(clientResp.Data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
@@ -270,7 +261,7 @@ func (s *MyStubMonsteraStub) Update2(ctx context.Context, methodReq *types.Updat
 	if settings.ResponseMeta != nil {
 		*settings.ResponseMeta = mrpc.ResponseMeta{
 			Now:          now,
-			RaftLogIndex: rpcResp.RaftLogIndex,
+			RaftLogIndex: clientResp.RaftLogIndex,
 		}
 	}
 

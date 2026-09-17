@@ -298,8 +298,19 @@ func (c *Client) checkUpdatePayload(payload []byte) error {
 	return nil
 }
 
+// ClientResponse is the result of a Read/ReadShard/Update/UpdateShard call:
+// the opaque application-level payload plus framework metadata (e.g. the
+// Raft log index an update committed at).
+type ClientResponse struct {
+	// Data is the opaque, application-defined response payload.
+	Data []byte
+	// RaftLogIndex is the Raft log index the corresponding update committed
+	// at. Always 0 for Read/ReadShard.
+	RaftLogIndex uint64
+}
+
 // Read routes a read request to the shard responsible for shardKey.
-func (c *Client) Read(ctx context.Context, applicationName string, shardKey cluster.ShardKey, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
+func (c *Client) Read(ctx context.Context, applicationName string, shardKey cluster.ShardKey, allowReadFromFollowers bool, payload []byte) (*ClientResponse, error) {
 	if err := c.checkReadPayload(payload); err != nil {
 		return nil, err
 	}
@@ -318,7 +329,7 @@ func (c *Client) Read(ctx context.Context, applicationName string, shardKey clus
 
 // ReadShard sends a read request directly to the specified shard by ID,
 // bypassing shard-key routing.
-func (c *Client) ReadShard(ctx context.Context, applicationName string, shardId string, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
+func (c *Client) ReadShard(ctx context.Context, applicationName string, shardId string, allowReadFromFollowers bool, payload []byte) (*ClientResponse, error) {
 	if err := c.checkReadPayload(payload); err != nil {
 		return nil, err
 	}
@@ -337,7 +348,7 @@ func (c *Client) ReadShard(ctx context.Context, applicationName string, shardId 
 
 // readShard tries each replica in turn, retrying transient errors on the same
 // replica up to MaxRetriesOnSingleReplica times before moving to the next.
-func (c *Client) readShard(ctx context.Context, applicationName string, shard *cluster.Shard, shardKey cluster.ShardKey, hasShardKey bool, allowReadFromFollowers bool, payload []byte) ([]byte, error) {
+func (c *Client) readShard(ctx context.Context, applicationName string, shard *cluster.Shard, shardKey cluster.ShardKey, hasShardKey bool, allowReadFromFollowers bool, payload []byte) (*ClientResponse, error) {
 	var replicas []*cluster.Replica
 	if allowReadFromFollowers {
 		replicas = c.shuffleReplicas(shard.Replicas)
@@ -372,7 +383,7 @@ func (c *Client) readShard(ctx context.Context, applicationName string, shard *c
 				return nil, fmt.Errorf("monsteraClient.Read: %v", err)
 			}
 
-			return resp.Payload, nil
+			return &ClientResponse{Data: resp.Payload}, nil
 		}
 
 		// All retries failed, or a replica is dead, try next replica
@@ -383,7 +394,7 @@ func (c *Client) readShard(ctx context.Context, applicationName string, shard *c
 }
 
 // Update routes a write request to the shard responsible for shardKey.
-func (c *Client) Update(ctx context.Context, applicationName string, shardKey cluster.ShardKey, payload []byte) ([]byte, error) {
+func (c *Client) Update(ctx context.Context, applicationName string, shardKey cluster.ShardKey, payload []byte) (*ClientResponse, error) {
 	if err := c.checkUpdatePayload(payload); err != nil {
 		return nil, err
 	}
@@ -402,7 +413,7 @@ func (c *Client) Update(ctx context.Context, applicationName string, shardKey cl
 
 // UpdateShard sends a write request directly to the specified shard by ID,
 // bypassing shard-key routing.
-func (c *Client) UpdateShard(ctx context.Context, applicationName string, shardId string, payload []byte) ([]byte, error) {
+func (c *Client) UpdateShard(ctx context.Context, applicationName string, shardId string, payload []byte) (*ClientResponse, error) {
 	if err := c.checkUpdatePayload(payload); err != nil {
 		return nil, err
 	}
@@ -421,7 +432,7 @@ func (c *Client) UpdateShard(ctx context.Context, applicationName string, shardI
 
 // updateShard tries replicas leader-first, retrying transient errors on the
 // same replica up to MaxRetriesOnSingleReplica times before moving to the next.
-func (c *Client) updateShard(ctx context.Context, applicationName string, shard *cluster.Shard, shardKey cluster.ShardKey, hasShardKey bool, payload []byte) ([]byte, error) {
+func (c *Client) updateShard(ctx context.Context, applicationName string, shard *cluster.Shard, shardKey cluster.ShardKey, hasShardKey bool, payload []byte) (*ClientResponse, error) {
 	replicas := c.shuffleReplicasAndLeaderFirst(shard.Replicas)
 
 	req := &transport.UpdateRequest{
@@ -450,7 +461,7 @@ func (c *Client) updateShard(ctx context.Context, applicationName string, shard 
 				return nil, fmt.Errorf("monsteraClient.Update: %v", err)
 			}
 
-			return resp.Payload, nil
+			return &ClientResponse{Data: resp.Payload, RaftLogIndex: resp.RaftLogIndex}, nil
 		}
 
 		// All retries failed, or a replica is dead, try next replica

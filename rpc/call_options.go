@@ -10,7 +10,9 @@ type ResponseMeta struct {
 	// copied straight into ResponseMeta rather than round-tripped.
 	Now int64
 	// RaftLogIndex is the Raft log index the corresponding update committed
-	// at, or 0 for reads (Response.raft_log_index).
+	// at, or 0 for reads. It is framework metadata that never passes through
+	// the application core or the mrpc.Response envelope — the stub copies it
+	// straight from monstera.Client's ClientResponse.
 	RaftLogIndex uint64
 }
 

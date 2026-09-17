@@ -124,7 +124,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				g.Line()
 
 				if read.Sharded {
-					g.List(Id("rpcRespBytes"), Err()).Op(":=").Id("s.monsteraClient.Read").Call(
+					g.List(Id("clientResp"), Err()).Op(":=").Id("s.monsteraClient.Read").Call(
 						Id("ctx"),
 						Lit(core.Name),
 						Id("methodReq").Dot("ShardKey").Call(),
@@ -134,7 +134,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				} else {
 					g.Line()
 
-					g.List(Id("rpcRespBytes"), Err()).Op(":=").Id("s.monsteraClient.ReadShard").Call(
+					g.List(Id("clientResp"), Err()).Op(":=").Id("s.monsteraClient.ReadShard").Call(
 						Id("ctx"),
 						Lit(core.Name),
 						Id("shardId"),
@@ -151,7 +151,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				g.Line()
 
 				g.Id("rpcResp").Op(":=").Op("&").Qual(mrpcPkg, "Response").Values()
-				g.Err().Op("=").Id("rpcResp").Dot("UnmarshalVT").Call(Id("rpcRespBytes"))
+				g.Err().Op("=").Id("rpcResp").Dot("UnmarshalVT").Call(Id("clientResp").Dot("Data"))
 				g.If(
 					Err().Op("!=").Nil(),
 				).Block(
@@ -174,8 +174,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 
 				g.If(Id("settings").Dot("ResponseMeta").Op("!=").Nil()).Block(
 					Op("*").Id("settings").Dot("ResponseMeta").Op("=").Qual(mrpcPkg, "ResponseMeta").Values(Dict{
-						Id("Now"):          Id("now"),
-						Id("RaftLogIndex"): Id("rpcResp").Dot("RaftLogIndex"),
+						Id("Now"): Id("now"),
 					}),
 				)
 				g.Line()
@@ -243,7 +242,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				g.Line()
 
 				if update.Sharded {
-					g.List(Id("rpcRespBytes"), Err()).Op(":=").Id("s.monsteraClient.Update").Call(
+					g.List(Id("clientResp"), Err()).Op(":=").Id("s.monsteraClient.Update").Call(
 						Id("ctx"),
 						Lit(core.Name),
 						Id("methodReq").Dot("ShardKey").Call(),
@@ -252,7 +251,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				} else {
 					g.Line()
 
-					g.List(Id("rpcRespBytes"), Err()).Op(":=").Id("s.monsteraClient.UpdateShard").Call(
+					g.List(Id("clientResp"), Err()).Op(":=").Id("s.monsteraClient.UpdateShard").Call(
 						Id("ctx"),
 						Lit(core.Name),
 						Id("shardId"),
@@ -268,7 +267,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				g.Line()
 
 				g.Id("rpcResp").Op(":=").Op("&").Qual(mrpcPkg, "Response").Values()
-				g.Err().Op("=").Id("rpcResp").Dot("UnmarshalVT").Call(Id("rpcRespBytes"))
+				g.Err().Op("=").Id("rpcResp").Dot("UnmarshalVT").Call(Id("clientResp").Dot("Data"))
 				g.If(
 					Err().Op("!=").Nil(),
 				).Block(
@@ -292,7 +291,7 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				g.If(Id("settings").Dot("ResponseMeta").Op("!=").Nil()).Block(
 					Op("*").Id("settings").Dot("ResponseMeta").Op("=").Qual(mrpcPkg, "ResponseMeta").Values(Dict{
 						Id("Now"):          Id("now"),
-						Id("RaftLogIndex"): Id("rpcResp").Dot("RaftLogIndex"),
+						Id("RaftLogIndex"): Id("clientResp").Dot("RaftLogIndex"),
 					}),
 				)
 				g.Line()

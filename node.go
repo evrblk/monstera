@@ -552,7 +552,7 @@ func (n *Node) Update(ctx context.Context, req *transport.UpdateRequest) (*trans
 
 	// Writes are applied only on the leader.
 	if r.IsLeader() {
-		resp, err := r.Update(req.Payload, req.ShardKey, req.HasShardKey)
+		resp, raftLogIndex, err := r.Update(req.Payload, req.ShardKey, req.HasShardKey)
 		if err != nil {
 			// The cutoff may have committed between the frozen check above and
 			// the propose: the write mutated nothing; re-route it.
@@ -562,7 +562,8 @@ func (n *Node) Update(ctx context.Context, req *transport.UpdateRequest) (*trans
 			return nil, err
 		}
 		return &transport.UpdateResponse{
-			Payload: resp.Data,
+			Payload:      resp.Data,
+			RaftLogIndex: raftLogIndex,
 		}, nil
 	}
 

@@ -268,7 +268,8 @@ func (t *DataPlaneClient) Update(ctx context.Context, nodeId string, req *transp
 	}
 
 	return &transport.UpdateResponse{
-		Payload: resp.Payload,
+		Payload:      resp.Payload,
+		RaftLogIndex: resp.RaftLogIndex,
 	}, nil
 }
 

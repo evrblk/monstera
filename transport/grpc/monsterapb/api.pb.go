@@ -162,6 +162,7 @@ func (x *UpdateRequest) GetHops() int32 {
 type UpdateResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Payload       []byte                 `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
+	RaftLogIndex  uint64                 `protobuf:"varint,2,opt,name=raft_log_index,json=raftLogIndex,proto3" json:"raft_log_index,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -201,6 +202,13 @@ func (x *UpdateResponse) GetPayload() []byte {
 		return x.Payload
 	}
 	return nil
+}
+
+func (x *UpdateResponse) GetRaftLogIndex() uint64 {
+	if x != nil {
+		return x.RaftLogIndex
+	}
+	return 0
 }
 
 type ReadRequest struct {
@@ -1423,9 +1431,10 @@ const file_transport_grpc_monsterapb_api_proto_rawDesc = "" +
 	"\bshard_id\x18\x04 \x01(\tR\ashardId\x12\x12\n" +
 	"\x04hops\x18\x05 \x01(\x05R\x04hopsB\f\n" +
 	"\n" +
-	"_shard_key\"*\n" +
+	"_shard_key\"P\n" +
 	"\x0eUpdateResponse\x12\x18\n" +
-	"\apayload\x18\x01 \x01(\fR\apayload\"\xec\x01\n" +
+	"\apayload\x18\x01 \x01(\fR\apayload\x12$\n" +
+	"\x0eraft_log_index\x18\x02 \x01(\x04R\fraftLogIndex\"\xec\x01\n" +
 	"\vReadRequest\x12\x18\n" +
 	"\apayload\x18\x01 \x01(\fR\apayload\x129\n" +
 	"\x19allow_read_from_followers\x18\x02 \x01(\bR\x16allowReadFromFollowers\x12 \n" +

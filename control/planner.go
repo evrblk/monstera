@@ -210,8 +210,7 @@ func deterministicReplicaId(baseHash, shardId, toNodeId string) string {
 const splitShardMaxLag = 16
 
 // PlanSplitShard builds a sequence that splits an active shard into two
-// children at splitAt (the first shard key of the second child). See
-// notes/shard-split-design.md for the full model. The steps:
+// children at splitAt (the first shard key of the second child). The steps:
 //
 //   - Step 0 (apply_config): parent -> splitting; create the two ACTIVATING
 //     children, co-located with the parent's replicas. Nodes start seeding.

@@ -16,7 +16,7 @@ import (
 // is promoted in place by constructing a regular Raft over the same stores:
 // hashicorp/raft reads the pre-baked state exactly as if an established
 // member had restarted (membership comes from the base snapshot metadata, so
-// no BootstrapCluster call is ever made). See notes/shard-split-design.md.
+// no BootstrapCluster call is ever made).
 
 // seedTerm is the Raft term of everything a Seeder writes: the base snapshot
 // metadata, every copied log entry, and the primed CurrentTerm. Different

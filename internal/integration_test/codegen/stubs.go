@@ -27,7 +27,10 @@ type MyStubMonsteraStub struct {
 
 var _ MyStubClientApi = &MyStubMonsteraStub{}
 
-func (s *MyStubMonsteraStub) Read1(ctx context.Context, methodReq *types.Read1Request) (*types.Read1Response, error) {
+func (s *MyStubMonsteraStub) Read1(ctx context.Context, methodReq *types.Read1Request, opts ...mrpc.CallOption) (*types.Read1Response, error) {
+	settings := mrpc.ApplyCallOptions(opts...)
+	now := time.Now().UnixNano()
+
 	if err := methodReq.Validate(); err != nil {
 		return nil, mrpc.NewError(mrpc.InvalidRequest, err.Error())
 	}
@@ -38,9 +41,10 @@ func (s *MyStubMonsteraStub) Read1(ctx context.Context, methodReq *types.Read1Re
 	}
 
 	rpcReq := &mrpc.Request{
-		Data:         methodReqBytes,
-		MethodNumber: 1,
-		Now:          time.Now().UnixNano(),
+		Data:             methodReqBytes,
+		IdempotencyToken: settings.IdempotencyToken,
+		MethodNumber:     1,
+		Now:              now,
 	}
 	rpcReqBytes, err := rpcReq.MarshalVT()
 	if err != nil {
@@ -63,10 +67,20 @@ func (s *MyStubMonsteraStub) Read1(ctx context.Context, methodReq *types.Read1Re
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
+	if settings.ResponseMeta != nil {
+		*settings.ResponseMeta = mrpc.ResponseMeta{
+			Now:          now,
+			RaftLogIndex: rpcResp.RaftLogIndex,
+		}
+	}
+
 	return methodResp, nilifyIfEmpty(rpcResp.Error)
 }
 
-func (s *MyStubMonsteraStub) Read2(ctx context.Context, methodReq *types.Read2Request, shardId string) (*types.Read2Response, error) {
+func (s *MyStubMonsteraStub) Read2(ctx context.Context, methodReq *types.Read2Request, shardId string, opts ...mrpc.CallOption) (*types.Read2Response, error) {
+	settings := mrpc.ApplyCallOptions(opts...)
+	now := time.Now().UnixNano()
+
 	if err := methodReq.Validate(); err != nil {
 		return nil, mrpc.NewError(mrpc.InvalidRequest, err.Error())
 	}
@@ -77,9 +91,10 @@ func (s *MyStubMonsteraStub) Read2(ctx context.Context, methodReq *types.Read2Re
 	}
 
 	rpcReq := &mrpc.Request{
-		Data:         methodReqBytes,
-		MethodNumber: 2,
-		Now:          time.Now().UnixNano(),
+		Data:             methodReqBytes,
+		IdempotencyToken: settings.IdempotencyToken,
+		MethodNumber:     2,
+		Now:              now,
 	}
 	rpcReqBytes, err := rpcReq.MarshalVT()
 	if err != nil {
@@ -102,10 +117,20 @@ func (s *MyStubMonsteraStub) Read2(ctx context.Context, methodReq *types.Read2Re
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
+	if settings.ResponseMeta != nil {
+		*settings.ResponseMeta = mrpc.ResponseMeta{
+			Now:          now,
+			RaftLogIndex: rpcResp.RaftLogIndex,
+		}
+	}
+
 	return methodResp, nilifyIfEmpty(rpcResp.Error)
 }
 
-func (s *MyStubMonsteraStub) Read3(ctx context.Context, methodReq *types.Read3Request) (*types.Read3Response, error) {
+func (s *MyStubMonsteraStub) Read3(ctx context.Context, methodReq *types.Read3Request, opts ...mrpc.CallOption) (*types.Read3Response, error) {
+	settings := mrpc.ApplyCallOptions(opts...)
+	now := time.Now().UnixNano()
+
 	if err := methodReq.Validate(); err != nil {
 		return nil, mrpc.NewError(mrpc.InvalidRequest, err.Error())
 	}
@@ -116,9 +141,10 @@ func (s *MyStubMonsteraStub) Read3(ctx context.Context, methodReq *types.Read3Re
 	}
 
 	rpcReq := &mrpc.Request{
-		Data:         methodReqBytes,
-		MethodNumber: 3,
-		Now:          time.Now().UnixNano(),
+		Data:             methodReqBytes,
+		IdempotencyToken: settings.IdempotencyToken,
+		MethodNumber:     3,
+		Now:              now,
 	}
 	rpcReqBytes, err := rpcReq.MarshalVT()
 	if err != nil {
@@ -141,10 +167,20 @@ func (s *MyStubMonsteraStub) Read3(ctx context.Context, methodReq *types.Read3Re
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
+	if settings.ResponseMeta != nil {
+		*settings.ResponseMeta = mrpc.ResponseMeta{
+			Now:          now,
+			RaftLogIndex: rpcResp.RaftLogIndex,
+		}
+	}
+
 	return methodResp, nilifyIfEmpty(rpcResp.Error)
 }
 
-func (s *MyStubMonsteraStub) Update1(ctx context.Context, methodReq *types.Update1Request) (*types.Update1Response, error) {
+func (s *MyStubMonsteraStub) Update1(ctx context.Context, methodReq *types.Update1Request, opts ...mrpc.CallOption) (*types.Update1Response, error) {
+	settings := mrpc.ApplyCallOptions(opts...)
+	now := time.Now().UnixNano()
+
 	if err := methodReq.Validate(); err != nil {
 		return nil, mrpc.NewError(mrpc.InvalidRequest, err.Error())
 	}
@@ -155,9 +191,10 @@ func (s *MyStubMonsteraStub) Update1(ctx context.Context, methodReq *types.Updat
 	}
 
 	rpcReq := &mrpc.Request{
-		Data:         methodReqBytes,
-		MethodNumber: 1,
-		Now:          time.Now().UnixNano(),
+		Data:             methodReqBytes,
+		IdempotencyToken: settings.IdempotencyToken,
+		MethodNumber:     1,
+		Now:              now,
 	}
 	rpcReqBytes, err := rpcReq.MarshalVT()
 	if err != nil {
@@ -180,10 +217,20 @@ func (s *MyStubMonsteraStub) Update1(ctx context.Context, methodReq *types.Updat
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
+	if settings.ResponseMeta != nil {
+		*settings.ResponseMeta = mrpc.ResponseMeta{
+			Now:          now,
+			RaftLogIndex: rpcResp.RaftLogIndex,
+		}
+	}
+
 	return methodResp, nilifyIfEmpty(rpcResp.Error)
 }
 
-func (s *MyStubMonsteraStub) Update2(ctx context.Context, methodReq *types.Update2Request, shardId string) (*types.Update2Response, error) {
+func (s *MyStubMonsteraStub) Update2(ctx context.Context, methodReq *types.Update2Request, shardId string, opts ...mrpc.CallOption) (*types.Update2Response, error) {
+	settings := mrpc.ApplyCallOptions(opts...)
+	now := time.Now().UnixNano()
+
 	if err := methodReq.Validate(); err != nil {
 		return nil, mrpc.NewError(mrpc.InvalidRequest, err.Error())
 	}
@@ -194,9 +241,10 @@ func (s *MyStubMonsteraStub) Update2(ctx context.Context, methodReq *types.Updat
 	}
 
 	rpcReq := &mrpc.Request{
-		Data:         methodReqBytes,
-		MethodNumber: 2,
-		Now:          time.Now().UnixNano(),
+		Data:             methodReqBytes,
+		IdempotencyToken: settings.IdempotencyToken,
+		MethodNumber:     2,
+		Now:              now,
 	}
 	rpcReqBytes, err := rpcReq.MarshalVT()
 	if err != nil {
@@ -217,6 +265,13 @@ func (s *MyStubMonsteraStub) Update2(ctx context.Context, methodReq *types.Updat
 	err = methodResp.UnmarshalBinary(rpcResp.Data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if settings.ResponseMeta != nil {
+		*settings.ResponseMeta = mrpc.ResponseMeta{
+			Now:          now,
+			RaftLogIndex: rpcResp.RaftLogIndex,
+		}
 	}
 
 	return methodResp, nilifyIfEmpty(rpcResp.Error)
@@ -255,7 +310,10 @@ type MyStubNonclusteredStub struct {
 
 var _ MyStubClientApi = &MyStubNonclusteredStub{}
 
-func (s *MyStubNonclusteredStub) Read1(ctx context.Context, req *types.Read1Request) (*types.Read1Response, error) {
+func (s *MyStubNonclusteredStub) Read1(ctx context.Context, req *types.Read1Request, opts ...mrpc.CallOption) (*types.Read1Response, error) {
+	settings := mrpc.ApplyCallOptions(opts...)
+	now := time.Now().UnixNano()
+
 	shardKey := req.ShardKey()
 	for _, adapter := range s.myCoreCores {
 		if shardKey >= adapter.lowerBound && shardKey <= adapter.upperBound {
@@ -263,7 +321,7 @@ func (s *MyStubNonclusteredStub) Read1(ctx context.Context, req *types.Read1Requ
 			defer adapter.mu.RUnlock()
 
 			resp, err := adapter.core.Read1(&mrpc.ReadRequest[*types.Read1Request]{
-				Now:     time.Now().UnixNano(),
+				Now:     now,
 				Payload: req,
 			})
 			if err != nil {
@@ -272,6 +330,9 @@ func (s *MyStubNonclusteredStub) Read1(ctx context.Context, req *types.Read1Requ
 			err = nilifyIfEmpty(resp.ApplicationError)
 			if err != nil {
 				return nil, err
+			}
+			if settings.ResponseMeta != nil {
+				*settings.ResponseMeta = mrpc.ResponseMeta{Now: now}
 			}
 			return resp.Payload, nil
 		}
@@ -280,14 +341,17 @@ func (s *MyStubNonclusteredStub) Read1(ctx context.Context, req *types.Read1Requ
 	return nil, fmt.Errorf("no shard found for shardKey: %s", shardKey)
 }
 
-func (s *MyStubNonclusteredStub) Read2(ctx context.Context, req *types.Read2Request, shardId string) (*types.Read2Response, error) {
+func (s *MyStubNonclusteredStub) Read2(ctx context.Context, req *types.Read2Request, shardId string, opts ...mrpc.CallOption) (*types.Read2Response, error) {
+	settings := mrpc.ApplyCallOptions(opts...)
+	now := time.Now().UnixNano()
+
 	for _, adapter := range s.myCoreCores {
 		if adapter.id == shardId {
 			adapter.mu.RLock()
 			defer adapter.mu.RUnlock()
 
 			resp, err := adapter.core.Read2(&mrpc.ReadUnshardedRequest[*types.Read2Request]{
-				Now:     time.Now().UnixNano(),
+				Now:     now,
 				Payload: req,
 			})
 			if err != nil {
@@ -296,6 +360,9 @@ func (s *MyStubNonclusteredStub) Read2(ctx context.Context, req *types.Read2Requ
 			err = nilifyIfEmpty(resp.ApplicationError)
 			if err != nil {
 				return nil, err
+			}
+			if settings.ResponseMeta != nil {
+				*settings.ResponseMeta = mrpc.ResponseMeta{Now: now}
 			}
 			return resp.Payload, nil
 		}
@@ -304,7 +371,10 @@ func (s *MyStubNonclusteredStub) Read2(ctx context.Context, req *types.Read2Requ
 	return nil, fmt.Errorf("no shard found for shardId: %s", shardId)
 }
 
-func (s *MyStubNonclusteredStub) Read3(ctx context.Context, req *types.Read3Request) (*types.Read3Response, error) {
+func (s *MyStubNonclusteredStub) Read3(ctx context.Context, req *types.Read3Request, opts ...mrpc.CallOption) (*types.Read3Response, error) {
+	settings := mrpc.ApplyCallOptions(opts...)
+	now := time.Now().UnixNano()
+
 	shardKey := req.ShardKey()
 	for _, adapter := range s.myCoreCores {
 		if shardKey >= adapter.lowerBound && shardKey <= adapter.upperBound {
@@ -312,7 +382,7 @@ func (s *MyStubNonclusteredStub) Read3(ctx context.Context, req *types.Read3Requ
 			defer adapter.mu.RUnlock()
 
 			resp, err := adapter.core.Read3(&mrpc.ReadRequest[*types.Read3Request]{
-				Now:     time.Now().UnixNano(),
+				Now:     now,
 				Payload: req,
 			})
 			if err != nil {
@@ -322,6 +392,9 @@ func (s *MyStubNonclusteredStub) Read3(ctx context.Context, req *types.Read3Requ
 			if err != nil {
 				return nil, err
 			}
+			if settings.ResponseMeta != nil {
+				*settings.ResponseMeta = mrpc.ResponseMeta{Now: now}
+			}
 			return resp.Payload, nil
 		}
 	}
@@ -329,7 +402,10 @@ func (s *MyStubNonclusteredStub) Read3(ctx context.Context, req *types.Read3Requ
 	return nil, fmt.Errorf("no shard found for shardKey: %s", shardKey)
 }
 
-func (s *MyStubNonclusteredStub) Update1(ctx context.Context, req *types.Update1Request) (*types.Update1Response, error) {
+func (s *MyStubNonclusteredStub) Update1(ctx context.Context, req *types.Update1Request, opts ...mrpc.CallOption) (*types.Update1Response, error) {
+	settings := mrpc.ApplyCallOptions(opts...)
+	now := time.Now().UnixNano()
+
 	shardKey := req.ShardKey()
 	for _, adapter := range s.myCoreCores {
 		if shardKey >= adapter.lowerBound && shardKey <= adapter.upperBound {
@@ -337,7 +413,7 @@ func (s *MyStubNonclusteredStub) Update1(ctx context.Context, req *types.Update1
 			defer adapter.mu.Unlock()
 
 			resp, err := adapter.core.Update1(&mrpc.UpdateRequest[*types.Update1Request]{
-				Now:     time.Now().UnixNano(),
+				Now:     now,
 				Payload: req,
 			})
 			if err != nil {
@@ -346,6 +422,9 @@ func (s *MyStubNonclusteredStub) Update1(ctx context.Context, req *types.Update1
 			err = nilifyIfEmpty(resp.ApplicationError)
 			if err != nil {
 				return nil, err
+			}
+			if settings.ResponseMeta != nil {
+				*settings.ResponseMeta = mrpc.ResponseMeta{Now: now}
 			}
 			return resp.Payload, nil
 		}
@@ -354,14 +433,17 @@ func (s *MyStubNonclusteredStub) Update1(ctx context.Context, req *types.Update1
 	return nil, fmt.Errorf("no shard found for shardKey: %s", shardKey)
 }
 
-func (s *MyStubNonclusteredStub) Update2(ctx context.Context, req *types.Update2Request, shardId string) (*types.Update2Response, error) {
+func (s *MyStubNonclusteredStub) Update2(ctx context.Context, req *types.Update2Request, shardId string, opts ...mrpc.CallOption) (*types.Update2Response, error) {
+	settings := mrpc.ApplyCallOptions(opts...)
+	now := time.Now().UnixNano()
+
 	for _, adapter := range s.myCoreCores {
 		if adapter.id == shardId {
 			adapter.mu.Lock()
 			defer adapter.mu.Unlock()
 
 			resp, err := adapter.core.Update2(&mrpc.UpdateUnshardedRequest[*types.Update2Request]{
-				Now:     time.Now().UnixNano(),
+				Now:     now,
 				Payload: req,
 			})
 			if err != nil {
@@ -370,6 +452,9 @@ func (s *MyStubNonclusteredStub) Update2(ctx context.Context, req *types.Update2
 			err = nilifyIfEmpty(resp.ApplicationError)
 			if err != nil {
 				return nil, err
+			}
+			if settings.ResponseMeta != nil {
+				*settings.ResponseMeta = mrpc.ResponseMeta{Now: now}
 			}
 			return resp.Payload, nil
 		}

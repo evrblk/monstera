@@ -158,8 +158,7 @@ var ErrNoSnapshot = errors.New("no snapshots stored")
 // so this is safe to call from any goroutine. The caller must Close the
 // returned reader.
 //
-// This is the base-snapshot source for shard-split seeding (see
-// notes/shard-split-design.md, Phase 2).
+// This is the base-snapshot source for shard-split seeding.
 func (r *Raft) TakeAndOpenSnapshot() (SnapshotMetadata, io.ReadCloser, error) {
 	f := r.hraft.Snapshot()
 	if err := f.Error(); err != nil {

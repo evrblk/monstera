@@ -101,6 +101,7 @@ func generateStubApiMethod(g *Group, method string, sharded bool, cfg *MonsteraY
 		g.Id(method).Params(
 			Id("ctx").Qual("context", "Context"),
 			Id("req").Op("*").Qual(cfg.GoCode.CoreTypesPackage, method+"Request"),
+			Id("opts").Op("...").Qual(mrpcPkg, "CallOption"),
 		).Params(
 			List(
 				Op("*").Qual(cfg.GoCode.CoreTypesPackage, method+"Response"),
@@ -112,6 +113,7 @@ func generateStubApiMethod(g *Group, method string, sharded bool, cfg *MonsteraY
 			Id("ctx").Qual("context", "Context"),
 			Id("req").Op("*").Qual(cfg.GoCode.CoreTypesPackage, method+"Request"),
 			Id("shardId").String(),
+			Id("opts").Op("...").Qual(mrpcPkg, "CallOption"),
 		).Params(
 			List(
 				Op("*").Qual(cfg.GoCode.CoreTypesPackage, method+"Response"),

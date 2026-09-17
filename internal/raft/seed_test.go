@@ -16,9 +16,8 @@ import (
 	"github.com/evrblk/monstera/store"
 )
 
-// TestSeederClonesRaftGroup is the Phase-1 validation from
-// notes/shard-split-design.md: clone a raft group locally through the seeding
-// API and prove the pre-baked replica starts as an established member.
+// TestSeederClonesRaftGroup clones a raft group locally through the seeding
+// API and proves the pre-baked replica starts as an established member.
 //
 // Flow (mirroring in-memory-core split seeding): run a source replica, apply
 // some commands, take+open a user snapshot at K, apply more commands up to M,

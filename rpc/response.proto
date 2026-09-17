@@ -57,6 +57,11 @@ message Response {
   // error is the application error, set when the RPC failed at the domain level
   // (nil/INVALID/OK code means success).
   Error error = 2;
+  // raft_log_index is the Raft log index that the corresponding update
+  // committed at (0 for reads, or for updates on unsharded/non-Raft paths). It
+  // is opaque to monstera and only surfaced to callers that opt in via
+  // rpc.WithResponseMeta.
+  uint64 raft_log_index = 3;
 }
 
 // Request is the envelope sent to an application core for an RPC.
@@ -77,4 +82,10 @@ message Request {
   // its original stamp. Clock skew between gateways and nodes is not a problem —
   // the value is only ever used as the single source of "now" for that one entry.
   int64 now = 3;
+  // idempotency_token is an opaque token identifying this logical operation
+  // across retries, supplied by the caller via rpc.WithIdempotencyToken; empty
+  // means none was provided. It is opaque to monstera, which never reads or
+  // rewrites it — carrying it here only gets it as far as the application
+  // core, which is responsible for any deduplication.
+  string idempotency_token = 4;
 }

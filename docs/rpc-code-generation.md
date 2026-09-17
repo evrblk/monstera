@@ -222,27 +222,30 @@ What is left for you to implement:
 
 ## Request validation
 
-A request that reaches an application core's `Update`/`Read` method gets applied to every replica identically — a
-malformed request isn't just rejected once, it's a bug replicated everywhere at once, deterministically. Rather than
-have every core method re-check its own inputs, every generated `*CoreAdapter` constructor
-(`NewGrackleLocksCoreAdapter`, etc.) wraps whatever core you pass it in a generated `*ValidatingCore`
-(`NewGrackleLocksValidatingCore`, etc.) before storing it. `*ValidatingCore` implements the same `*CoreApi` interface:
-for every method, it calls `Validate()` on the request payload first and, on error, returns an `ApplicationError`
-(`mrpc.NewError(mrpc.InvalidRequest, err.Error())`) without ever calling into your core. There is no way to construct
-the adapter with a core that skips this — the wrapping happens unconditionally, inside the constructor, not at each
-call site.
+A request that reaches an application core's `Update`/`Read` method through the Raft-applied path gets applied to
+every replica identically — so the adapter constructors (`NewGrackleLocksCoreAdapter`, etc.) deliberately do *not*
+wrap the core you pass them in a validating layer. Rejecting a request is itself a decision that has to be applied
+identically everywhere: if `Validate()`'s logic changed between the old and new binary during a rolling deploy, one
+replica could reject a request (never calling the core) while another accepts it (calling the core) for the exact
+same Raft log entry, diverging the FSM. Keeping validation out of the adapter means cores must be written to cope
+with whatever reaches `Update`/`Read` — the framework gives no guarantee that `Validate()` ran first.
 
-This makes `Validate() error` a required method on every `*Request` payload type, the same way `ShardKey()` is
+This still makes `Validate() error` a required method on every `*Request` payload type, the same way `ShardKey()` is
 required on sharded ones — codegen's `request`/`unshardedRequest` constraints require it, so the package fails to
 compile without it. Unlike `ShardKey()`, its implementation has no framework-provided helper; write whatever checks
 matter for that request (required fields, id shapes, bounds on values the core dereferences or feeds into
 arithmetic), or return `nil` if the payload genuinely has nothing to check.
 
-`*ValidatingCore` is also useful directly in core-level unit tests: wrap the core under test in it
-(`NewGrackleLocksValidatingCore(core)`) instead of constructing the adapter, and every test exercises `Validate()` the
-same way production traffic does, with no change to the test bodies themselves.
+In practice, `Validate()` is exercised by the generated stub (`GrackleMonsteraStub`), which calls it on the request
+before ever marshaling or sending it. This is a client-side check only: it saves a wasted network/Raft round trip on
+an obviously-bad request, and it is the main place `Validate()` runs against real traffic. A caller that reaches the
+core adapter through some other path — a raw RPC, single-node mode, a unit test — skips it unless it opts in some
+other way.
 
-The generated stub (`GrackleMonsteraStub`) also calls `Validate()` on the request, before ever marshaling or sending
-it — this is a separate, client-side check: it saves a wasted network/Raft round trip on an obviously-bad request,
-but it is not the safety guarantee. A caller that reaches the core adapter through some other path still can't skip
-validation, because the adapter's own core is always the wrapped one.
+Codegen also generates, for each core, a `*ValidatingCore` (`NewGrackleLocksValidatingCore`, etc.) that implements
+the same `*CoreApi` interface by wrapping another instance of it: every method calls `Validate()` on the request
+payload first and, on error, returns an `ApplicationError` (`mrpc.NewError(mrpc.InvalidRequest, err.Error())`)
+without ever delegating to the wrapped core. Nothing wires this in automatically — reach for it explicitly wherever
+you want `Validate()` enforced ahead of a core call. The main use is core-level unit tests: wrap the core under test
+in it (`NewGrackleLocksValidatingCore(core)`) instead of constructing it directly, so tests exercise requests through
+the same rejection path the client-side stub does.

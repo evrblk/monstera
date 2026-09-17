@@ -15,10 +15,9 @@ import (
 )
 
 // splitter is the node-local shard-split seeding pipeline for ONE parent
-// replica (see notes/shard-split-design.md, Phase 2). It runs while the
-// node's applied config says the parent shard is SPLITTING and this node
-// hosts a parent replica, and it fills the durable state of the co-located
-// DORMANT children:
+// replica. It runs while the node's applied config says the parent shard
+// is SPLITTING and this node hosts a parent replica, and it fills the
+// durable state of the co-located DORMANT children:
 //
 //   - CoreTypeInMemory: copies the parent's snapshot as each child's base
 //     (content verbatim, metadata rewritten) and tails the parent's applied

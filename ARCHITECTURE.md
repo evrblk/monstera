@@ -257,7 +257,7 @@ Admin path: CLI / `control.Executor` → `transport.AdminPlane` (`transport/grpc
 
 - Events / Pub-Sub bus (`core.Event`, `UpdateResponse.Events`) is API-only, unimplemented.
 - Updates are at-least-once (forward/retry can double-apply) — rely on core idempotency.
-- Shard split (`notes/shard-split-design.md`) is implemented end to end: shard states +
+- Shard split is implemented end to end: shard states +
   validation/transitions + key routing; `internal/raft/seed.go` (`Seeder`, pre-baked start,
   `CutoffMarker`); dormant replicas + per-parent `splitter` (mechanism from `CoreType`; drains,
   finalizes and promotes children at the cutoff) + observability (`ReplicaState.Seeding/SeededIndex/

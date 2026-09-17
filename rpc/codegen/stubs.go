@@ -73,12 +73,17 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				if !read.Sharded {
 					g.Id("shardId").String()
 				}
+				g.Id("opts").Op("...").Qual(mrpcPkg, "CallOption")
 			}).Params(
 				List(
 					Op("*").Qual(cfg.GoCode.CoreTypesPackage, read.Name+"Response"),
 					Error(),
 				),
 			).BlockFunc(func(g *Group) {
+				g.Id("settings").Op(":=").Qual(mrpcPkg, "ApplyCallOptions").Call(Id("opts").Op("..."))
+				g.Id("now").Op(":=").Qual("time", "Now").Call().Dot("UnixNano").Call()
+				g.Line()
+
 				g.If(
 					Err().Op(":=").Id("methodReq").Dot("Validate").Call(),
 					Err().Op("!=").Nil(),
@@ -102,9 +107,10 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				g.Line()
 
 				g.Id("rpcReq").Op(":=").Op("&").Qual(mrpcPkg, "Request").Values(Dict{
-					Id("MethodNumber"): Lit(read.Number),
-					Id("Data"):         Id("methodReqBytes"),
-					Id("Now"):          Qual("time", "Now").Call().Dot("UnixNano").Call(),
+					Id("MethodNumber"):     Lit(read.Number),
+					Id("Data"):             Id("methodReqBytes"),
+					Id("Now"):              Id("now"),
+					Id("IdempotencyToken"): Id("settings").Dot("IdempotencyToken"),
 				})
 				g.List(Id("rpcReqBytes"), Err()).Op(":=").Id("rpcReq").Dot("MarshalVT").Call()
 				g.If(
@@ -166,6 +172,14 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				)
 				g.Line()
 
+				g.If(Id("settings").Dot("ResponseMeta").Op("!=").Nil()).Block(
+					Op("*").Id("settings").Dot("ResponseMeta").Op("=").Qual(mrpcPkg, "ResponseMeta").Values(Dict{
+						Id("Now"):          Id("now"),
+						Id("RaftLogIndex"): Id("rpcResp").Dot("RaftLogIndex"),
+					}),
+				)
+				g.Line()
+
 				g.Return(Id("methodResp"), Id("nilifyIfEmpty").Call(Id("rpcResp").Dot("Error")))
 			})
 			f.Line()
@@ -178,12 +192,17 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				if !update.Sharded {
 					g.Id("shardId").String()
 				}
+				g.Id("opts").Op("...").Qual(mrpcPkg, "CallOption")
 			}).Params(
 				List(
 					Op("*").Qual(cfg.GoCode.CoreTypesPackage, update.Name+"Response"),
 					Error(),
 				),
 			).BlockFunc(func(g *Group) {
+				g.Id("settings").Op(":=").Qual(mrpcPkg, "ApplyCallOptions").Call(Id("opts").Op("..."))
+				g.Id("now").Op(":=").Qual("time", "Now").Call().Dot("UnixNano").Call()
+				g.Line()
+
 				g.If(
 					Err().Op(":=").Id("methodReq").Dot("Validate").Call(),
 					Err().Op("!=").Nil(),
@@ -207,9 +226,10 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 				g.Line()
 
 				g.Id("rpcReq").Op(":=").Op("&").Qual(mrpcPkg, "Request").Values(Dict{
-					Id("MethodNumber"): Lit(update.Number),
-					Id("Data"):         Id("methodReqBytes"),
-					Id("Now"):          Qual("time", "Now").Call().Dot("UnixNano").Call(),
+					Id("MethodNumber"):     Lit(update.Number),
+					Id("Data"):             Id("methodReqBytes"),
+					Id("Now"):              Id("now"),
+					Id("IdempotencyToken"): Id("settings").Dot("IdempotencyToken"),
 				})
 				g.List(Id("rpcReqBytes"), Err()).Op(":=").Id("rpcReq").Dot("MarshalVT").Call()
 				g.If(
@@ -266,6 +286,14 @@ func generateMonsteraStub(f *File, stub *MonsteraStub, cores []*MonsteraCore, cf
 						Lit("failed to unmarshal response: %w"),
 						Err(),
 					)),
+				)
+				g.Line()
+
+				g.If(Id("settings").Dot("ResponseMeta").Op("!=").Nil()).Block(
+					Op("*").Id("settings").Dot("ResponseMeta").Op("=").Qual(mrpcPkg, "ResponseMeta").Values(Dict{
+						Id("Now"):          Id("now"),
+						Id("RaftLogIndex"): Id("rpcResp").Dot("RaftLogIndex"),
+					}),
 				)
 				g.Line()
 
@@ -359,12 +387,23 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 				if !read.Sharded {
 					g.Id("shardId").String()
 				}
+				g.Id("opts").Op("...").Qual(mrpcPkg, "CallOption")
 			}).Params(
 				List(
 					Op("*").Qual(cfg.GoCode.CoreTypesPackage, read.Name+"Response"),
 					Error(),
 				),
 			).BlockFunc(func(g *Group) {
+				g.Id("settings").Op(":=").Qual(mrpcPkg, "ApplyCallOptions").Call(Id("opts").Op("..."))
+				g.Id("now").Op(":=").Qual("time", "Now").Call().Dot("UnixNano").Call()
+				g.Line()
+
+				respMetaCapture := If(Id("settings").Dot("ResponseMeta").Op("!=").Nil()).Block(
+					Op("*").Id("settings").Dot("ResponseMeta").Op("=").Qual(mrpcPkg, "ResponseMeta").Values(Dict{
+						Id("Now"): Id("now"),
+					}),
+				)
+
 				if read.Sharded {
 					g.Id("shardKey").Op(":=").Id("req").Dot("ShardKey").Call()
 					g.For(List(Id("_"), Id("adapter")).Op(":=").Range().Id("s").Dot(firstCharToLower(core.Name) + "Cores")).Block(
@@ -376,7 +415,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 							List(Id("resp"), Err()).Op(":=").Id("adapter").Dot("core").Dot(read.Name).Call(
 								Op("&").Qual(mrpcPkg, "ReadRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, read.Name+"Request")).Values(Dict{
 									Id("Payload"): Id("req"),
-									Id("Now"):     Qual("time", "Now").Call().Dot("UnixNano").Call(),
+									Id("Now"):     Id("now"),
 								}),
 							),
 							If(Err().Op("!=").Nil()).Block(
@@ -386,6 +425,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),
 							),
+							respMetaCapture,
 							Return(Id("resp").Dot("Payload"), Nil()),
 						),
 					)
@@ -401,7 +441,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 							List(Id("resp"), Err()).Op(":=").Id("adapter").Dot("core").Dot(read.Name).Call(
 								Op("&").Qual(mrpcPkg, "ReadUnshardedRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, read.Name+"Request")).Values(Dict{
 									Id("Payload"): Id("req"),
-									Id("Now"):     Qual("time", "Now").Call().Dot("UnixNano").Call(),
+									Id("Now"):     Id("now"),
 								}),
 							),
 							If(Err().Op("!=").Nil()).Block(
@@ -411,6 +451,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),
 							),
+							respMetaCapture,
 							Return(Id("resp").Dot("Payload"), Nil()),
 						),
 					)
@@ -429,12 +470,23 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 				if !update.Sharded {
 					g.Id("shardId").String()
 				}
+				g.Id("opts").Op("...").Qual(mrpcPkg, "CallOption")
 			}).Params(
 				List(
 					Op("*").Qual(cfg.GoCode.CoreTypesPackage, update.Name+"Response"),
 					Error(),
 				),
 			).BlockFunc(func(g *Group) {
+				g.Id("settings").Op(":=").Qual(mrpcPkg, "ApplyCallOptions").Call(Id("opts").Op("..."))
+				g.Id("now").Op(":=").Qual("time", "Now").Call().Dot("UnixNano").Call()
+				g.Line()
+
+				respMetaCapture := If(Id("settings").Dot("ResponseMeta").Op("!=").Nil()).Block(
+					Op("*").Id("settings").Dot("ResponseMeta").Op("=").Qual(mrpcPkg, "ResponseMeta").Values(Dict{
+						Id("Now"): Id("now"),
+					}),
+				)
+
 				if update.Sharded {
 					g.Id("shardKey").Op(":=").Id("req").Dot("ShardKey").Call()
 					g.For(List(Id("_"), Id("adapter")).Op(":=").Range().Id("s").Dot(firstCharToLower(core.Name) + "Cores")).Block(
@@ -446,7 +498,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 							List(Id("resp"), Err()).Op(":=").Id("adapter").Dot("core").Dot(update.Name).Call(
 								Op("&").Qual(mrpcPkg, "UpdateRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, update.Name+"Request")).Values(Dict{
 									Id("Payload"): Id("req"),
-									Id("Now"):     Qual("time", "Now").Call().Dot("UnixNano").Call(),
+									Id("Now"):     Id("now"),
 								}),
 							),
 							If(Err().Op("!=").Nil()).Block(
@@ -456,6 +508,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),
 							),
+							respMetaCapture,
 							Return(Id("resp").Dot("Payload"), Nil()),
 						),
 					)
@@ -471,7 +524,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 							List(Id("resp"), Err()).Op(":=").Id("adapter").Dot("core").Dot(update.Name).Call(
 								Op("&").Qual(mrpcPkg, "UpdateUnshardedRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, update.Name+"Request")).Values(Dict{
 									Id("Payload"): Id("req"),
-									Id("Now"):     Qual("time", "Now").Call().Dot("UnixNano").Call(),
+									Id("Now"):     Id("now"),
 								}),
 							),
 							If(Err().Op("!=").Nil()).Block(
@@ -481,6 +534,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),
 							),
+							respMetaCapture,
 							Return(Id("resp").Dot("Payload"), Nil()),
 						),
 					)

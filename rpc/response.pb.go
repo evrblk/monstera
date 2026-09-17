@@ -232,7 +232,12 @@ type Response struct {
 	Data []byte `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
 	// error is the application error, set when the RPC failed at the domain level
 	// (nil/INVALID/OK code means success).
-	Error         *Error `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	Error *Error `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	// raft_log_index is the Raft log index that the corresponding update
+	// committed at (0 for reads, or for updates on unsharded/non-Raft paths). It
+	// is opaque to monstera and only surfaced to callers that opt in via
+	// rpc.WithResponseMeta.
+	RaftLogIndex  uint64 `protobuf:"varint,3,opt,name=raft_log_index,json=raftLogIndex,proto3" json:"raft_log_index,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -281,6 +286,13 @@ func (x *Response) GetError() *Error {
 	return nil
 }
 
+func (x *Response) GetRaftLogIndex() uint64 {
+	if x != nil {
+		return x.RaftLogIndex
+	}
+	return 0
+}
+
 // Request is the envelope sent to an application core for an RPC.
 type Request struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -299,9 +311,15 @@ type Request struct {
 	// built the request produced, and a forwarded or client-retried request keeps
 	// its original stamp. Clock skew between gateways and nodes is not a problem —
 	// the value is only ever used as the single source of "now" for that one entry.
-	Now           int64 `protobuf:"varint,3,opt,name=now,proto3" json:"now,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Now int64 `protobuf:"varint,3,opt,name=now,proto3" json:"now,omitempty"`
+	// idempotency_token is an opaque token identifying this logical operation
+	// across retries, supplied by the caller via rpc.WithIdempotencyToken; empty
+	// means none was provided. It is opaque to monstera, which never reads or
+	// rewrites it — carrying it here only gets it as far as the application
+	// core, which is responsible for any deduplication.
+	IdempotencyToken string `protobuf:"bytes,4,opt,name=idempotency_token,json=idempotencyToken,proto3" json:"idempotency_token,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Request) Reset() {
@@ -355,6 +373,13 @@ func (x *Request) GetNow() int64 {
 	return 0
 }
 
+func (x *Request) GetIdempotencyToken() string {
+	if x != nil {
+		return x.IdempotencyToken
+	}
+	return ""
+}
+
 var File_rpc_response_proto protoreflect.FileDescriptor
 
 const file_rpc_response_proto_rawDesc = "" +
@@ -366,14 +391,16 @@ const file_rpc_response_proto_rawDesc = "" +
 	"\acontext\x18\x03 \x03(\v2%.com.evrblk.monstera.rpc.ErrorContextR\acontext\"6\n" +
 	"\fErrorContext\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"T\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"z\n" +
 	"\bResponse\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x124\n" +
-	"\x05error\x18\x02 \x01(\v2\x1e.com.evrblk.monstera.rpc.ErrorR\x05error\"T\n" +
+	"\x05error\x18\x02 \x01(\v2\x1e.com.evrblk.monstera.rpc.ErrorR\x05error\x12$\n" +
+	"\x0eraft_log_index\x18\x03 \x01(\x04R\fraftLogIndex\"\x81\x01\n" +
 	"\aRequest\x12#\n" +
 	"\rmethod_number\x18\x01 \x01(\x05R\fmethodNumber\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\x12\x10\n" +
-	"\x03now\x18\x03 \x01(\x03R\x03now*\xba\x01\n" +
+	"\x03now\x18\x03 \x01(\x03R\x03now\x12+\n" +
+	"\x11idempotency_token\x18\x04 \x01(\tR\x10idempotencyToken*\xba\x01\n" +
 	"\tErrorCode\x12\v\n" +
 	"\aINVALID\x10\x00\x12\x06\n" +
 	"\x02OK\x10\x01\x12\x13\n" +

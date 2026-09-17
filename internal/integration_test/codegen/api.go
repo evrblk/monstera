@@ -22,11 +22,11 @@ type Update2Request = mrpc.UpdateUnshardedRequest[*types.Update2Request]
 type Update2Response = mrpc.UpdateResponse[*types.Update2Response]
 
 type MyStubClientApi interface {
-	Read1(ctx context.Context, req *types.Read1Request) (*types.Read1Response, error)
-	Read2(ctx context.Context, req *types.Read2Request, shardId string) (*types.Read2Response, error)
-	Read3(ctx context.Context, req *types.Read3Request) (*types.Read3Response, error)
-	Update1(ctx context.Context, req *types.Update1Request) (*types.Update1Response, error)
-	Update2(ctx context.Context, req *types.Update2Request, shardId string) (*types.Update2Response, error)
+	Read1(ctx context.Context, req *types.Read1Request, opts ...mrpc.CallOption) (*types.Read1Response, error)
+	Read2(ctx context.Context, req *types.Read2Request, shardId string, opts ...mrpc.CallOption) (*types.Read2Response, error)
+	Read3(ctx context.Context, req *types.Read3Request, opts ...mrpc.CallOption) (*types.Read3Response, error)
+	Update1(ctx context.Context, req *types.Update1Request, opts ...mrpc.CallOption) (*types.Update1Response, error)
+	Update2(ctx context.Context, req *types.Update2Request, shardId string, opts ...mrpc.CallOption) (*types.Update2Response, error)
 
 	ListShards(applicationName string) ([]string, error)
 }

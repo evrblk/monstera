@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,9 +18,13 @@ import (
 // no state and every operation is a no-op.
 type nopSplitCore struct{}
 
-func (nopSplitCore) Read(req []byte) (*ReadResponse, error)     { return &ReadResponse{}, nil }
-func (nopSplitCore) Update(req []byte) (*UpdateResponse, error) { return &UpdateResponse{}, nil }
-func (nopSplitCore) Snapshot() ApplicationCoreSnapshot          { return nopSplitSnapshot{} }
+func (nopSplitCore) Read(req []byte, log *slog.Logger) (*ReadResponse, error) {
+	return &ReadResponse{}, nil
+}
+func (nopSplitCore) Update(req []byte, log *slog.Logger) (*UpdateResponse, error) {
+	return &UpdateResponse{}, nil
+}
+func (nopSplitCore) Snapshot() ApplicationCoreSnapshot { return nopSplitSnapshot{} }
 func (nopSplitCore) Restore(readers ...io.ReadCloser) error {
 	for _, r := range readers {
 		_ = r.Close()

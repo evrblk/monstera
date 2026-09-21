@@ -16,6 +16,7 @@ sections:
       - core-implementation.md
       - rpc-code-generation.md
       - snapshot-and-restore.md
+      - logging.md
       - testing.md
       - single-node-mode.md
       - directory-layout.md

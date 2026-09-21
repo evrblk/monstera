@@ -56,6 +56,16 @@ var (
 		Help: "Number of replica Updates by result",
 	}, []string{"node", "application", "shard", "replica", "result"})
 
+	// coreLogDropped counts core-log batches dropped because the per-node
+	// success-path queue was full (appCoreAdapter.flushCoreLog's non-blocking
+	// enqueue, coreLogQueue.enqueueNonBlocking) — never blocking Apply on log
+	// I/O means an overloaded queue drops instead. Does not count the fatal
+	// path, which always writes synchronously and is never dropped.
+	coreLogDropped = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "monstera_core_log_dropped_total",
+		Help: "Number of core diagnostic log batches dropped because the per-node queue was full",
+	}, []string{"node", "application"})
+
 	// replicaReadsTotal counts replica Reads by result (ok/error).
 	replicaReadsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "monstera_replica_reads_total",
@@ -117,6 +127,7 @@ func RegisterMetrics(registerer prometheus.Registerer) {
 		replicaUpdatesTotal,
 		replicaReadsTotal,
 		replicaCommandBytes,
+		coreLogDropped,
 		nodeReady,
 		configVersion,
 		replicaCommitLag,

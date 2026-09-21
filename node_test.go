@@ -1,6 +1,7 @@
 package monstera
 
 import (
+	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -54,6 +55,7 @@ func TestNodeConfigWithDefaultsKeepsExplicitValues(t *testing.T) {
 		MembershipReconcileInterval: 4,
 		MetricsSampleInterval:       5,
 		SnapshotSessionTimeout:      6,
+		CoreLogPolicy:               CoreLogPolicy{MinLevel: slog.LevelWarn, LeaderOnly: true, IncludeReplay: true},
 	}
 	require.Equal(t, cfg, cfg.withDefaults())
 

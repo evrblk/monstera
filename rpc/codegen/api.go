@@ -57,20 +57,30 @@ func generateCoreApi(f *File, core *MonsteraCore) {
 		g.Id("Restore").Params(Id("readers").Op("...").Qual("io", "ReadCloser")).Error()
 		g.Id("Close").Params()
 
-		methods := make([]string, 0, len(core.ReadMethods)+len(core.UpdateMethods))
+		// Every method — read and update alike — gains a *slog.Logger: the
+		// core diagnostic log (see docs/logging.md). It buffers instead of
+		// writing immediately, so it survives however the method returns;
+		// the framework decides what happens to it afterward. Read methods
+		// never see a "replay" tag on their lines (Read is never part of
+		// raft log replay), but the parameter shape is otherwise identical.
 		for _, method := range core.ReadMethods {
-			methods = append(methods, method.Name)
-		}
-		for _, method := range core.UpdateMethods {
-			methods = append(methods, method.Name)
-		}
-
-		for _, method := range methods {
-			g.Id(method).Params(
-				Id("req").Op("*").Id(method + "Request"),
+			g.Id(method.Name).Params(
+				Id("req").Op("*").Id(method.Name+"Request"),
+				Id("log").Op("*").Qual("log/slog", "Logger"),
 			).Params(
 				List(
-					Op("*").Id(method+"Response"),
+					Op("*").Id(method.Name+"Response"),
+					Error(),
+				),
+			)
+		}
+		for _, method := range core.UpdateMethods {
+			g.Id(method.Name).Params(
+				Id("req").Op("*").Id(method.Name+"Request"),
+				Id("log").Op("*").Qual("log/slog", "Logger"),
+			).Params(
+				List(
+					Op("*").Id(method.Name+"Response"),
 					Error(),
 				),
 			)

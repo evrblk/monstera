@@ -176,7 +176,7 @@ Updates are applied on a single thread, so there are no locks and no race condit
 like single-user logic:
 
 ```go
-func (c *Core) CreateNamespace(req *coreapis.CreateNamespaceRequest) (*coreapis.CreateNamespaceResponse, error) {
+func (c *Core) CreateNamespace(req *coreapis.CreateNamespaceRequest, log *slog.Logger) (*coreapis.CreateNamespaceResponse, error) {
     txn := c.badgerStore.Update()
     defer txn.Discard()
 
@@ -227,6 +227,8 @@ The patterns to internalize:
 * **Use the transaction for invariants.** Uniqueness via index lookups, per-unit limits via counter rows updated in
   the same transaction, foreign-key-like checks by reading the parent row. This transactionality is the whole point
   of colocating a unit of work on one shard — use it.
+* **`log` is safe to call, but not a normal logger.** It buffers instead of writing immediately, and it may run once
+  per replica and again on raft replay — see [Logging](/docs/logging.md) before reaching for it.
 * **Keep behavior stable across versions.** During a rolling deploy two code versions apply the same log entries
   (Principle 6). Gate any behavior change behind a flag stored in core state, defaulting to the old behavior, and
   flip it later with an explicit migration update.
@@ -241,7 +243,7 @@ read-only transaction (a consistent MVCC view in Badger), never mutate state, an
 the struct:
 
 ```go
-func (c *Core) GetNamespace(req *coreapis.GetNamespaceRequest) (*coreapis.GetNamespaceResponse, error) {
+func (c *Core) GetNamespace(req *coreapis.GetNamespaceRequest, log *slog.Logger) (*coreapis.GetNamespaceResponse, error) {
     txn := c.badgerStore.View()
     defer txn.Discard()
 
@@ -253,6 +255,9 @@ func (c *Core) GetNamespace(req *coreapis.GetNamespaceRequest) (*coreapis.GetNam
 For in-memory cores the same rule means updates must swap state safely for concurrent readers (copy-on-write
 structures or an `RWMutex` around a small state). List operations should be paginated with tokens — a unit of work
 can hold millions of rows, and unbounded scans on the read path are how a healthy core becomes a slow one.
+
+`log` here is the same buffering `*slog.Logger` `Update` gets (see [Logging](/docs/logging.md)), minus the replay
+tag — `Read` is never part of raft log replay, so there's nothing to gate on that dimension.
 
 ## Step 7: Snapshot, Restore, and Close
 

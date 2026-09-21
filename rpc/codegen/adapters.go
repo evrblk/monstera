@@ -168,6 +168,7 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 		Id("a").Op("*").Id(adapterName),
 	).Id("Update").Params(
 		Id("rpcReqBytes").Index().Byte(),
+		Id("log").Op("*").Qual("log/slog", "Logger"),
 	).Params(
 		List(
 			Op("*").Qual(monsteraPkg, "UpdateResponse"),
@@ -241,10 +242,11 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 							)
 						}
 						g.List(Id("methodResp"), Err()).Op(":=").Id("a").Dot(coreVarName).Dot(update.Name).Call(
-							Op("&").Id(update.Name + "Request").Values(Dict{
+							Op("&").Id(update.Name+"Request").Values(Dict{
 								Id("Payload"): Op("&").Id("methodReq"),
 								Id("Now"):     Id("rpcReq").Dot("Now"),
 							}),
+							Id("log"),
 						)
 						g.If(
 							Id("err").Op("!=").Nil(),
@@ -301,6 +303,7 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 		Id("a").Op("*").Id(adapterName),
 	).Id("Read").Params(
 		Id("rpcReqBytes").Index().Byte(),
+		Id("log").Op("*").Qual("log/slog", "Logger"),
 	).Params(
 		List(
 			Op("*").Qual(monsteraPkg, "ReadResponse"),
@@ -374,10 +377,11 @@ func generateAdapter(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 							)
 						}
 						g.List(Id("methodResp"), Err()).Op(":=").Id("a").Dot(coreVarName).Dot(read.Name).Call(
-							Op("&").Id(read.Name + "Request").Values(Dict{
+							Op("&").Id(read.Name+"Request").Values(Dict{
 								Id("Payload"): Op("&").Id("methodReq"),
 								Id("Now"):     Id("rpcReq").Dot("Now"),
 							}),
+							Id("log"),
 						)
 						g.If(
 							Id("err").Op("!=").Nil(),

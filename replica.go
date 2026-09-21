@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -59,6 +61,10 @@ func (r *replica) Read(request []byte) (response *ReadResponse, err error) {
 
 	defer func() {
 		if p := recover(); p != nil {
+			// The core-log line for this was already written synchronously
+			// by appCoreAdapter.Read/flushReadLog before it re-panicked
+			// here with the same error — this recover only needs to shut
+			// the replica down and surface a Go error to the caller.
 			r.logger.Printf("panic in core.Read, shutting down raft: %v", p)
 			r.raft.Close()
 			err = fmt.Errorf("core.Read panicked: %v", p)
@@ -243,7 +249,8 @@ func (r *replica) GetReplicaId() string {
 // node id doubles as this replica's Raft transport address and labels its
 // metrics.
 func newReplica(baseDir string, applicationName string, shardId string, replicaId string,
-	nodeId string, core ApplicationCore, trans transport.DataPlane, raftStore *store.BadgerStore, restoreSnapshotOnStart bool, updateTimeout time.Duration, snapshotSessionTimeout time.Duration) *replica {
+	nodeId string, core ApplicationCore, trans transport.DataPlane, raftStore *store.BadgerStore, restoreSnapshotOnStart bool, updateTimeout time.Duration, snapshotSessionTimeout time.Duration,
+	coreLogPolicy CoreLogPolicy, coreLogQueue *coreLogQueue, coreLogDest slog.Handler) *replica {
 	commandCodec := &replication.ProtoCommandCodec{}
 
 	// The cutoff marker must be readable and writable before the Raft instance
@@ -264,6 +271,9 @@ func newReplica(baseDir string, applicationName string, shardId string, replicaI
 		applicationName: applicationName,
 		shardId:         shardId,
 		replicaId:       replicaId,
+		coreLogPolicy:   coreLogPolicy,
+		coreLogQueue:    coreLogQueue,
+		coreLogDest:     coreLogDest,
 	}
 	adapter.frozen.Store(cutoffIndex)
 
@@ -278,6 +288,15 @@ func newReplica(baseDir string, applicationName string, shardId string, replicaI
 	}
 
 	rep.raft = raft.NewRaft(baseDir, nodeId, applicationName, shardId, replicaId, adapter, trans, raftStore, restoreSnapshotOnStart, updateTimeout, snapshotSessionTimeout)
+
+	// raft and replayFloor can only be set after raft.NewRaft returns (the
+	// adapter is handed to it as the AppCore before the *raft.Raft it wraps
+	// exists) — mirrors notes/monstera/events-design.md §5's identical
+	// bootstrapping for the Events bus's replay gate. replayFloor is the
+	// CommitIndex this replica already knew about before this process/attach
+	// cycle began; every Apply at or below it is replay, not a new commit.
+	adapter.raft = rep.raft
+	adapter.replayFloor = rep.raft.GetRaftStats().CommitIndex
 
 	return rep
 }
@@ -301,6 +320,26 @@ type appCoreAdapter struct {
 	applicationName string
 	shardId         string
 	replicaId       string
+
+	// raft backs isLeader() — appCoreAdapter has no other way to know
+	// current leadership. Set once, right after raft.NewRaft returns in
+	// newReplica, for the same chicken-and-egg reason replayFloor is (see
+	// its own comment there).
+	raft *raft.Raft
+
+	// replayFloor is the CommitIndex this replica's raft instance reported
+	// at the moment it started. Apply's index <= replayFloor iff that entry
+	// is being replayed (restart log-tail replay, follower/rejoin catch-up)
+	// rather than a genuinely new live commit — see flushCoreLog.
+	replayFloor uint64
+
+	// coreLogPolicy and coreLogQueue implement the core diagnostic log's
+	// success-path disposition (docs/core-implementation.md, "Logging from
+	// a core"); coreLogDest is where the fatal path writes synchronously,
+	// bypassing coreLogPolicy entirely — see flushCoreLog.
+	coreLogPolicy CoreLogPolicy
+	coreLogQueue  *coreLogQueue
+	coreLogDest   slog.Handler
 }
 
 // cutoffResult is the FSM apply result of a CUTOFF command: the log index the
@@ -330,9 +369,11 @@ func (a *appCoreAdapter) Read(request []byte) *ReadResponse {
 	a.coreMu.RLock()
 	defer a.coreMu.RUnlock()
 
-	resp, err := a.core.Read(request)
+	logger, h := newCoreLogger()
+	resp, err := a.callCoreRead(request, logger)
+	a.flushReadLog(h.lines, err)
 	if err != nil {
-		panic(err)
+		panic(err) // unchanged: internal errors still crash the node, on purpose
 	}
 	return &ReadResponse{
 		Data: resp.Data,
@@ -364,9 +405,11 @@ func (a *appCoreAdapter) Apply(index uint64, request []byte) any {
 
 	switch cmd.Type {
 	case replicationpb.CommandType_COMMAND_TYPE_UPDATE:
-		resp, err := a.core.Update(cmd.Payload)
+		logger, h := newCoreLogger()
+		resp, err := a.callCoreUpdate(cmd.Payload, logger)
+		a.flushCoreLog(index, h.lines, err)
 		if err != nil {
-			panic(err)
+			panic(err) // unchanged: internal errors still crash the node, on purpose
 		}
 		fsmApplyDuration.WithLabelValues(a.nodeId, a.applicationName, a.shardId, a.replicaId).Observe(time.Since(t1).Seconds())
 		commitsTotal.WithLabelValues(a.nodeId, a.applicationName, a.shardId, a.replicaId).Inc()
@@ -393,6 +436,132 @@ func (a *appCoreAdapter) Apply(index uint64, request []byte) any {
 	default:
 		panic(fmt.Sprintf("unknown command type: %v", cmd.Type))
 	}
+}
+
+// callCoreUpdate converts a raw panic in a.core.Update into an error — the
+// same pattern replica.Read already uses for its own panic recovery — and,
+// in both failure shapes (a returned error or a recovered panic), logs the
+// failure through the same logger the core was already writing to. That
+// guarantees flushCoreLog always sees a record of the failure, whether or
+// not the core itself logged anything before hitting it.
+func (a *appCoreAdapter) callCoreUpdate(payload []byte, logger *slog.Logger) (resp *UpdateResponse, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			logger.Error("panic in core.Update", "panic", p, "stack", string(debug.Stack()))
+			err = fmt.Errorf("core.Update panicked: %v", p)
+		}
+	}()
+	resp, err = a.core.Update(payload, logger)
+	if err != nil {
+		logger.Error("core.Update returned an error", "error", err)
+	}
+	return resp, err
+}
+
+// isLeader reports whether this replica's raft instance currently believes
+// itself to be the leader. Used only to tag core-log entries — a diagnostic,
+// best-effort label — unlike replica.IsLeader, nothing correctness-sensitive
+// depends on it.
+func (a *appCoreAdapter) isLeader() bool {
+	return a.raft != nil && a.raft.GetRaftState() == raft.Leader
+}
+
+// flushCoreLog disposes of one Update call's buffered log lines. The
+// success and fatal paths diverge only in disposition, not in mechanism —
+// both eventually replay the same records into a real slog.Handler via
+// writeCoreLogBatch, just synchronously here or later on the drain
+// goroutine (see coreLogQueue).
+func (a *appCoreAdapter) flushCoreLog(index uint64, records []slog.Record, err error) {
+	if len(records) == 0 {
+		return
+	}
+
+	replay := index <= a.replayFloor
+	leader := a.isLeader()
+	tags := []slog.Attr{
+		slog.String("node_id", a.nodeId),
+		slog.String("application_name", a.applicationName),
+		slog.String("shard_id", a.shardId),
+		slog.String("replica_id", a.replicaId),
+		slog.Bool("is_leader", leader),
+		slog.Bool("replay", replay),
+		slog.Uint64("index", index),
+		slog.Bool("fatal", err != nil),
+	}
+
+	if err != nil {
+		// Fatal path: every CoreLogPolicy filter is skipped on purpose (see
+		// CoreLogPolicy's doc comment) and the write happens synchronously,
+		// right here, before Apply panics — the non-blocking queue's whole
+		// justification (protect raft throughput) no longer applies once
+		// the node is about to crash, and an async batch risks never being
+		// drained before the process exits.
+		writeCoreLogBatch(a.coreLogDest, coreLogBatch{tags: tags, records: records})
+		return
+	}
+
+	if (!a.coreLogPolicy.IncludeReplay && replay) || (a.coreLogPolicy.LeaderOnly && !leader) {
+		return
+	}
+	kept := filterByLevel(records, a.coreLogPolicy.MinLevel)
+	if len(kept) == 0 {
+		return
+	}
+	a.coreLogQueue.enqueueNonBlocking(tags, kept)
+}
+
+// callCoreRead is callCoreUpdate's exact counterpart for the Read side:
+// converts a raw panic in a.core.Read into an error, and logs either
+// failure shape through the same logger the core was already writing to.
+func (a *appCoreAdapter) callCoreRead(request []byte, logger *slog.Logger) (resp *ReadResponse, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			logger.Error("panic in core.Read", "panic", p, "stack", string(debug.Stack()))
+			err = fmt.Errorf("core.Read panicked: %v", p)
+		}
+	}()
+	resp, err = a.core.Read(request, logger)
+	if err != nil {
+		logger.Error("core.Read returned an error", "error", err)
+	}
+	return resp, err
+}
+
+// flushReadLog is flushCoreLog's counterpart for Read: same disposition
+// shape (CoreLogPolicy on success, unfiltered synchronous write on
+// failure), minus the replay dimension, which is simply moot here — Read
+// is never part of raft log replay, so there's nothing to gate on.
+// LeaderOnly still applies: a core can choose to only keep lines from
+// leader-served reads, same as for Update, even though a follower serving
+// a Read is itself perfectly valid (AllowReadFromFollowers).
+func (a *appCoreAdapter) flushReadLog(records []slog.Record, err error) {
+	if len(records) == 0 {
+		return
+	}
+
+	leader := a.isLeader()
+	tags := []slog.Attr{
+		slog.String("node_id", a.nodeId),
+		slog.String("application_name", a.applicationName),
+		slog.String("shard_id", a.shardId),
+		slog.String("replica_id", a.replicaId),
+		slog.Bool("is_leader", leader),
+		slog.Bool("fatal", err != nil),
+	}
+
+	if err != nil {
+		writeCoreLogBatch(a.coreLogDest, coreLogBatch{tags: tags, records: records})
+		return
+	}
+
+	if a.coreLogPolicy.LeaderOnly && !leader {
+		return
+	}
+	kept := filterByLevel(records, a.coreLogPolicy.MinLevel)
+	if len(kept) == 0 {
+		return
+	}
+	a.coreLogQueue.enqueueNonBlocking(tags, kept)
 }
 
 func (a *appCoreAdapter) Snapshot() raft.AppCoreSnapshot {

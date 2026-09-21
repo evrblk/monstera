@@ -462,8 +462,14 @@ func (s *splitter) copyRange(from, to uint64) error {
 						return err
 					}
 					// A first apply into the child's private store. Core
-					// errors explode, mirroring the FSM apply contract.
-					if _, err := ch.core.Update(cmd.Payload); err != nil {
+					// errors explode, mirroring the FSM apply contract. This
+					// path never goes through appCoreAdapter.Apply (it runs
+					// before the child's raft instance exists at all), so
+					// it has no node/shard/replica identity to tag a core-log
+					// line with; the logger is discarded rather than wired
+					// to any sink.
+					seedLogger, _ := newCoreLogger()
+					if _, err := ch.core.Update(cmd.Payload, seedLogger); err != nil {
 						panic(fmt.Sprintf("split catch-up of child %s: core.Update failed at parent index %d: %v", ch.shard.Id, e.index, err))
 					}
 				}

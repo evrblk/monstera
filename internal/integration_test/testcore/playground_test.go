@@ -3,6 +3,7 @@ package testcore
 import (
 	"bytes"
 	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -26,7 +27,7 @@ func TestInMemoryPlaygroundCore_Read(t *testing.T) {
 	key := uint64(123)
 	keyBytes := createKeyBytes(key)
 
-	result, err := core.Read(keyBytes)
+	result, err := core.Read(keyBytes, slog.Default())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Empty(t, result.Data, "Expected empty result for nonexistent key")
@@ -35,7 +36,7 @@ func TestInMemoryPlaygroundCore_Read(t *testing.T) {
 	value := "test value"
 	core.state[key] = value
 
-	result, err = core.Read(keyBytes)
+	result, err = core.Read(keyBytes, slog.Default())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, value, string(result.Data), "Expected %s, got %s", value, string(result.Data))
@@ -50,7 +51,7 @@ func TestInMemoryPlaygroundCore_Update(t *testing.T) {
 
 	request := createRequestBytes(key, value)
 
-	result, err := core.Update(request)
+	result, err := core.Update(request, slog.Default())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -64,7 +65,7 @@ func TestInMemoryPlaygroundCore_Update(t *testing.T) {
 	newValue := "updated value"
 	request = createRequestBytes(key, newValue)
 
-	result, err = core.Update(request)
+	result, err = core.Update(request, slog.Default())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -168,7 +169,7 @@ func TestInMemoryPlaygroundCore_Integration(t *testing.T) {
 	// Update
 	request := createRequestBytes(key, value)
 
-	result, err := core.Update(request)
+	result, err := core.Update(request, slog.Default())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, value, string(result.Data), "Update failed: expected %s, got %s", value, string(result.Data))
@@ -176,7 +177,7 @@ func TestInMemoryPlaygroundCore_Integration(t *testing.T) {
 	// Read
 	keyBytes := createKeyBytes(key)
 
-	result, err = core.Update(request)
+	result, err = core.Update(request, slog.Default())
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, value, string(result.Data), "Read failed: expected %s, got %s", value, string(result.Data))
@@ -198,7 +199,7 @@ func TestInMemoryPlaygroundCore_Integration(t *testing.T) {
 	require.NoError(t, err, "Failed to restore snapshot")
 
 	// Verify restored state
-	result2, err := newCore.Read(keyBytes)
+	result2, err := newCore.Read(keyBytes, slog.Default())
 	require.NoError(t, err)
 	require.NotNil(t, result2)
 	require.Equal(t, value, string(result2.Data), "Restored read failed: expected %s, got %s", value, string(result2.Data))
@@ -239,7 +240,7 @@ func TestInMemoryPlaygroundCore_MultipleUpdates(t *testing.T) {
 	for key, value := range testData {
 		request := createRequestBytes(key, value)
 
-		result, err := core.Update(request)
+		result, err := core.Update(request, slog.Default())
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Equal(t, value, string(result.Data), "Update failed for key %d: expected %s, got %s", key, value, string(result.Data))
@@ -249,7 +250,7 @@ func TestInMemoryPlaygroundCore_MultipleUpdates(t *testing.T) {
 	for key, expectedValue := range testData {
 		keyBytes := createKeyBytes(key)
 
-		result, err := core.Read(keyBytes)
+		result, err := core.Read(keyBytes, slog.Default())
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Equal(t, expectedValue, string(result.Data), "Read failed for key %d: expected %s, got %s", key, expectedValue, string(result.Data))
@@ -290,14 +291,14 @@ func snapshotBytes(t *testing.T, core monstera.ApplicationCore) []byte {
 
 func readValue(t *testing.T, core monstera.ApplicationCore, key uint64) string {
 	t.Helper()
-	resp, err := core.Read(createKeyBytes(key))
+	resp, err := core.Read(createKeyBytes(key), slog.Default())
 	require.NoError(t, err)
 	return string(resp.Data)
 }
 
 func updateValue(t *testing.T, core monstera.ApplicationCore, key uint64, value string) {
 	t.Helper()
-	resp, err := core.Update(createRequestBytes(key, value))
+	resp, err := core.Update(createRequestBytes(key, value), slog.Default())
 	require.NoError(t, err)
 	require.Equal(t, value, string(resp.Data))
 }

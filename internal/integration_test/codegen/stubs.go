@@ -9,6 +9,7 @@ import (
 	cluster "github.com/evrblk/monstera/cluster"
 	types "github.com/evrblk/monstera/internal/integration_test/codegen/types"
 	mrpc "github.com/evrblk/monstera/rpc"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -314,7 +315,7 @@ func (s *MyStubNonclusteredStub) Read1(ctx context.Context, req *types.Read1Requ
 			resp, err := adapter.core.Read1(&mrpc.ReadRequest[*types.Read1Request]{
 				Now:     now,
 				Payload: req,
-			})
+			}, slog.Default())
 			if err != nil {
 				return nil, err
 			}
@@ -344,7 +345,7 @@ func (s *MyStubNonclusteredStub) Read2(ctx context.Context, req *types.Read2Requ
 			resp, err := adapter.core.Read2(&mrpc.ReadUnshardedRequest[*types.Read2Request]{
 				Now:     now,
 				Payload: req,
-			})
+			}, slog.Default())
 			if err != nil {
 				return nil, err
 			}
@@ -375,7 +376,7 @@ func (s *MyStubNonclusteredStub) Read3(ctx context.Context, req *types.Read3Requ
 			resp, err := adapter.core.Read3(&mrpc.ReadRequest[*types.Read3Request]{
 				Now:     now,
 				Payload: req,
-			})
+			}, slog.Default())
 			if err != nil {
 				return nil, err
 			}
@@ -406,7 +407,7 @@ func (s *MyStubNonclusteredStub) Update1(ctx context.Context, req *types.Update1
 			resp, err := adapter.core.Update1(&mrpc.UpdateRequest[*types.Update1Request]{
 				Now:     now,
 				Payload: req,
-			})
+			}, slog.Default())
 			if err != nil {
 				return nil, err
 			}
@@ -436,7 +437,7 @@ func (s *MyStubNonclusteredStub) Update2(ctx context.Context, req *types.Update2
 			resp, err := adapter.core.Update2(&mrpc.UpdateUnshardedRequest[*types.Update2Request]{
 				Now:     now,
 				Payload: req,
-			})
+			}, slog.Default())
 			if err != nil {
 				return nil, err
 			}

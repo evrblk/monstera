@@ -2,6 +2,7 @@ package testcore
 
 import (
 	"io"
+	"log/slog"
 
 	"github.com/evrblk/monstera"
 )
@@ -12,11 +13,11 @@ type NopCore struct{}
 
 var _ monstera.ApplicationCore = NopCore{}
 
-func (NopCore) Read(req []byte) (*monstera.ReadResponse, error) {
+func (NopCore) Read(req []byte, log *slog.Logger) (*monstera.ReadResponse, error) {
 	return &monstera.ReadResponse{}, nil
 }
 
-func (NopCore) Update(req []byte) (*monstera.UpdateResponse, error) {
+func (NopCore) Update(req []byte, log *slog.Logger) (*monstera.UpdateResponse, error) {
 	return &monstera.UpdateResponse{}, nil
 }
 

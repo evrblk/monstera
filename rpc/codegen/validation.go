@@ -68,18 +68,11 @@ func generateValidatingCore(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 	)
 	f.Line()
 
-	methodNames := make([]string, 0, len(core.ReadMethods)+len(core.UpdateMethods))
-	for _, read := range core.ReadMethods {
-		methodNames = append(methodNames, read.Name)
-	}
-	for _, update := range core.UpdateMethods {
-		methodNames = append(methodNames, update.Name)
-	}
-
-	for _, methodName := range methodNames {
-		f.Func().Params(recv).Id(methodName).Params(
-			Id("req").Op("*").Qual(cfg.GoCode.OutputPackage, methodName+"Request"),
-		).Params(
+	generateValidatingMethod := func(methodName string, extraParams []Code, extraArgs []Code) {
+		f.Func().Params(recv).Id(methodName).ParamsFunc(func(g *Group) {
+			g.Id("req").Op("*").Qual(cfg.GoCode.OutputPackage, methodName+"Request")
+			g.Add(extraParams...)
+		}).Params(
 			List(
 				Op("*").Qual(cfg.GoCode.OutputPackage, methodName+"Response"),
 				Error(),
@@ -99,8 +92,22 @@ func generateValidatingCore(f *File, core *MonsteraCore, cfg *MonsteraYaml) {
 					Nil(),
 				),
 			),
-			Return(Id("v").Dot(coreVarName).Dot(methodName).Call(Id("req"))),
+			Return(Id("v").Dot(coreVarName).Dot(methodName).CallFunc(func(g *Group) {
+				g.Id("req")
+				g.Add(extraArgs...)
+			})),
 		)
 		f.Line()
+	}
+
+	// Every method — read and update alike — forwards the core diagnostic
+	// log parameter (see generateCoreApi).
+	logParam := []Code{Id("log").Op("*").Qual("log/slog", "Logger")}
+	logArg := []Code{Id("log")}
+	for _, read := range core.ReadMethods {
+		generateValidatingMethod(read.Name, logParam, logArg)
+	}
+	for _, update := range core.UpdateMethods {
+		generateValidatingMethod(update.Name, logParam, logArg)
 	}
 }

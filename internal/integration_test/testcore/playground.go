@@ -20,6 +20,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"io"
+	"log/slog"
 	"maps"
 	"slices"
 	"sync"
@@ -132,7 +133,7 @@ func (c *InMemoryPlaygroundCore) Restore(snapshots ...io.ReadCloser) error {
 	return nil
 }
 
-func (c *InMemoryPlaygroundCore) Read(request []byte) (*monstera.ReadResponse, error) {
+func (c *InMemoryPlaygroundCore) Read(request []byte, log *slog.Logger) (*monstera.ReadResponse, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -147,7 +148,7 @@ func (c *InMemoryPlaygroundCore) Read(request []byte) (*monstera.ReadResponse, e
 	}, nil
 }
 
-func (c *InMemoryPlaygroundCore) Update(request []byte) (*monstera.UpdateResponse, error) {
+func (c *InMemoryPlaygroundCore) Update(request []byte, log *slog.Logger) (*monstera.UpdateResponse, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -233,7 +234,7 @@ func sharedRowKey(key uint64) []byte {
 
 func (c *SharedPlaygroundCore) Close() {}
 
-func (c *SharedPlaygroundCore) Read(request []byte) (*monstera.ReadResponse, error) {
+func (c *SharedPlaygroundCore) Read(request []byte, log *slog.Logger) (*monstera.ReadResponse, error) {
 	txn := c.store.View()
 	defer txn.Discard()
 
@@ -247,7 +248,7 @@ func (c *SharedPlaygroundCore) Read(request []byte) (*monstera.ReadResponse, err
 	return &monstera.ReadResponse{Data: v}, nil
 }
 
-func (c *SharedPlaygroundCore) Update(request []byte) (*monstera.UpdateResponse, error) {
+func (c *SharedPlaygroundCore) Update(request []byte, log *slog.Logger) (*monstera.UpdateResponse, error) {
 	key, value := parsePlaygroundUpdate(request)
 	err := c.store.BatchUpdate(func(b *store.Batch) error {
 		return b.Set(sharedRowKey(key), []byte(value))
@@ -349,7 +350,7 @@ func (c *ExclusivePlaygroundCore) rowKey(key uint64) []byte {
 
 func (c *ExclusivePlaygroundCore) Close() {}
 
-func (c *ExclusivePlaygroundCore) Read(request []byte) (*monstera.ReadResponse, error) {
+func (c *ExclusivePlaygroundCore) Read(request []byte, log *slog.Logger) (*monstera.ReadResponse, error) {
 	txn := c.store.View()
 	defer txn.Discard()
 
@@ -363,7 +364,7 @@ func (c *ExclusivePlaygroundCore) Read(request []byte) (*monstera.ReadResponse, 
 	return &monstera.ReadResponse{Data: v}, nil
 }
 
-func (c *ExclusivePlaygroundCore) Update(request []byte) (*monstera.UpdateResponse, error) {
+func (c *ExclusivePlaygroundCore) Update(request []byte, log *slog.Logger) (*monstera.UpdateResponse, error) {
 	key, value := parsePlaygroundUpdate(request)
 	err := c.store.BatchUpdate(func(b *store.Batch) error {
 		return b.Set(c.rowKey(key), []byte(value))

@@ -416,6 +416,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 									Id("Payload"): Id("req"),
 									Id("Now"):     Id("now"),
 								}),
+								Qual("log/slog", "Default").Call(),
 							),
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),
@@ -442,6 +443,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 									Id("Payload"): Id("req"),
 									Id("Now"):     Id("now"),
 								}),
+								Qual("log/slog", "Default").Call(),
 							),
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),
@@ -499,6 +501,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 									Id("Payload"): Id("req"),
 									Id("Now"):     Id("now"),
 								}),
+								Qual("log/slog", "Default").Call(),
 							),
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),
@@ -525,6 +528,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 									Id("Payload"): Id("req"),
 									Id("Now"):     Id("now"),
 								}),
+								Qual("log/slog", "Default").Call(),
 							),
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,6 +101,14 @@ type Node struct {
 	// Defaults to writing to the node's config path (see NewNode).
 	persistConfig func(config *cluster.Config) error
 
+	// coreLogDest is the resolved core-log destination (NodeConfig's, or a
+	// discardHandler if none was configured) — every replica's
+	// appCoreAdapter writes its fatal-path lines here synchronously.
+	// coreLogQueue is the shared, per-node, non-blocking queue backing the
+	// success path for every replica this node hosts; closed in Stop.
+	coreLogDest  slog.Handler
+	coreLogQueue *coreLogQueue
+
 	logger *log.Logger
 }
 
@@ -178,6 +187,21 @@ type NodeConfig struct {
 	// the InstallSnapshot session handling in internal/raft). It is reset on every
 	// chunk, so it never aborts a snapshot that is actively streaming.
 	SnapshotSessionTimeout time.Duration
+
+	// CoreLogDestination is where the core diagnostic log writes (see
+	// docs/core-implementation.md, "Logging from a core") — a plain
+	// slog.Handler, so any destination (JSON to a file, text to stdout
+	// tagged with a static label) works, kept independent of every other
+	// log stream in the process. nil (the default) disables it: nothing is
+	// written anywhere, but a core's log.Warn(...) calls remain safe no-ops
+	// either way.
+	CoreLogDestination slog.Handler
+
+	// CoreLogPolicy controls what the core diagnostic log's success path
+	// keeps (see CoreLogPolicy's doc comment); it has no effect on a core's
+	// fatal-path lines, which always write unfiltered. The zero value is
+	// replaced with DefaultCoreLogPolicy.
+	CoreLogPolicy CoreLogPolicy
 }
 
 var DefaultMonsteraNodeConfig = NodeConfig{
@@ -190,6 +214,8 @@ var DefaultMonsteraNodeConfig = NodeConfig{
 	MembershipReconcileInterval: defaultMembershipReconcileInterval,
 	MetricsSampleInterval:       defaultMetricsSampleInterval,
 	SnapshotSessionTimeout:      defaultSnapshotSessionTimeout,
+
+	CoreLogPolicy: DefaultCoreLogPolicy,
 }
 
 // withDefaults returns the config with every non-positive field replaced by its
@@ -212,6 +238,9 @@ func (c NodeConfig) withDefaults() NodeConfig {
 	}
 	if c.SnapshotSessionTimeout <= 0 {
 		c.SnapshotSessionTimeout = defaultSnapshotSessionTimeout
+	}
+	if c.CoreLogPolicy == (CoreLogPolicy{}) {
+		c.CoreLogPolicy = DefaultCoreLogPolicy
 	}
 	return c
 }
@@ -258,6 +287,7 @@ func (n *Node) Stop() {
 	n.logger.Printf("Monstera Node stopped")
 
 	n.raftStore.Close()
+	n.coreLogQueue.close()
 }
 
 // Start loads the replicas assigned to this node from the cluster config,
@@ -1203,7 +1233,7 @@ func (n *Node) reconcileReplicasLocked() error {
 			n.logger.Printf("Promoting seeded replica %s (shard %s)", id, p.shard.Id)
 		}
 		applicationCore := coreDescriptor.CoreFactoryFunc(p.shard, p.replica)
-		rep := newReplica(n.baseDir, p.app.Name, p.shard.Id, id, n.nodeId, applicationCore, n.trans, n.raftStore, coreDescriptor.CoreType.RestoreSnapshotOnStart(), n.nodeConfig.MaxUpdateTimeout, n.nodeConfig.SnapshotSessionTimeout)
+		rep := newReplica(n.baseDir, p.app.Name, p.shard.Id, id, n.nodeId, applicationCore, n.trans, n.raftStore, coreDescriptor.CoreType.RestoreSnapshotOnStart(), n.nodeConfig.MaxUpdateTimeout, n.nodeConfig.SnapshotSessionTimeout, n.nodeConfig.CoreLogPolicy, n.coreLogQueue, n.coreLogDest)
 		n.replicas[id] = rep
 		n.logger.Printf("Created replica %s (shard %s)", id, p.shard.Id)
 	}
@@ -1398,7 +1428,7 @@ func (n *Node) promoteSeededChildren(childReplicaIds []string) error {
 		delete(n.dormant, id)
 
 		core := descriptor.CoreFactoryFunc(shard, replicaEntry)
-		rep := newReplica(n.baseDir, d.applicationName, d.shardId, id, n.nodeId, core, n.trans, n.raftStore, descriptor.CoreType.RestoreSnapshotOnStart(), n.nodeConfig.MaxUpdateTimeout, n.nodeConfig.SnapshotSessionTimeout)
+		rep := newReplica(n.baseDir, d.applicationName, d.shardId, id, n.nodeId, core, n.trans, n.raftStore, descriptor.CoreType.RestoreSnapshotOnStart(), n.nodeConfig.MaxUpdateTimeout, n.nodeConfig.SnapshotSessionTimeout, n.nodeConfig.CoreLogPolicy, n.coreLogQueue, n.coreLogDest)
 		n.replicas[id] = rep
 		n.logger.Printf("Promoted seeded replica %s (shard %s)", id, d.shardId)
 	}
@@ -1735,6 +1765,11 @@ func NewNode(baseDir string, coreDescriptors ApplicationCoreDescriptors, nodeCon
 		}
 	}
 
+	coreLogDest := nodeConfig.CoreLogDestination
+	if coreLogDest == nil {
+		coreLogDest = discardHandler{}
+	}
+
 	node := &Node{
 		baseDir:         baseDir,
 		nodeId:          persistedId,
@@ -1748,6 +1783,8 @@ func NewNode(baseDir string, coreDescriptors ApplicationCoreDescriptors, nodeCon
 		trans:           trans,
 		raftStore:       raftStore,
 		nodeConfig:      nodeConfig,
+		coreLogDest:     coreLogDest,
+		coreLogQueue:    newCoreLogQueue(coreLogDest, 0),
 		logger:          log.New(os.Stderr, fmt.Sprintf("[%s] ", persistedId), log.LstdFlags),
 	}
 

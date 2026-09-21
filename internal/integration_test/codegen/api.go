@@ -8,6 +8,7 @@ import (
 	types "github.com/evrblk/monstera/internal/integration_test/codegen/types"
 	mrpc "github.com/evrblk/monstera/rpc"
 	"io"
+	"log/slog"
 )
 
 type Read1Request = mrpc.ReadRequest[*types.Read1Request]
@@ -34,9 +35,9 @@ type MyCoreCoreApi interface {
 	Snapshot() monstera.ApplicationCoreSnapshot
 	Restore(readers ...io.ReadCloser) error
 	Close()
-	Read1(req *Read1Request) (*Read1Response, error)
-	Read2(req *Read2Request) (*Read2Response, error)
-	Read3(req *Read3Request) (*Read3Response, error)
-	Update1(req *Update1Request) (*Update1Response, error)
-	Update2(req *Update2Request) (*Update2Response, error)
+	Read1(req *Read1Request, log *slog.Logger) (*Read1Response, error)
+	Read2(req *Read2Request, log *slog.Logger) (*Read2Response, error)
+	Read3(req *Read3Request, log *slog.Logger) (*Read3Response, error)
+	Update1(req *Update1Request, log *slog.Logger) (*Update1Response, error)
+	Update2(req *Update2Request, log *slog.Logger) (*Update2Response, error)
 }

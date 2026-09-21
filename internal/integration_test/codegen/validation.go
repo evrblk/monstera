@@ -6,6 +6,7 @@ import (
 	monstera "github.com/evrblk/monstera"
 	mrpc "github.com/evrblk/monstera/rpc"
 	"io"
+	"log/slog"
 )
 
 type MyCoreValidatingCore struct {
@@ -30,37 +31,37 @@ func (v *MyCoreValidatingCore) Close() {
 	v.core.Close()
 }
 
-func (v *MyCoreValidatingCore) Read1(req *Read1Request) (*Read1Response, error) {
+func (v *MyCoreValidatingCore) Read1(req *Read1Request, log *slog.Logger) (*Read1Response, error) {
 	if err := req.Payload.Validate(); err != nil {
 		return &Read1Response{ApplicationError: mrpc.NewError(mrpc.InvalidRequest, err.Error())}, nil
 	}
-	return v.core.Read1(req)
+	return v.core.Read1(req, log)
 }
 
-func (v *MyCoreValidatingCore) Read2(req *Read2Request) (*Read2Response, error) {
+func (v *MyCoreValidatingCore) Read2(req *Read2Request, log *slog.Logger) (*Read2Response, error) {
 	if err := req.Payload.Validate(); err != nil {
 		return &Read2Response{ApplicationError: mrpc.NewError(mrpc.InvalidRequest, err.Error())}, nil
 	}
-	return v.core.Read2(req)
+	return v.core.Read2(req, log)
 }
 
-func (v *MyCoreValidatingCore) Read3(req *Read3Request) (*Read3Response, error) {
+func (v *MyCoreValidatingCore) Read3(req *Read3Request, log *slog.Logger) (*Read3Response, error) {
 	if err := req.Payload.Validate(); err != nil {
 		return &Read3Response{ApplicationError: mrpc.NewError(mrpc.InvalidRequest, err.Error())}, nil
 	}
-	return v.core.Read3(req)
+	return v.core.Read3(req, log)
 }
 
-func (v *MyCoreValidatingCore) Update1(req *Update1Request) (*Update1Response, error) {
+func (v *MyCoreValidatingCore) Update1(req *Update1Request, log *slog.Logger) (*Update1Response, error) {
 	if err := req.Payload.Validate(); err != nil {
 		return &Update1Response{ApplicationError: mrpc.NewError(mrpc.InvalidRequest, err.Error())}, nil
 	}
-	return v.core.Update1(req)
+	return v.core.Update1(req, log)
 }
 
-func (v *MyCoreValidatingCore) Update2(req *Update2Request) (*Update2Response, error) {
+func (v *MyCoreValidatingCore) Update2(req *Update2Request, log *slog.Logger) (*Update2Response, error) {
 	if err := req.Payload.Validate(); err != nil {
 		return &Update2Response{ApplicationError: mrpc.NewError(mrpc.InvalidRequest, err.Error())}, nil
 	}
-	return v.core.Update2(req)
+	return v.core.Update2(req, log)
 }

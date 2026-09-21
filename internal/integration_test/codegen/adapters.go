@@ -10,6 +10,7 @@ import (
 	mrpc "github.com/evrblk/monstera/rpc"
 	prometheus "github.com/prometheus/client_golang/prometheus"
 	"io"
+	"log/slog"
 	"time"
 )
 
@@ -72,7 +73,7 @@ func (a *MyCoreCoreAdapter) Close() {
 	a.myCoreCore.Close()
 }
 
-func (a *MyCoreCoreAdapter) Update(rpcReqBytes []byte) (*monstera.UpdateResponse, error) {
+func (a *MyCoreCoreAdapter) Update(rpcReqBytes []byte, log *slog.Logger) (*monstera.UpdateResponse, error) {
 	t1 := time.Now()
 
 	resp := &monstera.UpdateResponse{}
@@ -100,7 +101,7 @@ func (a *MyCoreCoreAdapter) Update(rpcReqBytes []byte) (*monstera.UpdateResponse
 		methodResp, err := a.myCoreCore.Update1(&Update1Request{
 			Now:     rpcReq.Now,
 			Payload: &methodReq,
-		})
+		}, log)
 		if err != nil {
 			return nil, err
 		}
@@ -124,7 +125,7 @@ func (a *MyCoreCoreAdapter) Update(rpcReqBytes []byte) (*monstera.UpdateResponse
 		methodResp, err := a.myCoreCore.Update2(&Update2Request{
 			Now:     rpcReq.Now,
 			Payload: &methodReq,
-		})
+		}, log)
 		if err != nil {
 			return nil, err
 		}
@@ -149,7 +150,7 @@ func (a *MyCoreCoreAdapter) Update(rpcReqBytes []byte) (*monstera.UpdateResponse
 	return resp, nil
 }
 
-func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, error) {
+func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte, log *slog.Logger) (*monstera.ReadResponse, error) {
 	t1 := time.Now()
 
 	resp := &monstera.ReadResponse{}
@@ -177,7 +178,7 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 		methodResp, err := a.myCoreCore.Read1(&Read1Request{
 			Now:     rpcReq.Now,
 			Payload: &methodReq,
-		})
+		}, log)
 		if err != nil {
 			return nil, err
 		}
@@ -201,7 +202,7 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 		methodResp, err := a.myCoreCore.Read2(&Read2Request{
 			Now:     rpcReq.Now,
 			Payload: &methodReq,
-		})
+		}, log)
 		if err != nil {
 			return nil, err
 		}
@@ -228,7 +229,7 @@ func (a *MyCoreCoreAdapter) Read(rpcReqBytes []byte) (*monstera.ReadResponse, er
 		methodResp, err := a.myCoreCore.Read3(&Read3Request{
 			Now:     rpcReq.Now,
 			Payload: &methodReq,
-		})
+		}, log)
 		if err != nil {
 			return nil, err
 		}

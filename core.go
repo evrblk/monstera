@@ -3,6 +3,7 @@ package monstera
 import (
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/evrblk/monstera/cluster"
 )
@@ -14,14 +15,26 @@ type ApplicationCore interface {
 	// Reads can be performed concurrently with updates, other reads,
 	// and snapshots. Read must return internal errors, but all application
 	// errors should be returned as part of the ReadResponse.
-	Read(req []byte) (*ReadResponse, error)
+	//
+	// log is a *slog.Logger backed by a buffer, not an immediate writer —
+	// see Update's doc comment for what that means and why. Read is never
+	// part of raft log replay, so lines logged through it are never tagged
+	// "replay": that dimension is simply moot here, not filtered out.
+	Read(req []byte, log *slog.Logger) (*ReadResponse, error)
 
 	// Update is used to update the application core state.
 	// All updates are applied to the application core sequentially,
 	// in the order they are committed to the Raft log. This method is called
 	// by the Raft thread. Update must return internal errors, but all application
 	// errors should be returned as part of the UpdateResponse.
-	Update(req []byte) (*UpdateResponse, error)
+	//
+	// log is a *slog.Logger backed by a buffer, not an immediate writer: lines
+	// logged through it survive regardless of how Update returns (success,
+	// error, or a recovered panic — see appCoreAdapter.callCoreUpdate) and are
+	// filtered/routed to a separate core-log stream only afterward, by the
+	// framework. It may run from every replica of the shard, live or during
+	// raft replay — that's expected, not a bug; see docs/core-implementation.md.
+	Update(req []byte, log *slog.Logger) (*UpdateResponse, error)
 
 	// Snapshot returns an ApplicationCoreSnapshot used to support Raft log
 	// compaction, state restoration, and follower catch-up.

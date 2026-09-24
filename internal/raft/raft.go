@@ -820,9 +820,10 @@ func NewRaft(baseDir string, nodeId string, applicationName string, shardId stri
 	cfg := hraft.DefaultConfig()
 	cfg.LocalID = hraft.ServerID(replicaId)
 	cfg.Logger = hclog.New(&hclog.LoggerOptions{
-		Name:   replicaId,
-		Level:  hclog.LevelFromString("error"),
-		Output: os.Stdout,
+		Name:       replicaId,
+		Level:      hclog.LevelFromString("error"),
+		Output:     os.Stdout,
+		JSONFormat: true,
 	}) // TODO: pass logger
 	cfg.NoSnapshotRestoreOnStart = !restoreSnapshotOnStart
 	cfg.NoLegacyTelemetry = true

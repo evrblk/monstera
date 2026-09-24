@@ -371,6 +371,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 		for _, core := range cores {
 			g.Id(firstCharToLower(core.Name) + "Cores").Index().Op("*").Id(adapterTypeName(core.Name))
 		}
+		g.Id("logger").Op("*").Qual("log/slog", "Logger")
 	})
 	apiName := stub.Name + "ClientApi"
 	f.Var().Id("_").Qual(cfg.GoCode.OutputPackage, apiName).Op("=").Op("&").Id(stubType).Values()
@@ -416,7 +417,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 									Id("Payload"): Id("req"),
 									Id("Now"):     Id("now"),
 								}),
-								Qual("log/slog", "Default").Call(),
+								Id("s").Dot("logger"),
 							),
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),
@@ -443,7 +444,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 									Id("Payload"): Id("req"),
 									Id("Now"):     Id("now"),
 								}),
-								Qual("log/slog", "Default").Call(),
+								Id("s").Dot("logger"),
 							),
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),
@@ -501,7 +502,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 									Id("Payload"): Id("req"),
 									Id("Now"):     Id("now"),
 								}),
-								Qual("log/slog", "Default").Call(),
+								Id("s").Dot("logger"),
 							),
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),
@@ -528,7 +529,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 									Id("Payload"): Id("req"),
 									Id("Now"):     Id("now"),
 								}),
-								Qual("log/slog", "Default").Call(),
+								Id("s").Dot("logger"),
 							),
 							If(Err().Op("!=").Nil()).Block(
 								Return(Nil(), Err()),
@@ -579,6 +580,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 	f.Func().Id("New"+stubType).Params(
 		Id("shardsPerApp").Int(),
 		Id("coresFactory").Op("*").Id(applicationCoresFactoryType),
+		Id("logger").Op("*").Qual("log/slog", "Logger"),
 	).Params(
 		Op("*").Id(stubType),
 	).BlockFunc(func(g *Group) {
@@ -595,6 +597,11 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 				Lit("shardsPerApp must be a power of 2 between 1 and 2^32, got %d"),
 				Id("shardsPerApp"),
 			)),
+		)
+		g.Line()
+
+		g.If(Id("logger").Op("==").Nil()).Block(
+			Id("logger").Op("=").Qual("log/slog", "Default").Call(),
 		)
 		g.Line()
 
@@ -631,6 +638,7 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 				for _, core := range cores {
 					g.Id(firstCharToLower(core.Name) + "Cores").Op(":").Id(firstCharToLower(core.Name) + "Cores")
 				}
+				g.Id("logger").Op(":").Id("logger")
 			}))
 	})
 }

@@ -4,8 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"log"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
@@ -80,7 +79,7 @@ func startTestServer(t *testing.T, n node) (address string, srv *grpc.Server) {
 	srv = grpc.NewServer(serverOptions(DefaultMaxMessageBytes)...)
 	monsterapb.RegisterMonsteraApiServer(srv, &handler{
 		monsteraNode: n,
-		logger:       log.New(io.Discard, "", 0),
+		logger:       slog.New(slog.DiscardHandler),
 	})
 
 	go func() { _ = srv.Serve(lis) }()
@@ -452,7 +451,7 @@ func TestRaftMessageConfiguredMaxMessageBytes(t *testing.T) {
 	srv := grpc.NewServer(serverOptions(limit)...)
 	monsterapb.RegisterMonsteraApiServer(srv, &handler{
 		monsteraNode: &fakeNode{},
-		logger:       log.New(io.Discard, "", 0),
+		logger:       slog.New(slog.DiscardHandler),
 	})
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
@@ -818,7 +817,7 @@ func startLenientServer(t *testing.T, n node) string {
 	}))
 	monsterapb.RegisterMonsteraApiServer(srv, &handler{
 		monsteraNode: n,
-		logger:       log.New(io.Discard, "", 0),
+		logger:       slog.New(slog.DiscardHandler),
 	})
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
@@ -976,9 +975,9 @@ func TestStreamKeepaliveDetectsBlackhole(t *testing.T) {
 
 func newTestGrpcServer() *GrpcServer {
 	return &GrpcServer{
-		handler:         &handler{monsteraNode: &fakeNode{}, logger: log.New(io.Discard, "", 0)},
+		handler:         &handler{monsteraNode: &fakeNode{}, logger: slog.New(slog.DiscardHandler)},
 		maxMessageBytes: DefaultMaxMessageBytes,
-		logger:          log.New(io.Discard, "", 0),
+		logger:          slog.New(slog.DiscardHandler),
 	}
 }
 

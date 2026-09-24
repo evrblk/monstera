@@ -298,6 +298,7 @@ type MyStubNonclusteredApplicationCoresFactory struct {
 }
 type MyStubNonclusteredStub struct {
 	myCoreCores []*myCoreCoreNonclusteredAdapter
+	logger      *slog.Logger
 }
 
 var _ MyStubClientApi = &MyStubNonclusteredStub{}
@@ -315,7 +316,7 @@ func (s *MyStubNonclusteredStub) Read1(ctx context.Context, req *types.Read1Requ
 			resp, err := adapter.core.Read1(&mrpc.ReadRequest[*types.Read1Request]{
 				Now:     now,
 				Payload: req,
-			}, slog.Default())
+			}, s.logger)
 			if err != nil {
 				return nil, err
 			}
@@ -345,7 +346,7 @@ func (s *MyStubNonclusteredStub) Read2(ctx context.Context, req *types.Read2Requ
 			resp, err := adapter.core.Read2(&mrpc.ReadUnshardedRequest[*types.Read2Request]{
 				Now:     now,
 				Payload: req,
-			}, slog.Default())
+			}, s.logger)
 			if err != nil {
 				return nil, err
 			}
@@ -376,7 +377,7 @@ func (s *MyStubNonclusteredStub) Read3(ctx context.Context, req *types.Read3Requ
 			resp, err := adapter.core.Read3(&mrpc.ReadRequest[*types.Read3Request]{
 				Now:     now,
 				Payload: req,
-			}, slog.Default())
+			}, s.logger)
 			if err != nil {
 				return nil, err
 			}
@@ -407,7 +408,7 @@ func (s *MyStubNonclusteredStub) Update1(ctx context.Context, req *types.Update1
 			resp, err := adapter.core.Update1(&mrpc.UpdateRequest[*types.Update1Request]{
 				Now:     now,
 				Payload: req,
-			}, slog.Default())
+			}, s.logger)
 			if err != nil {
 				return nil, err
 			}
@@ -437,7 +438,7 @@ func (s *MyStubNonclusteredStub) Update2(ctx context.Context, req *types.Update2
 			resp, err := adapter.core.Update2(&mrpc.UpdateUnshardedRequest[*types.Update2Request]{
 				Now:     now,
 				Payload: req,
-			}, slog.Default())
+			}, s.logger)
 			if err != nil {
 				return nil, err
 			}
@@ -468,9 +469,13 @@ func (s *MyStubNonclusteredStub) ListShards(applicationName string) ([]string, e
 	}
 }
 
-func NewMyStubNonclusteredStub(shardsPerApp int, coresFactory *MyStubNonclusteredApplicationCoresFactory) *MyStubNonclusteredStub {
+func NewMyStubNonclusteredStub(shardsPerApp int, coresFactory *MyStubNonclusteredApplicationCoresFactory, logger *slog.Logger) *MyStubNonclusteredStub {
 	if shardsPerApp < 1 || int64(shardsPerApp) > int64(cluster.KeyspacePerApplication) || shardsPerApp&(shardsPerApp-1) != 0 {
 		panic(fmt.Sprintf("shardsPerApp must be a power of 2 between 1 and 2^32, got %d", shardsPerApp))
+	}
+
+	if logger == nil {
+		logger = slog.Default()
 	}
 
 	myCoreCores := make([]*myCoreCoreNonclusteredAdapter, shardsPerApp)
@@ -486,5 +491,5 @@ func NewMyStubNonclusteredStub(shardsPerApp int, coresFactory *MyStubNonclustere
 		myCoreCores[i] = &myCoreCoreNonclusteredAdapter{core: coresFactory.MyCoreCoreFactoryFunc(myCoreShardId, lowerBound, upperBound), id: myCoreShardId, lowerBound: lowerBound, upperBound: upperBound}
 
 	}
-	return &MyStubNonclusteredStub{myCoreCores: myCoreCores}
+	return &MyStubNonclusteredStub{myCoreCores: myCoreCores, logger: logger}
 }

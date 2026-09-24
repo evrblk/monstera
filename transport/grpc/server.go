@@ -4,9 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
-	"os"
 	"sync"
 	"time"
 
@@ -56,6 +55,7 @@ func serverOptions(maxMessageBytes int) []grpc.ServerOption {
 
 type grpcServerOptions struct {
 	maxMessageBytes int
+	logger          *slog.Logger
 }
 
 // GrpcServerOption customizes a GrpcServer.
@@ -67,8 +67,16 @@ func WithServerMaxMessageBytes(n int) GrpcServerOption {
 	return func(o *grpcServerOptions) { o.maxMessageBytes = n }
 }
 
+// WithServerLogger sets the logger the server writes its own lifecycle
+// messages and per-RPC handler errors to — the caller's main, not this
+// package, decides the level/format/destination. Defaults to
+// slog.Default() if never set.
+func WithServerLogger(logger *slog.Logger) GrpcServerOption {
+	return func(o *grpcServerOptions) { o.logger = logger }
+}
+
 type GrpcServer struct {
-	logger *log.Logger
+	logger *slog.Logger
 
 	handler         *handler
 	maxMessageBytes int
@@ -83,7 +91,7 @@ type GrpcServer struct {
 }
 
 func (s *GrpcServer) Serve(address string) error {
-	s.logger.Printf("Starting gRPC server")
+	s.logger.Info("Starting gRPC server", "address", address)
 
 	lis, err := net.Listen("tcp", address)
 	if err != nil {
@@ -112,7 +120,7 @@ func (s *GrpcServer) Serve(address string) error {
 }
 
 func (s *GrpcServer) Stop() {
-	s.logger.Printf("Stopping gRPC server")
+	s.logger.Info("Stopping gRPC server")
 
 	s.mu.Lock()
 	s.stopped = true
@@ -130,7 +138,7 @@ func (s *GrpcServer) Stop() {
 // indefinitely — so this is the crash-like teardown for failure testing and
 // for taking one node down while the rest of the cluster keeps running.
 func (s *GrpcServer) Kill() {
-	s.logger.Printf("Killing gRPC server")
+	s.logger.Info("Killing gRPC server")
 
 	s.mu.Lock()
 	s.stopped = true
@@ -143,8 +151,6 @@ func (s *GrpcServer) Kill() {
 }
 
 func NewGrpcServer(node *monstera.Node, opts ...GrpcServerOption) *GrpcServer {
-	logger := log.New(os.Stdout, fmt.Sprintf("[%s] ", node.NodeId()), log.LstdFlags)
-
 	cfg := grpcServerOptions{maxMessageBytes: DefaultMaxMessageBytes}
 	for _, o := range opts {
 		o(&cfg)
@@ -152,6 +158,10 @@ func NewGrpcServer(node *monstera.Node, opts ...GrpcServerOption) *GrpcServer {
 	if cfg.maxMessageBytes <= 0 {
 		cfg.maxMessageBytes = DefaultMaxMessageBytes
 	}
+	if cfg.logger == nil {
+		cfg.logger = slog.Default()
+	}
+	logger := cfg.logger.With("node_id", node.NodeId())
 
 	return &GrpcServer{
 		handler: &handler{
@@ -182,7 +192,7 @@ type handler struct {
 	monsterapb.UnimplementedMonsteraApiServer
 
 	monsteraNode node
-	logger       *log.Logger
+	logger       *slog.Logger
 }
 
 var _ monsterapb.MonsteraApiServer = &handler{}
@@ -199,7 +209,7 @@ func (h *handler) Read(ctx context.Context, req *monsterapb.ReadRequest) (*monst
 		Hops:                   req.Hops,
 	})
 	if err != nil {
-		h.logger.Printf("Error calling MonsteraNode.Read: %v", err)
+		h.logger.Error("MonsteraNode.Read failed", "error", err)
 		return nil, err
 	}
 
@@ -219,7 +229,7 @@ func (h *handler) Update(ctx context.Context, req *monsterapb.UpdateRequest) (*m
 		Hops:            req.Hops,
 	})
 	if err != nil {
-		h.logger.Printf("Error calling MonsteraNode.Update: %v", err)
+		h.logger.Error("MonsteraNode.Update failed", "error", err)
 		return nil, err
 	}
 
@@ -232,7 +242,7 @@ func (h *handler) Update(ctx context.Context, req *monsterapb.UpdateRequest) (*m
 func (h *handler) TriggerSnapshot(ctx context.Context, req *monsterapb.TriggerSnapshotRequest) (*monsterapb.TriggerSnapshotResponse, error) {
 	err := h.monsteraNode.TriggerSnapshot(req.ReplicaId)
 	if err != nil {
-		h.logger.Printf("Error calling MonsteraNode.TriggerSnapshot: %v", err)
+		h.logger.Error("MonsteraNode.TriggerSnapshot failed", "error", err)
 		return nil, err
 	}
 	return &monsterapb.TriggerSnapshotResponse{}, nil
@@ -241,7 +251,7 @@ func (h *handler) TriggerSnapshot(ctx context.Context, req *monsterapb.TriggerSn
 func (h *handler) LeadershipTransfer(ctx context.Context, req *monsterapb.LeadershipTransferRequest) (*monsterapb.LeadershipTransferResponse, error) {
 	err := h.monsteraNode.LeadershipTransfer(req.ReplicaId)
 	if err != nil {
-		h.logger.Printf("Error calling MonsteraNode.LeadershipTransfer: %v", err)
+		h.logger.Error("MonsteraNode.LeadershipTransfer failed", "error", err)
 		return nil, err
 	}
 	return &monsterapb.LeadershipTransferResponse{}, nil
@@ -252,7 +262,7 @@ func (h *handler) LeadershipTransfer(ctx context.Context, req *monsterapb.Leader
 func (h *handler) SplitCutoff(ctx context.Context, req *monsterapb.SplitCutoffRequest) (*monsterapb.SplitCutoffResponse, error) {
 	index, err := h.monsteraNode.SplitCutoff(ctx, req.ShardId)
 	if err != nil {
-		h.logger.Printf("Error calling MonsteraNode.SplitCutoff: %v", err)
+		h.logger.Error("MonsteraNode.SplitCutoff failed", "error", err)
 		return nil, err
 	}
 	return &monsterapb.SplitCutoffResponse{CutoffIndex: index}, nil
@@ -274,7 +284,7 @@ func (h *handler) ListReplicaStates(ctx context.Context, req *monsterapb.ListRep
 func (h *handler) ListReplicaSnapshots(ctx context.Context, req *monsterapb.ListReplicaSnapshotsRequest) (*monsterapb.ListReplicaSnapshotsResponse, error) {
 	snapshots, err := h.monsteraNode.ListSnapshots(req.ReplicaId)
 	if err != nil {
-		h.logger.Printf("Error calling MonsteraNode.ListSnapshots: %v", err)
+		h.logger.Error("MonsteraNode.ListSnapshots failed", "error", err)
 		return nil, err
 	}
 
@@ -286,7 +296,7 @@ func (h *handler) ListReplicaSnapshots(ctx context.Context, req *monsterapb.List
 func (h *handler) UpdateClusterConfig(ctx context.Context, req *monsterapb.UpdateClusterConfigRequest) (*monsterapb.UpdateClusterConfigResponse, error) {
 	err := h.monsteraNode.UpdateClusterConfig(ctx, req.Config)
 	if err != nil {
-		h.logger.Printf("Error calling MonsteraNode.UpdateClusterConfig: %v", err)
+		h.logger.Error("MonsteraNode.UpdateClusterConfig failed", "error", err)
 		return nil, err
 	}
 
@@ -311,7 +321,7 @@ func (h *handler) GetClusterConfig(ctx context.Context, req *monsterapb.GetClust
 func (h *handler) Bootstrap(ctx context.Context, req *monsterapb.BootstrapRequest) (*monsterapb.BootstrapResponse, error) {
 	err := h.monsteraNode.Bootstrap(ctx, req.NodeId, req.Config)
 	if err != nil {
-		h.logger.Printf("Error calling MonsteraNode.Bootstrap: %v", err)
+		h.logger.Error("MonsteraNode.Bootstrap failed", "error", err)
 		return nil, err
 	}
 	return &monsterapb.BootstrapResponse{}, nil
@@ -364,7 +374,7 @@ func (h *handler) RaftMessage(stream grpc.BidiStreamingServer[monsterapb.RaftMes
 				// to the caller as an error envelope correlated by MessageId rather
 				// than tearing down the stream that every other replica pair shares;
 				// only transport-level Send/Recv errors are fatal to the stream.
-				h.logger.Printf("Error calling MonsteraNode.RaftMessage: %v", err)
+				h.logger.Error("MonsteraNode.RaftMessage failed", "error", err)
 				out = &monsterapb.RaftMessageResponse{
 					ResponseToMessageId: req.MessageId,
 					Error:               err.Error(),

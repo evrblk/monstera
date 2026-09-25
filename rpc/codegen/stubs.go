@@ -379,6 +379,45 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 
 	stubReceiver := Id("s").Op("*").Qual(cfg.GoCode.OutputPackage, stubType)
 
+	findAdapterMethodName := func(coreName string) string {
+		return "find" + coreName + "Adapter"
+	}
+
+	// findCoreAdapter finds the shard owning shardKey via binary search: the
+	// shards in s.<core>Cores are sorted and contiguous by construction (see
+	// New<Stub>), so the candidate is the shard immediately before the first
+	// one whose lowerBound exceeds shardKey.
+	for _, core := range cores {
+		if !coreHasShardedMethod(core) {
+			continue
+		}
+
+		adapterField := firstCharToLower(core.Name) + "Cores"
+
+		f.Func().Params(stubReceiver).Id(findAdapterMethodName(core.Name)).Params(
+			Id("shardKey").Qual(clusterPkg, "ShardKey"),
+		).Params(
+			Op("*").Id(adapterTypeName(core.Name)),
+			Error(),
+		).BlockFunc(func(g *Group) {
+			g.Id("adapters").Op(":=").Id("s").Dot(adapterField)
+			g.Id("i").Op(":=").Qual("sort", "Search").Call(
+				Len(Id("adapters")),
+				Func().Params(Id("i").Int()).Bool().Block(
+					Return(Id("adapters").Index(Id("i")).Dot("lowerBound").Op(">").Id("shardKey")),
+				),
+			)
+			g.If(Id("i").Op(">").Lit(0)).BlockFunc(func(g *Group) {
+				g.Id("candidate").Op(":=").Id("adapters").Index(Id("i").Op("-").Lit(1))
+				g.If(Id("shardKey").Op("<=").Id("candidate").Dot("upperBound")).Block(
+					Return(Id("candidate"), Nil()),
+				)
+			})
+			g.Return(Nil(), Qual("fmt", "Errorf").Call(Lit("no shard found for shardKey: %s"), Id("shardKey")))
+		})
+		f.Line()
+	}
+
 	for _, core := range cores {
 		for _, read := range core.ReadMethods {
 			f.Func().Params(stubReceiver).Id(read.Name).ParamsFunc(func(g *Group) {
@@ -406,33 +445,32 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 
 				if read.Sharded {
 					g.Id("shardKey").Op(":=").Id("req").Dot("ShardKey").Call()
-					g.For(List(Id("_"), Id("adapter")).Op(":=").Range().Id("s").Dot(firstCharToLower(core.Name) + "Cores")).Block(
-						If(Id("shardKey").Op(">=").Id("adapter").Dot("lowerBound").Op("&&").
-							Id("shardKey").Op("<=").Id("adapter").Dot("upperBound")).Block(
-							Id("adapter").Dot("mu").Dot("RLock").Call(),
-							Defer().Id("adapter").Dot("mu").Dot("RUnlock").Call(),
-							Line(),
-							List(Id("resp"), Err()).Op(":=").Id("adapter").Dot("core").Dot(read.Name).Call(
-								Op("&").Qual(mrpcPkg, "ReadRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, read.Name+"Request")).Values(Dict{
-									Id("Payload"): Id("req"),
-									Id("Now"):     Id("now"),
-								}),
-								Id("s").Dot("logger"),
-							),
-							If(Err().Op("!=").Nil()).Block(
-								Return(Nil(), Err()),
-							),
-							Err().Op("=").Id("nilifyIfEmpty").Call(Id("resp").Dot("ApplicationError")),
-							If(Err().Op("!=").Nil()).Block(
-								Return(Nil(), Err()),
-							),
-							respMetaCapture,
-							Return(Id("resp").Dot("Payload"), Nil()),
-						),
+					g.List(Id("adapter"), Err()).Op(":=").Id("s").Dot(findAdapterMethodName(core.Name)).Call(Id("shardKey"))
+					g.If(Err().Op("!=").Nil()).Block(
+						Return(Nil(), Err()),
 					)
 					g.Line()
 
-					g.Return(List(Nil(), Qual("fmt", "Errorf").Call(Lit("no shard found for shardKey: %s"), Id("shardKey"))))
+					g.Id("adapter").Dot("mu").Dot("RLock").Call()
+					g.Defer().Id("adapter").Dot("mu").Dot("RUnlock").Call()
+					g.Line()
+
+					g.List(Id("resp"), Err()).Op(":=").Id("adapter").Dot("core").Dot(read.Name).Call(
+						Op("&").Qual(mrpcPkg, "ReadRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, read.Name+"Request")).Values(Dict{
+							Id("Payload"): Id("req"),
+							Id("Now"):     Id("now"),
+						}),
+						Id("s").Dot("logger"),
+					)
+					g.If(Err().Op("!=").Nil()).Block(
+						Return(Nil(), Err()),
+					)
+					g.Err().Op("=").Id("nilifyIfEmpty").Call(Id("resp").Dot("ApplicationError"))
+					g.If(Err().Op("!=").Nil()).Block(
+						Return(Nil(), Err()),
+					)
+					g.Add(respMetaCapture)
+					g.Return(Id("resp").Dot("Payload"), Nil())
 				} else {
 					g.For(List(Id("_"), Id("adapter")).Op(":=").Range().Id("s").Dot(firstCharToLower(core.Name) + "Cores")).Block(
 						If(Id("adapter").Dot("id").Op("==").Id("shardId")).Block(
@@ -491,33 +529,32 @@ func generateNonclusteredStub(f *File, stub *MonsteraStub, cores []*MonsteraCore
 
 				if update.Sharded {
 					g.Id("shardKey").Op(":=").Id("req").Dot("ShardKey").Call()
-					g.For(List(Id("_"), Id("adapter")).Op(":=").Range().Id("s").Dot(firstCharToLower(core.Name) + "Cores")).Block(
-						If(Id("shardKey").Op(">=").Id("adapter").Dot("lowerBound").Op("&&").
-							Id("shardKey").Op("<=").Id("adapter").Dot("upperBound")).Block(
-							Id("adapter").Dot("mu").Dot("Lock").Call(),
-							Defer().Id("adapter").Dot("mu").Dot("Unlock").Call(),
-							Line(),
-							List(Id("resp"), Err()).Op(":=").Id("adapter").Dot("core").Dot(update.Name).Call(
-								Op("&").Qual(mrpcPkg, "UpdateRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, update.Name+"Request")).Values(Dict{
-									Id("Payload"): Id("req"),
-									Id("Now"):     Id("now"),
-								}),
-								Id("s").Dot("logger"),
-							),
-							If(Err().Op("!=").Nil()).Block(
-								Return(Nil(), Err()),
-							),
-							Err().Op("=").Id("nilifyIfEmpty").Call(Id("resp").Dot("ApplicationError")),
-							If(Err().Op("!=").Nil()).Block(
-								Return(Nil(), Err()),
-							),
-							respMetaCapture,
-							Return(Id("resp").Dot("Payload"), Nil()),
-						),
+					g.List(Id("adapter"), Err()).Op(":=").Id("s").Dot(findAdapterMethodName(core.Name)).Call(Id("shardKey"))
+					g.If(Err().Op("!=").Nil()).Block(
+						Return(Nil(), Err()),
 					)
 					g.Line()
 
-					g.Return(List(Nil(), Qual("fmt", "Errorf").Call(Lit("no shard found for shardKey: %s"), Id("shardKey"))))
+					g.Id("adapter").Dot("mu").Dot("Lock").Call()
+					g.Defer().Id("adapter").Dot("mu").Dot("Unlock").Call()
+					g.Line()
+
+					g.List(Id("resp"), Err()).Op(":=").Id("adapter").Dot("core").Dot(update.Name).Call(
+						Op("&").Qual(mrpcPkg, "UpdateRequest").Index(Op("*").Qual(cfg.GoCode.CoreTypesPackage, update.Name+"Request")).Values(Dict{
+							Id("Payload"): Id("req"),
+							Id("Now"):     Id("now"),
+						}),
+						Id("s").Dot("logger"),
+					)
+					g.If(Err().Op("!=").Nil()).Block(
+						Return(Nil(), Err()),
+					)
+					g.Err().Op("=").Id("nilifyIfEmpty").Call(Id("resp").Dot("ApplicationError"))
+					g.If(Err().Op("!=").Nil()).Block(
+						Return(Nil(), Err()),
+					)
+					g.Add(respMetaCapture)
+					g.Return(Id("resp").Dot("Payload"), Nil())
 				} else {
 					g.For(List(Id("_"), Id("adapter")).Op(":=").Range().Id("s").Dot(firstCharToLower(core.Name) + "Cores")).Block(
 						If(Id("adapter").Dot("id").Op("==").Id("shardId")).Block(

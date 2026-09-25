@@ -19,6 +19,22 @@ func firstCharToLower(s string) string {
 	return strings.ToLower(s[:1]) + s[1:]
 }
 
+// coreHasShardedMethod reports whether a core has at least one sharded read
+// or update method, i.e. whether it needs shardKey-based shard routing.
+func coreHasShardedMethod(core *MonsteraCore) bool {
+	for _, read := range core.ReadMethods {
+		if read.Sharded {
+			return true
+		}
+	}
+	for _, update := range core.UpdateMethods {
+		if update.Sharded {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveStubCores maps a stub's core names to their definitions. Manifests
 // loaded through LoadMonsteraYaml are already validated, so a miss can only
 // happen for a hand-built config that bypassed Validate.

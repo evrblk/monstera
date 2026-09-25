@@ -10,6 +10,7 @@ import (
 	types "github.com/evrblk/monstera/internal/integration_test/codegen/types"
 	mrpc "github.com/evrblk/monstera/rpc"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 )
@@ -303,35 +304,48 @@ type MyStubNonclusteredStub struct {
 
 var _ MyStubClientApi = &MyStubNonclusteredStub{}
 
+func (s *MyStubNonclusteredStub) findMyCoreAdapter(shardKey cluster.ShardKey) (*myCoreCoreNonclusteredAdapter, error) {
+	adapters := s.myCoreCores
+	i := sort.Search(len(adapters), func(i int) bool {
+		return adapters[i].lowerBound > shardKey
+	})
+	if i > 0 {
+		candidate := adapters[i-1]
+		if shardKey <= candidate.upperBound {
+			return candidate, nil
+		}
+	}
+	return nil, fmt.Errorf("no shard found for shardKey: %s", shardKey)
+}
+
 func (s *MyStubNonclusteredStub) Read1(ctx context.Context, req *types.Read1Request, opts ...mrpc.CallOption) (*types.Read1Response, error) {
 	settings := mrpc.ApplyCallOptions(opts...)
 	now := time.Now().UnixNano()
 
 	shardKey := req.ShardKey()
-	for _, adapter := range s.myCoreCores {
-		if shardKey >= adapter.lowerBound && shardKey <= adapter.upperBound {
-			adapter.mu.RLock()
-			defer adapter.mu.RUnlock()
-
-			resp, err := adapter.core.Read1(&mrpc.ReadRequest[*types.Read1Request]{
-				Now:     now,
-				Payload: req,
-			}, s.logger)
-			if err != nil {
-				return nil, err
-			}
-			err = nilifyIfEmpty(resp.ApplicationError)
-			if err != nil {
-				return nil, err
-			}
-			if settings.ResponseMeta != nil {
-				*settings.ResponseMeta = mrpc.ResponseMeta{Now: now}
-			}
-			return resp.Payload, nil
-		}
+	adapter, err := s.findMyCoreAdapter(shardKey)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, fmt.Errorf("no shard found for shardKey: %s", shardKey)
+	adapter.mu.RLock()
+	defer adapter.mu.RUnlock()
+
+	resp, err := adapter.core.Read1(&mrpc.ReadRequest[*types.Read1Request]{
+		Now:     now,
+		Payload: req,
+	}, s.logger)
+	if err != nil {
+		return nil, err
+	}
+	err = nilifyIfEmpty(resp.ApplicationError)
+	if err != nil {
+		return nil, err
+	}
+	if settings.ResponseMeta != nil {
+		*settings.ResponseMeta = mrpc.ResponseMeta{Now: now}
+	}
+	return resp.Payload, nil
 }
 
 func (s *MyStubNonclusteredStub) Read2(ctx context.Context, req *types.Read2Request, shardId string, opts ...mrpc.CallOption) (*types.Read2Response, error) {
@@ -369,30 +383,29 @@ func (s *MyStubNonclusteredStub) Read3(ctx context.Context, req *types.Read3Requ
 	now := time.Now().UnixNano()
 
 	shardKey := req.ShardKey()
-	for _, adapter := range s.myCoreCores {
-		if shardKey >= adapter.lowerBound && shardKey <= adapter.upperBound {
-			adapter.mu.RLock()
-			defer adapter.mu.RUnlock()
-
-			resp, err := adapter.core.Read3(&mrpc.ReadRequest[*types.Read3Request]{
-				Now:     now,
-				Payload: req,
-			}, s.logger)
-			if err != nil {
-				return nil, err
-			}
-			err = nilifyIfEmpty(resp.ApplicationError)
-			if err != nil {
-				return nil, err
-			}
-			if settings.ResponseMeta != nil {
-				*settings.ResponseMeta = mrpc.ResponseMeta{Now: now}
-			}
-			return resp.Payload, nil
-		}
+	adapter, err := s.findMyCoreAdapter(shardKey)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, fmt.Errorf("no shard found for shardKey: %s", shardKey)
+	adapter.mu.RLock()
+	defer adapter.mu.RUnlock()
+
+	resp, err := adapter.core.Read3(&mrpc.ReadRequest[*types.Read3Request]{
+		Now:     now,
+		Payload: req,
+	}, s.logger)
+	if err != nil {
+		return nil, err
+	}
+	err = nilifyIfEmpty(resp.ApplicationError)
+	if err != nil {
+		return nil, err
+	}
+	if settings.ResponseMeta != nil {
+		*settings.ResponseMeta = mrpc.ResponseMeta{Now: now}
+	}
+	return resp.Payload, nil
 }
 
 func (s *MyStubNonclusteredStub) Update1(ctx context.Context, req *types.Update1Request, opts ...mrpc.CallOption) (*types.Update1Response, error) {
@@ -400,30 +413,29 @@ func (s *MyStubNonclusteredStub) Update1(ctx context.Context, req *types.Update1
 	now := time.Now().UnixNano()
 
 	shardKey := req.ShardKey()
-	for _, adapter := range s.myCoreCores {
-		if shardKey >= adapter.lowerBound && shardKey <= adapter.upperBound {
-			adapter.mu.Lock()
-			defer adapter.mu.Unlock()
-
-			resp, err := adapter.core.Update1(&mrpc.UpdateRequest[*types.Update1Request]{
-				Now:     now,
-				Payload: req,
-			}, s.logger)
-			if err != nil {
-				return nil, err
-			}
-			err = nilifyIfEmpty(resp.ApplicationError)
-			if err != nil {
-				return nil, err
-			}
-			if settings.ResponseMeta != nil {
-				*settings.ResponseMeta = mrpc.ResponseMeta{Now: now}
-			}
-			return resp.Payload, nil
-		}
+	adapter, err := s.findMyCoreAdapter(shardKey)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, fmt.Errorf("no shard found for shardKey: %s", shardKey)
+	adapter.mu.Lock()
+	defer adapter.mu.Unlock()
+
+	resp, err := adapter.core.Update1(&mrpc.UpdateRequest[*types.Update1Request]{
+		Now:     now,
+		Payload: req,
+	}, s.logger)
+	if err != nil {
+		return nil, err
+	}
+	err = nilifyIfEmpty(resp.ApplicationError)
+	if err != nil {
+		return nil, err
+	}
+	if settings.ResponseMeta != nil {
+		*settings.ResponseMeta = mrpc.ResponseMeta{Now: now}
+	}
+	return resp.Payload, nil
 }
 
 func (s *MyStubNonclusteredStub) Update2(ctx context.Context, req *types.Update2Request, shardId string, opts ...mrpc.CallOption) (*types.Update2Response, error) {

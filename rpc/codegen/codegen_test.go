@@ -243,7 +243,24 @@ func TestGeneratedNonclusteredStubUsesTypedShardKeys(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Contains(t, out, "lowerBound cluster.ShardKey")
-	require.Contains(t, out, "shardKey >= adapter.lowerBound && shardKey <= adapter.upperBound")
 	require.Contains(t, out, "shardsPerApp must be a power of 2 between 1 and 2^32")
 	require.NotContains(t, out, "invalid shard key length")
+}
+
+// TestGeneratedNonclusteredStubUsesBinarySearch checks that shardKey-based
+// routing looks up the owning shard via sort.Search over the (sorted,
+// contiguous by construction) shard slice, rather than a linear scan.
+func TestGeneratedNonclusteredStubUsesBinarySearch(t *testing.T) {
+	out, err := GenerateStubs(validYaml())
+	require.NoError(t, err)
+
+	require.EqualValues(t, 1, strings.Count(out, "func (s *FirstNonclusteredStub) findCoreAAdapter(shardKey cluster.ShardKey)"))
+	require.EqualValues(t, 1, strings.Count(out, "func (s *FirstNonclusteredStub) findCoreBAdapter(shardKey cluster.ShardKey)"))
+	require.EqualValues(t, 1, strings.Count(out, "func (s *SecondNonclusteredStub) findCoreAAdapter(shardKey cluster.ShardKey)"))
+	require.Contains(t, out, "sort.Search(len(adapters), func(i int) bool {\n\t\treturn adapters[i].lowerBound > shardKey\n\t})")
+	require.NotContains(t, out, "shardKey >= adapter.lowerBound && shardKey <= adapter.upperBound")
+
+	// GetA/PutA (CoreA) both call the shared finder instead of scanning.
+	require.Contains(t, out, "adapter, err := s.findCoreAAdapter(shardKey)")
+	require.Contains(t, out, "adapter, err := s.findCoreBAdapter(shardKey)")
 }
